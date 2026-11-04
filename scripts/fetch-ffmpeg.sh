@@ -62,9 +62,12 @@ case "$target" in
     cp "$binary" "$out_dir/rutile-ffmpeg-$target"
     ;;
   universal-apple-darwin)
-    # Un seul exécutable pour les deux processeurs, signé ad hoc comme l'exige Apple Silicon
+    # Tauri compile chaque processeur à part (il veut alors leurs deux FFmpeg), puis embarque un
+    # seul exécutable pour les deux, signé ad hoc comme l'exige Apple Silicon
     arm="$(fetch darwin-arm64)"
     intel="$(fetch darwin-x64)"
+    cp "$arm" "$out_dir/rutile-ffmpeg-aarch64-apple-darwin"
+    cp "$intel" "$out_dir/rutile-ffmpeg-x86_64-apple-darwin"
     lipo -create -output "$out_dir/rutile-ffmpeg-$target" "$arm" "$intel"
     codesign --force --sign - "$out_dir/rutile-ffmpeg-$target"
     ;;
