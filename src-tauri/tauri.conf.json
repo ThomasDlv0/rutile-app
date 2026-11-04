@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Rutile",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "fr.rutile.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -40,8 +40,10 @@
       "app",
       "dmg",
       "nsis",
+      "msi",
       "appimage",
-      "deb"
+      "deb",
+      "rpm"
     ],
     "category": "Utility",
     "shortDescription": "Images, vidéos, apps et partage sur une roue radiale",
@@ -54,7 +56,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
     },
     "windows": {
       "nsis": {
@@ -62,6 +65,9 @@
           "French"
         ],
         "installMode": "currentUser"
+      },
+      "wix": {
+        "language": "fr-FR"
       }
     },
     "linux": {

@@ -9,6 +9,12 @@ use tauri::WindowEvent;
 use app::wheel::Source;
 
 pub fn run() {
+    // `rutile --self-test` : vérifie chaque conversion puis quitte, sans interface
+    if std::env::args().any(|arg| arg == "--self-test") {
+        let ok = converter::self_test::run(&mut std::io::stdout());
+        std::process::exit(if ok { 0 } else { 1 });
+    }
+
     // Sous Wayland, GNOME ne laisse ni placer une fenêtre ni la garder au premier plan :
     // la roue passe par XWayland, qui le permet
     #[cfg(target_os = "linux")]
@@ -16,11 +22,10 @@ pub fn run() {
         // SAFETY : appelé avant toute création de thread
         unsafe { std::env::set_var("GDK_BACKEND", "x11") };
     }
-    // Avec le pilote NVIDIA, le rendu DMA-BUF de WebKitGTK peut laisser la fenêtre vide
+    // Le rendu DMA-BUF de WebKitGTK peut laisser la fenêtre blanche ou vide (NVIDIA sous
+    // Wayland surtout) : désactivé sous Linux, sauf si l'utilisateur a choisi autrement
     #[cfg(target_os = "linux")]
-    if std::path::Path::new("/proc/driver/nvidia/version").exists()
-        && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
-    {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         // SAFETY : appelé avant toute création de thread
         unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
     }

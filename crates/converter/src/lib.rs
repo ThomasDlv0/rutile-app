@@ -7,6 +7,7 @@ mod encode;
 mod error;
 mod format;
 mod output;
+pub mod self_test;
 pub mod video;
 
 use std::fs::File;

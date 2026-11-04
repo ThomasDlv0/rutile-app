@@ -1,13 +1,15 @@
 {
   "name": "rutile",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
-    "tauri": "tauri"
+    "lint": "tsc -p tsconfig.json",
+    "tauri": "tauri",
+    "build:release": "bash scripts/fetch-ffmpeg.sh && tauri build --config src-tauri/tauri.release.conf.json"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

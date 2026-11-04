@@ -178,16 +178,20 @@ pub fn install_hint() -> &'static str {
     }
 }
 
+/// FFmpeg embarqué avec l'app (sidecar Tauri), installé à côté de son exécutable. Un nom
+/// propre à Rutile évite d'écraser le `ffmpeg` du système dans `/usr/bin` (paquets Linux).
+pub const BUNDLED_FFMPEG: &str = "rutile-ffmpeg";
+
 /// FFmpeg trouvé sur la machine, avec la liste de ses encodeurs.
 #[derive(Debug)]
 pub struct Ffmpeg {
-    ffmpeg: PathBuf,
+    pub(crate) ffmpeg: PathBuf,
     ffprobe: Option<PathBuf>,
     encoders: String,
 }
 
 /// Cherché à chaque appel tant qu'il manque, puis gardé : installer FFmpeg pendant que Rutile
-/// tourne suffit.
+/// tourne suffit. Ordre : `RUTILE_FFMPEG`, celui embarqué avec l'app, puis celui du système.
 pub fn ffmpeg() -> Option<&'static Ffmpeg> {
     static FOUND: OnceLock<Ffmpeg> = OnceLock::new();
     if let Some(found) = FOUND.get() {
@@ -196,6 +200,7 @@ pub fn ffmpeg() -> Option<&'static Ffmpeg> {
     let ffmpeg = std::env::var_os("RUTILE_FFMPEG")
         .map(PathBuf::from)
         .filter(|path| path.is_file())
+        .or_else(bundled_ffmpeg)
         .or_else(|| find_program("ffmpeg"))?;
     let ffprobe = ffmpeg
         .parent()
@@ -212,6 +217,12 @@ pub fn ffmpeg() -> Option<&'static Ffmpeg> {
         ffprobe,
         encoders,
     }))
+}
+
+fn bundled_ffmpeg() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let path = exe.parent()?.join(executable(BUNDLED_FFMPEG));
+    path.is_file().then_some(path)
 }
 
 fn executable(name: &str) -> String {
@@ -261,7 +272,7 @@ fn find_program(name: &str) -> Option<PathBuf> {
 }
 
 /// Sous Windows, une console s'ouvrirait le temps de la conversion sans ce réglage.
-fn command(program: &Path) -> Command {
+pub(crate) fn command(program: &Path) -> Command {
     #[allow(unused_mut)]
     let mut command = Command::new(program);
     #[cfg(windows)]
@@ -285,10 +296,11 @@ impl Ffmpeg {
         names.iter().copied().find(|name| self.has_encoder(name))
     }
 
-    /// Durée en secondes et présence de pistes, lues par ffprobe s'il est là.
-    fn probe(&self, input: &Path) -> Probe {
+    /// Durée en secondes et présence de pistes, lues par ffprobe s'il est là, sinon dans ce
+    /// qu'affiche FFmpeg (le FFmpeg embarqué vient sans ffprobe).
+    pub(crate) fn probe(&self, input: &Path) -> Probe {
         let Some(ffprobe) = &self.ffprobe else {
-            return Probe::default();
+            return self.probe_with_ffmpeg(input);
         };
         let output = command(ffprobe)
             .args([
@@ -317,6 +329,19 @@ impl Ffmpeg {
         }
     }
 
+    /// `ffmpeg -i` sans fichier de sortie décrit l'entrée sur stderr, puis s'arrête en erreur.
+    fn probe_with_ffmpeg(&self, input: &Path) -> Probe {
+        let output = command(&self.ffmpeg)
+            .arg("-hide_banner")
+            .arg("-i")
+            .arg(input)
+            .output();
+        match output {
+            Ok(output) => parse_ffmpeg_info(&String::from_utf8_lossy(&output.stderr)),
+            Err(_) => Probe::default(),
+        }
+    }
+
     /// Arguments d'encodage ; les vidéos aux dimensions impaires sont arrondies pour le H.264.
     fn arguments(&self, format: VideoFormat) -> Result<Vec<String>, VideoError> {
         let missing = || VideoError::MissingEncoder(format);
@@ -324,7 +349,8 @@ impl Ffmpeg {
         let args: Vec<&str> = match format {
             VideoFormat::Mp4 | VideoFormat::Mov => {
                 let encoder = self
-                    .first_encoder(&["libx264", "h264_videotoolbox", "h264_mf", "libopenh264"])
+                    // Jamais h264_mf : Media Foundation manque aux éditions N de Windows
+                    .first_encoder(&["libx264", "h264_videotoolbox", "libopenh264"])
                     .ok_or_else(missing)?;
                 let quality: &[&str] = match encoder {
                     "libx264" => &["-preset", "medium", "-crf", "23"],
@@ -391,13 +417,42 @@ impl Ffmpeg {
     }
 }
 
-#[derive(Debug, Default)]
-struct Probe {
-    /// ffprobe a pu lire le fichier.
-    known: bool,
-    duration: Option<f64>,
-    has_video: bool,
-    has_audio: bool,
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct Probe {
+    /// ffprobe (ou FFmpeg) a pu lire le fichier.
+    pub(crate) known: bool,
+    pub(crate) duration: Option<f64>,
+    pub(crate) has_video: bool,
+    pub(crate) has_audio: bool,
+}
+
+/// Lit la durée (« Duration: 00:01:02.50, ») et les pistes (« Stream #0:0: Video: … »)
+/// dans la description d'un fichier par FFmpeg.
+fn parse_ffmpeg_info(text: &str) -> Probe {
+    let lines = || text.lines().map(str::trim);
+    let duration = lines()
+        .find_map(|line| line.strip_prefix("Duration: "))
+        .and_then(|rest| rest.split(',').next())
+        .and_then(parse_timestamp)
+        .filter(|seconds| *seconds > 0.0);
+    let streams = || lines().filter(|line| line.starts_with("Stream #"));
+    Probe {
+        known: text.contains("Input #0"),
+        duration,
+        has_video: streams().any(|line| line.contains(": Video:")),
+        has_audio: streams().any(|line| line.contains(": Audio:")),
+    }
+}
+
+/// « 01:02:03.50 » en secondes.
+fn parse_timestamp(value: &str) -> Option<f64> {
+    let mut parts = value.trim().split(':');
+    let (hours, minutes, seconds) = (parts.next()?, parts.next()?, parts.next()?);
+    Some(
+        hours.parse::<f64>().ok()? * 3600.0
+            + minutes.parse::<f64>().ok()? * 60.0
+            + seconds.parse::<f64>().ok()?,
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -558,6 +613,24 @@ mod tests {
         assert_eq!(detect(&[0x47; 16], "film.ts"), Some(VideoInput::Other));
         assert_eq!(detect(&[0; 16], "clip.m4v"), Some(VideoInput::Mp4));
         assert_eq!(detect(&[0; 16], "notes.txt"), None);
+    }
+
+    #[test]
+    fn lit_la_description_d_un_fichier_par_ffmpeg() {
+        let text = "Input #0, avi, from 'exemple.avi':\n  Duration: 00:01:02.50, start: 0.000000, bitrate: 2000 kb/s\n  Stream #0:0: Video: mpeg4 (FMP4), yuv420p, 160x120, 15 fps\n  Stream #0:1: Audio: pcm_s16le, 44100 Hz, mono\nAt least one output file must be specified";
+        let probe = parse_ffmpeg_info(text);
+        assert_eq!(
+            probe,
+            Probe {
+                known: true,
+                duration: Some(62.5),
+                has_video: true,
+                has_audio: true,
+            }
+        );
+        let silent = parse_ffmpeg_info("Input #0, gif\n  Duration: N/A\n  Stream #0:0: Video: gif");
+        assert_eq!(silent.duration, None);
+        assert!(!silent.has_audio);
     }
 
     #[test]
