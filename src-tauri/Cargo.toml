@@ -8,7 +8,9 @@ rust-version = "1.88"
 [lib]
 # Le suffixe `_lib` évite un conflit de nom avec le binaire sous Windows
 name = "rutile_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Pas de bibliothèque dynamique : seules les apps mobiles en ont besoin, et l'assembleur du
+# décodeur AVIF (rav1d) ne peut pas y être lié sous Linux
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
