@@ -1,0 +1,9 @@
+[package]
+name = "rutile-shake-detector"
+version = "0.1.0"
+description = "Reconnaît un secouage de la souris pendant un glisser, sans dépendance"
+edition = "2024"
+publish = false
+
+[lib]
+name = "shake_detector"

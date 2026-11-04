@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22" width="22" height="22">
+  <!-- Image « modèle » de la barre des menus macOS : seule l'opacité compte -->
+  <g fill="none" stroke="#000" stroke-linejoin="round" stroke-linecap="round">
+    <polygon points="11,2 18.8,6.5 18.8,15.5 11,20 3.2,15.5 3.2,6.5" stroke-width="1.6"/>
+    <path d="M11 2V7M18.8 6.5L14.46 9M18.8 15.5L14.46 13M11 20V15M3.2 15.5L7.54 13M3.2 6.5L7.54 9" stroke-width="1.1"/>
+  </g>
+  <polygon points="11,7 14.46,9 14.46,13 11,15 7.54,13 7.54,9" fill="#000"/>
+</svg>
