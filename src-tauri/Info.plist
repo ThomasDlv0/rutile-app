@@ -5,6 +5,9 @@
   <!-- App d'arrière-plan : ni icône dans le Dock, ni barre des menus -->
   <key>LSUIElement</key>
   <true/>
+  <!-- App en français : noms d'apps traduits par le Finder, dialogues du système en français -->
+  <key>CFBundleDevelopmentRegion</key>
+  <string>fr</string>
   <!-- Texte de la demande d'autorisation macOS pour lire la sélection du Finder -->
   <key>NSAppleEventsUsageDescription</key>
   <string>Rutile lit les fichiers sélectionnés dans le Finder pour les convertir.</string>

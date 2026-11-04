@@ -2,8 +2,8 @@
 
 Utilitaire léger qui tourne en arrière-plan et convertit des images et des vidéos grâce à une
 roue radiale : chaque part de la roue correspond à un format de sortie. Un clic au centre fait
-passer la roue du mode Images (PNG, JPEG, WebP, AVIF, SVG, ICO) au mode Vidéo (MP4, WebM, MOV,
-MKV, GIF, MP3).
+passer d'une roue à l'autre : Images (PNG, JPEG, WebP, AVIF, SVG, ICO), Vidéo (MP4, WebM, MOV,
+MKV, GIF, MP3) et Apps, où chaque part lance une app choisie dans les réglages.
 La roue s'ouvre avec un raccourci clavier, depuis l'icône de la barre système, ou en secouant
 un fichier pendant qu'on le glisse.
 
@@ -69,11 +69,20 @@ de la roue, avec la commande d'installation.
 Si une autre app utilise déjà le même raccourci, macOS le lui laisse sans rien signaler :
 il faut le libérer dans l'autre app ou en choisir un autre dans les réglages.
 
-### Images ou vidéos
+### Images, vidéos ou apps
 
-- Un clic au centre de la roue passe du mode Images au mode Vidéo, et inversement.
+- Un clic au centre de la roue passe à la roue suivante, dans l'ordre choisi dans les
+  réglages. La roue s'ouvre toujours sur la première.
 - Des vidéos sélectionnées ou glissées font passer la roue en mode Vidéo d'elles-mêmes, et
-  des images en mode Images. Un GIF animé se convertit dans les deux modes.
+  des images en mode Images. Un GIF animé se convertit dans les deux modes. Sur la roue des
+  apps, rien ne change de roue tout seul.
+
+### Roue des apps
+
+- Chaque part porte une app, choisie dans Réglages → « Applications de la roue ».
+- Un clic sur une part lance l'app.
+- Un ou plusieurs fichiers glissés sur une part s'ouvrent avec cette app.
+- Une part vide affiche « + » : un clic ouvre les réglages pour lui choisir une app.
 
 ### Choisir le fichier
 
@@ -109,9 +118,15 @@ notification) montre le fichier dans le Finder ou l'Explorateur.
 
 ### Réglages
 
-Depuis l'icône de la barre système → « Réglages… » : raccourci, secouage et sensibilité,
-qualité JPEG / WebP / AVIF, lancement à l'ouverture de session et, sur macOS, état de
-l'autorisation du Finder. Ils s'appliquent tout de suite et sont enregistrés dans
+Depuis l'icône de la barre système → « Réglages… » : roues actives et leur ordre, apps de la
+roue des apps, raccourci, secouage et sensibilité, qualité JPEG / WebP / AVIF, lancement à
+l'ouverture de session et, sur macOS, état de l'autorisation du Finder.
+
+- Roues : chacune (convertisseur d'images, convertisseur de vidéos, applications) s'active
+  ou se désactive, et les flèches changent l'ordre du clic au centre. Une roue reste toujours
+  active : avec la seule roue des apps, Rutile devient un lanceur d'apps.
+- Applications de la roue : une app par part, de « En haut » à « En haut à gauche » dans le
+  sens des aiguilles d'une montre. Le sélecteur s'ouvre dans le dossier des applications. Ils s'appliquent tout de suite et sont enregistrés dans
 `settings.json`, dans le dossier de configuration de l'app (`~/Library/Application Support/
 fr.rutile.desktop` sur macOS, `%APPDATA%\fr.rutile.desktop` sous Windows,
 `~/.config/fr.rutile.desktop` sous Linux).
@@ -152,6 +167,7 @@ Puis fermer et rouvrir la session, et activer le secouage dans les réglages.
 | Secouage | oui, seulement pendant un glisser de fichiers | oui | oui | avec le groupe `input` |
 | Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
 | Bouton « Afficher » de la notification | oui | tant que la notification est à l'écran | oui | oui |
+| Roue des apps | `.app`, avec icône | `.exe` ou raccourci `.lnk`, sans icône (nom seul) | fichier `.desktop`, avec icône | idem X11 |
 
 - Windows : le hook souris ne voit pas les fenêtres d'une app lancée en administrateur.
 - Wayland : la roue passe par XWayland (`GDK_BACKEND=x11`), seul moyen sous GNOME de la garder
@@ -227,7 +243,7 @@ src/                    interface React + TypeScript
   settings/             fenêtre de réglages
 crates/converter/       conversion d'images (Rust) et de vidéos (FFmpeg), sans Tauri
 crates/shake_detector/  reconnaissance du secouage à partir des mouvements de la souris
-crates/platform/        code propre à chaque système : souris, sélection, session
+crates/platform/        code propre à chaque système : souris, sélection, session, apps
 src-tauri/              app Tauri
-  src/app/              roue, raccourci, barre système, réglages, notifications…
+  src/app/              roue, apps, raccourci, barre système, réglages, notifications…
 ```

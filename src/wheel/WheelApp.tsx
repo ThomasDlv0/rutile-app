@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   WHEEL_CLOSE_EVENT,
+  WHEEL_CONFIG_EVENT,
   WHEEL_DRAG_EVENT,
   WHEEL_FILES_EVENT,
   WHEEL_OPEN_EVENT,
@@ -12,22 +13,34 @@ import {
   convertVideos,
   hideWheel,
   inspectFiles,
+  launchApp,
+  openSettings,
   pickFiles,
   primaryButtonPressed,
   videoSupport,
+  wheelConfig,
   wheelReady,
   type FileInfo,
+  type WheelConfig,
   type VideoSupport,
   type WheelDrag,
   type WheelFiles,
   type WheelOpened,
 } from "../ipc";
-import { type Mode, OUTPUT_FORMATS, VIDEO_FORMATS, formatsFor } from "./formats";
+import {
+  ALL_MODES,
+  type Mode,
+  OUTPUT_FORMATS,
+  VIDEO_FORMATS,
+  appItems,
+  formatsFor,
+} from "./formats";
 import {
   type HubText,
   type Point,
   disabledFormats,
   hubFor,
+  nextMode,
   preferredMode,
   usableSector,
 } from "./selection";
@@ -48,6 +61,14 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DROP_HINT: HubText = { label: "Déposez sur un format", tone: "muted" };
 
+// Aperçu dans un navigateur : toutes les roues, et quelques apps sans icône
+const PREVIEW_CONFIG: WheelConfig = {
+  modes: [...ALL_MODES],
+  apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
+    name ? { path: name, name, icon: null } : null,
+  ),
+};
+
 // Hors de Tauri (aperçu dans un navigateur), `?file=photo.png` ou `?file=clip.mov` simule
 // un fichier
 function previewFiles(): FileInfo[] {
@@ -63,7 +84,9 @@ function previewFiles(): FileInfo[] {
 export function WheelApp() {
   const [phase, setPhase] = useState<Phase>("closed");
   const [openCount, setOpenCount] = useState(0);
-  // Images ou vidéos : le clic au centre bascule, et les fichiers reçus le choisissent
+  // Roues actives dans l'ordre du clic au centre, et apps de la roue des apps
+  const [config, setConfig] = useState<WheelConfig>(PREVIEW_CONFIG);
+  // Roue affichée : la première à l'ouverture, puis le clic au centre passe à la suivante
   const [mode, setMode] = useState<Mode>("image");
   // Fichiers connus sans glisser : sélection du Finder ou de l'Explorateur, `--open`, sélecteur
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -77,6 +100,8 @@ export function WheelApp() {
   const [video, setVideo] = useState<VideoSupport | null>(null);
 
   const videoMissing = mode === "video" && video?.available === false;
+  const items = mode === "apps" ? appItems(config.apps) : formatsFor(mode);
+  const next = nextMode(config.modes, mode);
   const shown = dragFiles ?? files;
   const disabled = useMemo(
     () =>
@@ -85,21 +110,24 @@ export function WheelApp() {
         : disabledFormats(shown, mode),
     [shown, mode, videoMissing],
   );
-  const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, mode);
+  const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, items);
   const missingHint: HubText | null =
     videoMissing && video
       ? { label: "FFmpeg introuvable", tone: "muted", hint: video.installHint }
       : null;
+  const dropHint = mode === "apps" ? null : DROP_HINT;
   const hub =
-    hubFor(pointer, disabled, shown, dragFiles !== null, mode) ??
+    hubFor(pointer, disabled, shown, dragFiles !== null, mode, items, next) ??
     missingHint ??
-    (openMode === "drop" ? DROP_HINT : null);
+    (openMode === "drop" ? dropHint : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const configRef = useRef(config);
+  configRef.current = config;
   const busyRef = useRef(false);
   const dragOverRef = useRef(false);
   const focusedRef = useRef(false);
@@ -109,11 +137,22 @@ export function WheelApp() {
   const pickingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
 
-  /** Les fichiers reçus choisissent le mode : vidéos d'un côté, images de l'autre. */
-  const adoptMode = useCallback((infos: FileInfo[]) => {
+  /** Les fichiers reçus passent du convertisseur d'images à celui de vidéos, et inversement.
+   * La roue des apps, choisie exprès, reste affichée. */
+  const adoptMode = useCallback((infos: FileInfo[]): Mode => {
+    const current = modeRef.current;
     const preferred = preferredMode(infos);
-    if (preferred) setMode(preferred);
-    return preferred ?? modeRef.current;
+    if (current === "apps" || !preferred || !configRef.current.modes.includes(preferred)) {
+      return current;
+    }
+    setMode(preferred);
+    return preferred;
+  }, []);
+
+  const applyConfig = useCallback((next: WheelConfig) => {
+    configRef.current = next;
+    setConfig(next);
+    if (!next.modes.includes(modeRef.current)) setMode(next.modes[0]);
   }, []);
 
   useEffect(() => {
@@ -172,6 +211,35 @@ export function WheelApp() {
     [close],
   );
 
+  /** Lance l'app d'une part, en lui faisant ouvrir les fichiers déposés. Une part vide
+   * ouvre les réglages pour en choisir une. */
+  const openApp = useCallback(
+    async (index: number, paths: string[]) => {
+      if (busyRef.current) return;
+      if (!configRef.current.apps[index]) {
+        void openSettings();
+        close();
+        return;
+      }
+      const id = openId.current;
+      busyRef.current = true;
+      setWork({ index, state: "working", opened: true });
+      let state: Work["state"] = "failed";
+      try {
+        await launchApp(index, paths);
+        state = "done";
+      } catch (error) {
+        console.error("rutile : lancement impossible", error);
+      }
+      if (openId.current !== id) return;
+      setWork({ index, state, opened: true });
+      await sleep(RESULT_VISIBLE_MS);
+      busyRef.current = false;
+      close();
+    },
+    [close],
+  );
+
   const drop = useCallback(
     async (paths: string[], x: number, y: number) => {
       dropCount.current++;
@@ -182,17 +250,29 @@ export function WheelApp() {
       setDragFiles(null);
       setPointer(null);
       const dropMode = adoptMode(dropped);
-      const index = usableSector(x, y, disabledFormats(dropped, dropMode), dropMode);
+      if (dropMode === "apps") {
+        const index = usableSector(x, y, new Set(), appItems(configRef.current.apps));
+        if (index === null || !configRef.current.apps[index]) close();
+        else await openApp(index, paths);
+        return;
+      }
+      const dropItems = formatsFor(dropMode);
+      const index = usableSector(x, y, disabledFormats(dropped, dropMode), dropItems);
       // Lâché au centre, sur un format grisé ou hors du disque : rien à faire
       if (index === null) close();
       else await convert(dropped, index, dropMode);
     },
-    [adoptMode, close, convert],
+    [adoptMode, close, convert, openApp],
   );
 
-  /** Clic sur une part : convertit les fichiers connus, ou les fait choisir d'abord. */
+  /** Clic sur une part : lance l'app, convertit les fichiers connus, ou les fait choisir
+   * d'abord. */
   const select = useCallback(
     async (index: number) => {
+      if (mode === "apps") {
+        await openApp(index, []);
+        return;
+      }
       if (files.length > 0) {
         await convert(files, index, mode);
         return;
@@ -210,7 +290,7 @@ export function WheelApp() {
         pickingRef.current = false;
       }
     },
-    [convert, files, mode],
+    [convert, files, mode, openApp],
   );
 
   // Ouverte par un secouage : la roue attend le fichier, et se ferme s'il est lâché ailleurs
@@ -279,6 +359,7 @@ export function WheelApp() {
           openId.current = payload.id;
           // Une conversion encore en cours appartient à l'ouverture précédente
           busyRef.current = false;
+          setMode(configRef.current.modes[0]);
           setOpenMode(payload.mode);
           setFiles([]);
           setPointer(null);
@@ -290,6 +371,8 @@ export function WheelApp() {
         }),
       );
       keep(await listen(WHEEL_CLOSE_EVENT, close));
+      keep(await listen<WheelConfig>(WHEEL_CONFIG_EVENT, ({ payload }) => applyConfig(payload)));
+      applyConfig(await wheelConfig());
       keep(
         await listen<WheelFiles>(WHEEL_FILES_EVENT, ({ payload }) => {
           // Une sélection lue après une nouvelle ouverture n'a plus lieu d'être
@@ -347,7 +430,7 @@ export function WheelApp() {
       cancelled = true;
       cleanups.forEach((cleanup) => cleanup());
     };
-  }, [adoptMode, close, closeUnlessDragging, drop, watchDrop]);
+  }, [adoptMode, applyConfig, close, closeUnlessDragging, drop, watchDrop]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -362,6 +445,8 @@ export function WheelApp() {
       key={openCount}
       phase={phase}
       mode={mode}
+      next={next}
+      items={items}
       disabled={disabled}
       highlighted={highlighted}
       hub={hub}
@@ -369,7 +454,7 @@ export function WheelApp() {
       onPointer={setPointer}
       onSelect={(index) => void select(index)}
       onOutsideClick={close}
-      onToggleMode={() => setMode((current) => (current === "image" ? "video" : "image"))}
+      onToggleMode={() => next && setMode(next)}
     />
   );
 }

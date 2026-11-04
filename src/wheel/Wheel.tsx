@@ -1,7 +1,8 @@
 import { useRef, type CSSProperties, type MouseEvent } from "react";
+import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
-import { type Mode, formatsFor } from "./formats";
+import type { Mode, WheelItem } from "./formats";
 import {
   BUTTON_RADIUS,
   CENTER,
@@ -26,11 +27,16 @@ export interface Work {
   state: "working" | "done" | "failed";
   /** Avancement de 0 à 1, connu pour les vidéos. */
   progress?: number;
+  /** Une app ouverte plutôt qu'un fichier converti. */
+  opened?: boolean;
 }
 
 interface WheelProps {
   phase: Phase;
   mode: Mode;
+  /** Roue suivante au clic sur le centre, `null` si une seule roue est active. */
+  next: Mode | null;
+  items: readonly WheelItem[];
   disabled: Set<string>;
   highlighted: number | null;
   hub: HubText | null;
@@ -42,10 +48,19 @@ interface WheelProps {
   onToggleMode: () => void;
 }
 
-const MODE_NAMES: Record<Mode, string> = { image: "Images", video: "Vidéo" };
+const MODE_NAMES: Record<Mode, string> = { image: "Images", video: "Vidéo", apps: "Apps" };
 
 function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
-  return mode === "image" ? <GemIcon size={size} /> : <FilmIcon size={size} />;
+  if (mode === "video") return <FilmIcon size={size} />;
+  if (mode === "apps") return <AppsIcon size={size} />;
+  return <GemIcon size={size} />;
+}
+
+/** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. */
+function ItemContent({ item }: { item: WheelItem }) {
+  if (item.icon) return <img className="app-icon" src={item.icon} alt="" draggable={false} />;
+  if (item.empty) return <span className="item-add">+</span>;
+  return <span className="item-label">{item.label}</span>;
 }
 
 /** Anneau d'avancement d'une conversion vidéo. */
@@ -105,7 +120,7 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
       <>
         <span className="spinner" aria-hidden="true" />
         <span className="hub-label" data-tone="muted">
-          Conversion…
+          {work.opened ? "Ouverture…" : "Conversion…"}
         </span>
       </>
     );
@@ -118,7 +133,7 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
           {done ? "✓" : "!"}
         </span>
         <span className="hub-label" data-tone="action">
-          {done ? "Converti" : "Échec"}
+          {done ? (work.opened ? "Ouvert" : "Converti") : "Échec"}
         </span>
       </span>
     );
@@ -149,6 +164,8 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
 export function Wheel({
   phase,
   mode,
+  next,
+  items,
   disabled,
   highlighted,
   hub,
@@ -160,7 +177,6 @@ export function Wheel({
 }: WheelProps) {
   const wedge = useWedge(highlighted);
   const busy = work !== null;
-  const formats = formatsFor(mode);
 
   // Un clic n'importe où dans une part vaut un clic sur son bouton
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -170,7 +186,7 @@ export function Wheel({
       onOutsideClick();
       return;
     }
-    const index = usableSector(x, y, disabled, mode);
+    const index = usableSector(x, y, disabled, items);
     if (index !== null) onSelect(index);
   };
 
@@ -217,7 +233,7 @@ export function Wheel({
           })}
         </svg>
 
-        {formats.map((format, index) => {
+        {items.map((format, index) => {
           const [x, y] = buttonCenter(index);
           const style = {
             left: x - BUTTON_RADIUS,
@@ -233,10 +249,14 @@ export function Wheel({
               key={`${mode}-${format.id}`}
               type="button"
               className="format-button"
+              data-kind={
+                format.icon ? "icon" : format.empty ? "add" : mode === "apps" ? "name" : "format"
+              }
               style={style}
               disabled={isDisabled || busy}
               data-unavailable={isDisabled}
               data-active={highlighted === index}
+              title={mode === "apps" && !format.empty ? format.label : undefined}
               aria-label={
                 isDisabled
                   ? `${format.label}, indisponible`
@@ -246,13 +266,13 @@ export function Wheel({
               onBlur={() => onPointer(null)}
               onClick={() => onSelect(index)}
             >
-              {format.label}
+              <ItemContent item={format} />
             </button>
           );
         })}
 
-        {busy ? (
-          <div className="hub" aria-live="polite">
+        {busy || !next ? (
+          <div className="hub" title={hub?.title} aria-live="polite">
             <HubContent hub={hub} work={work} mode={mode} />
           </div>
         ) : (
@@ -260,7 +280,7 @@ export function Wheel({
             type="button"
             className="hub hub-toggle"
             title={hub?.title}
-            aria-label={mode === "image" ? "Passer en mode vidéo" : "Passer en mode images"}
+            aria-label={`Passer à la roue ${MODE_NAMES[next]}`}
             onClick={onToggleMode}
           >
             <HubContent hub={hub} work={work} mode={mode} />

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { OutputFormat, VideoFormat } from "./wheel/formats";
+import type { Mode, OutputFormat, VideoFormat } from "./wheel/formats";
 
 // Noms partagés avec src-tauri/src/app/wheel.rs
 export const WHEEL_OPEN_EVENT = "wheel://open";
@@ -78,6 +78,10 @@ export interface Settings {
   jpegQuality: number;
   webpQuality: number;
   avifQuality: number;
+  /** Ordre du clic au centre, et roues affichées ou non. */
+  modes: { id: Mode; enabled: boolean }[];
+  /** Une app (ou rien) par part, dans le sens horaire depuis le haut. */
+  apps: (AppSlot | null)[];
 }
 
 export interface SettingsView {
@@ -92,6 +96,8 @@ export interface SettingsView {
   finderPermission: "granted" | "denied" | "notAsked" | "unknown" | null;
   platform: "macos" | "windows" | "linux" | string;
   version: string;
+  /** Apps des parts, avec leurs icônes. */
+  apps: (AppView | null)[];
 }
 
 export const getSettings = () => invoke<SettingsView>("get_settings");
@@ -101,3 +107,33 @@ export const updateSettings = (settings: Settings) =>
 export const setLaunchAtLogin = (enabled: boolean) =>
   invoke<boolean>("set_launch_at_login", { enabled });
 export const openPermissionSettings = () => invoke("open_permission_settings");
+
+/** App d'une part de la roue des apps. */
+export interface AppView {
+  path: string;
+  name: string;
+  /** PNG en data URL, absent quand le système ne fournit pas d'icône. */
+  icon: string | null;
+}
+
+export interface AppSlot {
+  path: string;
+  name: string;
+}
+
+/** Roues actives dans l'ordre du clic au centre, et apps des parts. */
+export interface WheelConfig {
+  modes: Mode[];
+  apps: (AppView | null)[];
+}
+
+/** Réglages des roues modifiés : la roue relit sa configuration. */
+export const WHEEL_CONFIG_EVENT = "wheel://config";
+
+export const wheelConfig = () => invoke<WheelConfig>("wheel_config");
+/** Sélecteur d'application ; `null` si l'utilisateur annule. */
+export const pickApp = () => invoke<AppSlot | null>("pick_app");
+/** Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers s'il y en a. */
+export const launchApp = (slot: number, paths: string[]) =>
+  invoke("launch_app", { slot, paths });
+export const openSettings = () => invoke("open_settings");

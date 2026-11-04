@@ -84,3 +84,25 @@ pub fn convert(
         approximate: target == OutputFormat::Svg,
     })
 }
+
+/// Icône carrée en PNG à partir d'une image (PNG, SVG…), pour la roue des apps.
+pub fn icon_png(data: &[u8], size: u32) -> Option<Vec<u8>> {
+    let name = Path::new("icone");
+    let format = InputFormat::detect(data, name)?;
+    let image = decode::decode(data, format, name).ok()?;
+    let icon = image.resize(size, size, image::imageops::FilterType::Lanczos3);
+    encode::encode(&icon, OutputFormat::Png, &Quality::default()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn une_icone_svg_devient_un_png_carre() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="#e33"/></svg>"##;
+        let png = icon_png(svg, 128).unwrap();
+        let decoded = image::load_from_memory(&png).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (128, 128));
+    }
+}

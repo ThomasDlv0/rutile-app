@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { FileInfo } from "../ipc";
+import { appItems, formatsFor } from "./formats";
 import { CENTER, polar } from "./geometry";
-import { disabledFormats, hubFor, hubText, preferredMode, usableSector } from "./selection";
+import {
+  disabledFormats,
+  hubFor,
+  hubText,
+  nextMode,
+  preferredMode,
+  usableSector,
+} from "./selection";
 
 const file = (
   name: string,
@@ -12,6 +20,16 @@ const file = (
 const photo = file("photo.png", "png");
 const clip = file("clip.mov", null, "mov");
 const animation = file("chat.gif", "gif");
+const images = formatsFor("image");
+const videos = formatsFor("video");
+const apps = appItems([
+  { path: "/Applications/Signal.app", name: "Signal", icon: null },
+  null,
+  null,
+  null,
+  null,
+  null,
+]);
 
 describe("disabledFormats", () => {
   it("grise le format d'origine", () => {
@@ -55,9 +73,9 @@ describe("preferredMode", () => {
 describe("usableSector", () => {
   it("refuse la part du format grisé", () => {
     const [x, y] = polar(120, 0);
-    expect(usableSector(x, y, new Set(), "image")).toBe(0);
-    expect(usableSector(x, y, new Set(["png"]), "image")).toBeNull();
-    expect(usableSector(x, y, new Set(["png"]), "video")).toBe(0);
+    expect(usableSector(x, y, new Set(), images)).toBe(0);
+    expect(usableSector(x, y, new Set(["png"]), images)).toBeNull();
+    expect(usableSector(x, y, new Set(["png"]), videos)).toBe(0);
   });
 });
 
@@ -82,29 +100,65 @@ describe("hubFor", () => {
   const disabled = disabledFormats([photo], "image");
 
   it("annonce l'action de la part survolée", () => {
-    expect(hubFor(polar(120, 60), disabled, [photo], true, "image")).toEqual({
+    expect(hubFor(polar(120, 60), disabled, [photo], true, "image", images, null)).toEqual({
       label: "Convertir en JPEG",
       tone: "action",
     });
-    expect(hubFor(polar(120, 300), new Set(), [clip], false, "video")?.label).toBe(
+    expect(hubFor(polar(120, 300), new Set(), [clip], false, "video", videos, null)?.label).toBe(
       "Extraire le son en MP3",
     );
   });
 
   it("explique pourquoi le format d'origine est grisé", () => {
-    expect(hubFor(polar(120, 0), disabled, [photo], true, "image")?.label).toBe("Déjà en PNG");
+    expect(hubFor(polar(120, 0), disabled, [photo], true, "image", images, null)?.label).toBe(
+      "Déjà en PNG",
+    );
   });
 
-  it("le centre annule pendant un glisser, sinon il change de mode", () => {
+  it("le centre annule pendant un glisser, sinon il annonce la roue suivante", () => {
     const center: [number, number] = [CENTER, CENTER];
-    expect(hubFor(center, disabled, [photo], true, "image")?.label).toBe(
+    expect(hubFor(center, disabled, [photo], true, "image", images, "video")?.label).toBe(
       "Relâcher ici pour annuler",
     );
-    expect(hubFor(center, disabled, [photo], false, "image")?.label).toBe("Passer en vidéo");
-    expect(hubFor(center, new Set(), [], false, "video")?.label).toBe("Passer en images");
+    expect(hubFor(center, disabled, [photo], false, "image", images, "video")?.label).toBe(
+      "Passer en vidéo",
+    );
+    expect(hubFor(center, new Set(), [], false, "video", videos, "apps")?.label).toBe(
+      "Passer aux apps",
+    );
+    // Une seule roue active : le centre ne propose rien
+    expect(hubFor(center, new Set(), [], false, "apps", apps, null)).toBeNull();
   });
 
   it("revient au nom du fichier hors des parts", () => {
-    expect(hubFor(null, disabled, [photo], true, "image")?.label).toBe("photo.png");
+    expect(hubFor(null, disabled, [photo], true, "image", images, null)?.label).toBe("photo.png");
+  });
+
+  it("la roue des apps ouvre, ouvre avec, ou propose d'ajouter", () => {
+    const top = polar(120, 0);
+    expect(hubFor(top, new Set(), [], false, "apps", apps, null)?.label).toBe("Ouvrir Signal");
+    expect(hubFor(top, new Set(), [photo], true, "apps", apps, null)?.label).toBe(
+      "Ouvrir avec Signal",
+    );
+    expect(hubFor(polar(120, 60), new Set(), [], false, "apps", apps, null)?.label).toBe(
+      "Ajouter une app",
+    );
+  });
+});
+
+describe("nextMode", () => {
+  it("suit l'ordre des réglages et revient au début", () => {
+    expect(nextMode(["apps", "image", "video"], "apps")).toBe("image");
+    expect(nextMode(["apps", "image", "video"], "video")).toBe("apps");
+  });
+
+  it("ne change rien avec une seule roue", () => {
+    expect(nextMode(["apps"], "apps")).toBeNull();
+  });
+});
+
+describe("disabledFormats sur la roue des apps", () => {
+  it("ne grise jamais rien", () => {
+    expect(disabledFormats([file("notes.txt", null)], "apps").size).toBe(0);
   });
 });

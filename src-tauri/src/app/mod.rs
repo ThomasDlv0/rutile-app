@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod convert;
 pub mod launch;
 #[cfg(target_os = "macos")]

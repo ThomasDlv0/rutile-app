@@ -1,18 +1,44 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { AppsIcon } from "../AppsIcon";
+import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
 import {
   getSettings,
   openPermissionSettings,
+  pickApp,
   setLaunchAtLogin,
   updateSettings,
   type Settings,
   type SettingsView,
 } from "../ipc";
+import type { Mode } from "../wheel/formats";
 import { recordShortcut } from "./accelerator";
 import "./settings.css";
 
-type SectionId = "shortcut" | "shake" | "quality" | "startup";
+type SectionId = "wheels" | "apps" | "shortcut" | "shake" | "quality" | "startup";
+
+const MODE_LABELS: Record<Mode, string> = {
+  image: "Convertisseur d'images",
+  video: "Convertisseur de vidéos",
+  apps: "Applications",
+};
+
+function ModeIcon({ mode }: { mode: Mode }) {
+  if (mode === "video") return <FilmIcon size={22} />;
+  if (mode === "apps") return <AppsIcon size={22} />;
+  return <GemIcon size={22} />;
+}
+
+/** Position des parts de la roue, dans le sens horaire depuis le haut. */
+const SLOT_POSITIONS = [
+  "En haut",
+  "En haut à droite",
+  "En bas à droite",
+  "En bas",
+  "En bas à gauche",
+  "En haut à gauche",
+];
 
 // Aperçu dans un navigateur, sans Tauri
 const PREVIEW: SettingsView = {
@@ -23,6 +49,12 @@ const PREVIEW: SettingsView = {
     jpegQuality: 90,
     webpQuality: 85,
     avifQuality: 70,
+    modes: [
+      { id: "image", enabled: true },
+      { id: "video", enabled: true },
+      { id: "apps", enabled: true },
+    ],
+    apps: [{ path: "/Applications/Finder.app", name: "Finder" }, null, null, null, null, null],
   },
   shortcutLabel: "⌘⇧Espace",
   defaultShortcut: "CommandOrControl+Shift+Space",
@@ -32,6 +64,7 @@ const PREVIEW: SettingsView = {
   finderPermission: "granted",
   platform: "macos",
   version: "0.1.0",
+  apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
 };
 
 const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, string> = {
@@ -72,6 +105,29 @@ export function SettingsApp() {
   const change = (section: SectionId, patch: Partial<Settings>) =>
     void save(section, { ...settings, ...patch });
   const isMac = view.platform === "macos";
+  const enabledCount = settings.modes.filter((entry) => entry.enabled).length;
+  const appsEnabled = settings.modes.some((entry) => entry.id === "apps" && entry.enabled);
+
+  const moveMode = (index: number, delta: number) => {
+    const modes = [...settings.modes];
+    [modes[index], modes[index + delta]] = [modes[index + delta], modes[index]];
+    change("wheels", { modes });
+  };
+
+  const toggleMode = (index: number, enabled: boolean) => {
+    const modes = settings.modes.map((entry, i) => (i === index ? { ...entry, enabled } : entry));
+    change("wheels", { modes });
+  };
+
+  const setApp = (slot: number, app: Settings["apps"][number]) => {
+    const apps = settings.apps.map((current, i) => (i === slot ? app : current));
+    change("apps", { apps });
+  };
+
+  const chooseApp = async (slot: number) => {
+    const picked = isTauri() ? await pickApp() : null;
+    if (picked) setApp(slot, picked);
+  };
 
   const toggleLaunchAtLogin = async (enabled: boolean) => {
     setErrors((current) => ({ ...current, startup: undefined }));
@@ -89,9 +145,88 @@ export function SettingsApp() {
         <GemIcon size={40} />
         <div>
           <h1>Rutile</h1>
-          <p>Convertisseur d'images à roue radiale · version {view.version}</p>
+          <p>Images, vidéos et apps sur une roue radiale · version {view.version}</p>
         </div>
       </header>
+
+      <Section title="Roues" error={errors.wheels}>
+        {settings.modes.map((entry, index) => (
+          <Row
+            key={entry.id}
+            label={MODE_LABELS[entry.id]}
+            icon={<ModeIcon mode={entry.id} />}
+          >
+            <div className="order-buttons">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Monter ${MODE_LABELS[entry.id]}`}
+                disabled={index === 0}
+                onClick={() => moveMode(index, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Descendre ${MODE_LABELS[entry.id]}`}
+                disabled={index === settings.modes.length - 1}
+                onClick={() => moveMode(index, 1)}
+              >
+                ↓
+              </button>
+            </div>
+            <Toggle
+              checked={entry.enabled}
+              label={MODE_LABELS[entry.id]}
+              // La dernière roue active ne peut pas être désactivée
+              disabled={entry.enabled && enabledCount === 1}
+              onChange={(enabled) => toggleMode(index, enabled)}
+            />
+          </Row>
+        ))}
+        <p className="section-note">
+          La roue s'ouvre sur la première active ; un clic au centre passe à la suivante, dans
+          cet ordre.
+        </p>
+      </Section>
+
+      {appsEnabled && (
+        <Section title="Applications de la roue" error={errors.apps}>
+          {SLOT_POSITIONS.map((position, slot) => {
+            const app = view.apps[slot];
+            return (
+              <Row
+                key={position}
+                label={app ? app.name : "Aucune application"}
+                hint={position}
+                muted={!app}
+                icon={
+                  app?.icon ? (
+                    <img className="settings-app-icon" src={app.icon} alt="" />
+                  ) : (
+                    <span className="settings-app-placeholder" aria-hidden="true">
+                      {app ? app.name.slice(0, 1) : "+"}
+                    </span>
+                  )
+                }
+              >
+                <button type="button" className="link-button" onClick={() => void chooseApp(slot)}>
+                  {app ? "Changer…" : "Choisir…"}
+                </button>
+                {app && (
+                  <button type="button" className="link-button" onClick={() => setApp(slot, null)}>
+                    Retirer
+                  </button>
+                )}
+              </Row>
+            );
+          })}
+          <p className="section-note">
+            Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
+          </p>
+        </Section>
+      )}
 
       <Section title="Ouvrir la roue" error={errors.shortcut}>
         {view.shortcutsSupported ? (
@@ -228,9 +363,22 @@ function Section({ title, error, children }: { title: string; error?: string; ch
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Row({
+  label,
+  hint,
+  icon,
+  muted,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  icon?: ReactNode;
+  muted?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="settings-row">
+    <div className="settings-row" data-muted={muted}>
+      {icon && <span className="row-icon">{icon}</span>}
       <div className="row-text">
         <span className="row-label">{label}</span>
         {hint && <span className="row-hint">{hint}</span>}
@@ -243,10 +391,12 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 function Toggle({
   checked,
   label,
+  disabled,
   onChange,
 }: {
   checked: boolean;
   label: string;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
@@ -256,6 +406,7 @@ function Toggle({
       aria-checked={checked}
       aria-label={label}
       className="toggle"
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
       <span className="toggle-knob" />

@@ -173,6 +173,41 @@ body,
     0 0 18px var(--accent-glow);
 }
 
+/* Roue des apps : l'icône remplit le bouton, une part vide propose « + » */
+.app-icon {
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.item-label {
+  max-width: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Nom d'une app sans icône (Windows) : plus petit pour tenir dans le bouton */
+.format-button[data-kind="name"] .item-label {
+  font-size: 10.5px;
+}
+
+.item-add {
+  color: var(--text-muted);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.format-button[data-kind="add"] {
+  border-style: dashed;
+  background-color: transparent;
+}
+
+.format-button[data-kind="add"][data-active="true"] .item-add {
+  color: var(--text-strong);
+}
+
 .format-button:focus-visible {
   outline: 2px solid var(--text-muted);
   outline-offset: 2px;

@@ -44,8 +44,8 @@
       "deb"
     ],
     "category": "Utility",
-    "shortDescription": "Convertisseur d'images à roue radiale",
-    "longDescription": "Rutile tourne en arrière-plan et convertit une image en PNG, JPEG, WebP, AVIF, SVG ou ICO depuis une roue radiale, ouverte par un raccourci clavier ou en secouant le fichier pendant un glisser.",
+    "shortDescription": "Images, vidéos et apps sur une roue radiale",
+    "longDescription": "Rutile tourne en arrière-plan et, depuis une roue radiale ouverte par un raccourci clavier ou en secouant un fichier pendant un glisser, convertit des images (PNG, JPEG, WebP, AVIF, SVG, ICO) et des vidéos, ou lance les apps choisies.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -1,7 +1,7 @@
 [package]
 name = "rutile"
 version = "0.1.0"
-description = "Convertisseur d'images à roue radiale"
+description = "Images, vidéos et apps sur une roue radiale"
 edition = "2024"
 rust-version = "1.88"
 
@@ -16,6 +16,7 @@ crate-type = ["rlib"]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
+base64 = "0.23.1"
 rutile-converter = { path = "../crates/converter" }
 rutile-platform = { path = "../crates/platform" }
 rutile-shake-detector = { path = "../crates/shake_detector" }

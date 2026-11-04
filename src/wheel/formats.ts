@@ -1,3 +1,5 @@
+import type { AppView } from "../ipc";
+
 // Ordre des parts, dans le sens horaire en partant du haut
 export const OUTPUT_FORMATS = [
   { id: "png", label: "PNG" },
@@ -20,16 +22,32 @@ export const VIDEO_FORMATS = [
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number]["id"];
 export type VideoFormat = (typeof VIDEO_FORMATS)[number]["id"];
 
-/** Le clic au centre de la roue passe d'un mode à l'autre. */
-export type Mode = "image" | "video";
+/** Les roues entre lesquelles le clic au centre fait passer. */
+export type Mode = "image" | "video" | "apps";
 
-export interface WheelFormat {
-  id: OutputFormat | VideoFormat;
+export const ALL_MODES: readonly Mode[] = ["image", "video", "apps"];
+
+/** Contenu d'une part de la roue : un format, ou une app. */
+export interface WheelItem {
+  id: string;
   label: string;
   /** Texte du centre au survol, « Convertir en … » par défaut. */
   action?: string;
+  /** Icône d'app, en data URL. */
+  icon?: string;
+  /** Part de la roue des apps sans app choisie. */
+  empty?: boolean;
 }
 
-export function formatsFor(mode: Mode): readonly WheelFormat[] {
+export function formatsFor(mode: "image" | "video"): readonly WheelItem[] {
   return mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS;
+}
+
+/** Parts de la roue des apps, à partir des apps choisies dans les réglages. */
+export function appItems(apps: readonly (AppView | null)[]): WheelItem[] {
+  return Array.from({ length: 6 }, (_, index) => {
+    const app = apps[index];
+    if (!app) return { id: `app-${index}`, label: "+", action: "Ajouter une app", empty: true };
+    return { id: `app-${index}`, label: app.name, action: `Ouvrir ${app.name}`, icon: app.icon ?? undefined };
+  });
 }

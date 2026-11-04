@@ -54,6 +54,10 @@ pub fn run() {
             app::settings::update_settings,
             app::settings::set_launch_at_login,
             app::settings::open_permission_settings,
+            app::apps::wheel_config,
+            app::apps::pick_app,
+            app::apps::launch_app,
+            app::apps::open_settings,
         ])
         .setup(|app| {
             // Pas d'icône dans le Dock (LSUIElement fait de même pour l'app installée)

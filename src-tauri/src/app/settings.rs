@@ -9,10 +9,30 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as _;
 
+use super::apps::{self, APP_SLOTS, AppSlot, AppView};
 use super::shake::{self, ShakeSettings};
 use super::{shortcut, tray};
 
 pub const SETTINGS_LABEL: &str = "settings";
+
+/// Les roues entre lesquelles le clic au centre fait passer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WheelMode {
+    Image,
+    Video,
+    Apps,
+}
+
+impl WheelMode {
+    const ALL: [WheelMode; 3] = [WheelMode::Image, WheelMode::Video, WheelMode::Apps];
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModeEntry {
+    pub id: WheelMode,
+    pub enabled: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -23,6 +43,10 @@ pub struct Settings {
     pub jpeg_quality: u8,
     pub webp_quality: u8,
     pub avif_quality: u8,
+    /// Ordre du clic au centre, et roues affichées ou non.
+    pub modes: Vec<ModeEntry>,
+    /// Une app (ou rien) par part, dans le sens horaire depuis le haut.
+    pub apps: Vec<Option<AppSlot>>,
 }
 
 impl Default for Settings {
@@ -36,6 +60,10 @@ impl Default for Settings {
             jpeg_quality: quality.jpeg,
             webp_quality: quality.webp,
             avif_quality: quality.avif,
+            modes: WheelMode::ALL
+                .map(|id| ModeEntry { id, enabled: true })
+                .to_vec(),
+            apps: vec![None; APP_SLOTS],
         }
     }
 }
@@ -54,7 +82,32 @@ impl Settings {
         if self.shortcut.trim().is_empty() {
             self.shortcut = shortcut::DEFAULT_SHORTCUT.into();
         }
+        // Chaque roue une seule fois, les absentes ajoutées à la fin, et au moins une active
+        let mut modes: Vec<ModeEntry> = Vec::new();
+        for entry in self.modes {
+            if !modes.iter().any(|known| known.id == entry.id) {
+                modes.push(entry);
+            }
+        }
+        for id in WheelMode::ALL {
+            if !modes.iter().any(|known| known.id == id) {
+                modes.push(ModeEntry { id, enabled: true });
+            }
+        }
+        if !modes.iter().any(|entry| entry.enabled) {
+            modes[0].enabled = true;
+        }
+        self.modes = modes;
+        self.apps.resize(APP_SLOTS, None);
         self
+    }
+
+    pub fn enabled_modes(&self) -> Vec<WheelMode> {
+        self.modes
+            .iter()
+            .filter(|entry| entry.enabled)
+            .map(|entry| entry.id)
+            .collect()
     }
 
     pub fn quality(&self) -> Quality {
@@ -122,11 +175,14 @@ pub struct SettingsView {
     finder_permission: Option<&'static str>,
     platform: &'static str,
     version: String,
+    /// Apps des parts, avec leurs icônes.
+    apps: Vec<Option<AppView>>,
 }
 
 fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
     let settings = current(app);
     SettingsView {
+        apps: apps::views(app, &settings.apps),
         shortcut_label: shortcut::label(&settings.shortcut),
         settings,
         default_shortcut: shortcut::DEFAULT_SHORTCUT,
@@ -189,6 +245,9 @@ pub fn update_settings<R: Runtime>(
 
     *app.state::<SettingsState>().0.lock().unwrap() = applied.clone();
     save(&app, &applied)?;
+    if applied.modes != previous.modes || applied.apps != previous.apps {
+        apps::config_changed(&app);
+    }
     match problem {
         Some(err) => Err(err),
         None => Ok(view(&app)),
@@ -260,6 +319,42 @@ mod tests {
         assert_eq!(settings.jpeg_quality, 75);
         assert_eq!(settings.webp_quality, Settings::default().webp_quality);
         assert_eq!(settings.shortcut, shortcut::DEFAULT_SHORTCUT);
+    }
+
+    #[test]
+    fn chaque_roue_une_fois_et_au_moins_une_active() {
+        let settings = Settings {
+            modes: vec![
+                ModeEntry {
+                    id: WheelMode::Apps,
+                    enabled: false,
+                },
+                ModeEntry {
+                    id: WheelMode::Apps,
+                    enabled: true,
+                },
+                ModeEntry {
+                    id: WheelMode::Image,
+                    enabled: false,
+                },
+            ],
+            apps: vec![None; 2],
+            ..Settings::default()
+        }
+        .sanitized();
+        let order: Vec<WheelMode> = settings.modes.iter().map(|entry| entry.id).collect();
+        assert_eq!(order, [WheelMode::Apps, WheelMode::Image, WheelMode::Video]);
+        assert_eq!(settings.enabled_modes(), [WheelMode::Video]);
+        assert_eq!(settings.apps.len(), APP_SLOTS);
+
+        let none_enabled = Settings {
+            modes: WheelMode::ALL
+                .map(|id| ModeEntry { id, enabled: false })
+                .to_vec(),
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(none_enabled.enabled_modes(), [WheelMode::Image]);
     }
 
     #[test]
