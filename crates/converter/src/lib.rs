@@ -7,6 +7,7 @@ mod encode;
 mod error;
 mod format;
 mod output;
+pub mod video;
 
 use std::fs::File;
 use std::io::Read;

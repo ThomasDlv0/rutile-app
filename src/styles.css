@@ -210,8 +210,8 @@ body,
   pointer-events: none;
 }
 
-/* Sans fichier, le centre devient le bouton « Choisir… » */
-.hub-picker {
+/* Le centre est un bouton : un clic passe du mode Images au mode Vidéo */
+.hub-toggle {
   pointer-events: auto;
   cursor: pointer;
   font: inherit;
@@ -222,19 +222,51 @@ body,
     transform 180ms var(--spring);
 }
 
-.hub-picker:hover {
+.hub-toggle:hover {
   background-color: #262629;
   border-color: rgba(47, 124, 246, 0.6);
   transform: scale(1.04);
 }
 
-.hub-picker:hover .hub-label {
-  color: var(--text-strong);
+.hub-toggle:active {
+  transform: scale(0.97);
 }
 
-.hub-picker:focus-visible {
+.hub-toggle:focus-visible {
   outline: 2px solid var(--text-muted);
   outline-offset: 2px;
+}
+
+/* Changement de mode : l'icône se retourne comme une carte */
+.hub-mode {
+  animation: hub-flip 260ms var(--ease-out);
+}
+
+@keyframes hub-flip {
+  from {
+    opacity: 0;
+    transform: perspective(200px) rotateY(-90deg);
+  }
+}
+
+.progress-ring {
+  transform: rotate(-90deg);
+}
+
+.progress-track,
+.progress-value {
+  fill: none;
+  stroke-width: 3;
+}
+
+.progress-track {
+  stroke: rgba(255, 255, 255, 0.14);
+}
+
+.progress-value {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 200ms ease-out;
 }
 
 .hub-text {
@@ -276,13 +308,6 @@ body,
   font-size: 10.5px;
   line-height: 1.25;
   -webkit-line-clamp: 2;
-}
-
-.hub-label[data-tone="pick"] {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  transition: color 120ms ease-out;
 }
 
 .hub-label[data-tone="muted"] {
@@ -359,8 +384,13 @@ body,
   }
 
   .wedge,
-  .format-button {
+  .format-button,
+  .progress-value {
     transition-duration: 1ms;
+  }
+
+  .hub-mode {
+    animation-duration: 1ms;
   }
 
   .spinner {

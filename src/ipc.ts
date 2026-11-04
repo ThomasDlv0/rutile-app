@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { OutputFormat } from "./wheel/formats";
+import type { OutputFormat, VideoFormat } from "./wheel/formats";
 
 // Noms partagés avec src-tauri/src/app/wheel.rs
 export const WHEEL_OPEN_EVENT = "wheel://open";
@@ -8,13 +8,13 @@ export const WHEEL_CLOSE_EVENT = "wheel://close";
 /** Fichiers sélectionnés dans le Finder ou l'Explorateur, lus après l'ouverture. */
 export const WHEEL_FILES_EVENT = "wheel://files";
 export const WHEEL_DRAG_EVENT = "wheel://drag";
+/** Avancement d'une conversion vidéo, de 0 à 1. */
+export const WHEEL_PROGRESS_EVENT = "wheel://progress";
 
 export interface WheelOpened {
   id: number;
   /** `focus` : raccourci ou menu ; `drop` : secouage, sans focus, en attente du fichier glissé. */
   mode: "focus" | "drop";
-  /** Des fichiers vont suivre (`wheel://files` avec le même `id`). */
-  loadingFiles: boolean;
 }
 
 export interface WheelFiles {
@@ -32,11 +32,16 @@ export type WheelDrag =
 /** Format réel d'un fichier, lu dans son contenu par Rust. */
 export type InputFormat = OutputFormat | "gif" | "bmp" | "tiff";
 
+/** Conteneur d'une vidéo ; `other` est lisible par FFmpeg sans équivalent sur la roue. */
+export type VideoInput = "mp4" | "mov" | "webm" | "mkv" | "avi" | "other";
+
 export interface FileInfo {
   path: string;
   name: string;
   /** `null` si ce n'est pas une image prise en charge. */
   format: InputFormat | null;
+  /** `null` si ce n'est pas une vidéo reconnue. */
+  video: VideoInput | null;
 }
 
 export interface Outcome {
@@ -49,11 +54,22 @@ export const hideWheel = () => invoke("hide_wheel");
 /** `null` quand le système ne permet pas de le savoir. */
 export const primaryButtonPressed = () => invoke<boolean | null>("primary_button_pressed");
 export const inspectFiles = (paths: string[]) => invoke<FileInfo[]>("inspect_files", { paths });
-/** Sélecteur de fichiers du système ; liste vide si l'utilisateur annule. */
-export const pickFiles = () => invoke<FileInfo[]>("pick_files");
+/** Sélecteur de fichiers du système, filtré selon le mode ; liste vide si l'utilisateur annule. */
+export const pickFiles = (videos: boolean) => invoke<FileInfo[]>("pick_files", { videos });
 /** Se termine quand la conversion est finie ; Rust envoie la notification. */
 export const convertFiles = (paths: string[], format: OutputFormat) =>
   invoke<Outcome>("convert_files", { paths, format });
+/** Conversion par FFmpeg ; l'avancement arrive par `wheel://progress`. */
+export const convertVideos = (paths: string[], format: VideoFormat) =>
+  invoke<Outcome>("convert_videos", { paths, format });
+
+export interface VideoSupport {
+  available: boolean;
+  /** Commande d'installation de FFmpeg pour ce système. */
+  installHint: string;
+}
+
+export const videoSupport = () => invoke<VideoSupport>("video_support");
 
 export interface Settings {
   shortcut: string;

@@ -48,6 +48,8 @@ pub fn run() {
             app::wheel::pick_files,
             app::convert::inspect_files,
             app::convert::convert_files,
+            app::convert::convert_videos,
+            app::convert::video_support,
             app::settings::get_settings,
             app::settings::update_settings,
             app::settings::set_launch_at_login,

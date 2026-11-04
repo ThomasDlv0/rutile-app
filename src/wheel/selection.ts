@@ -1,29 +1,56 @@
 import type { FileInfo } from "../ipc";
 import { shortenMiddle } from "./fileName";
-import { OUTPUT_FORMATS, type OutputFormat } from "./formats";
+import { type Mode, formatsFor } from "./formats";
 import { isInsideHub, sectorAt } from "./geometry";
 
 export type Point = [number, number];
 
-const ALL_FORMATS = new Set<OutputFormat>(OUTPUT_FORMATS.map((format) => format.id));
+/** Vidéos qui ont leur propre part sur la roue (leur format y est grisé). */
+const VIDEO_ON_WHEEL = new Set(["mp4", "webm", "mov", "mkv"]);
 
-function isOutputFormat(format: string | null): format is OutputFormat {
-  return format !== null && ALL_FORMATS.has(format as OutputFormat);
+/** Le fichier peut-il être converti dans ce mode ? Un GIF animé passe aussi en vidéo. */
+export function convertible(file: FileInfo, mode: Mode): boolean {
+  return mode === "image" ? file.format !== null : file.video !== null || file.format === "gif";
 }
 
-/** Formats grisés : celui d'origine, ou tous si aucun fichier n'est une image lisible. */
-export function disabledFormats(files: FileInfo[]): Set<OutputFormat> {
+/** Part de la roue qui correspond au format d'origine du fichier, s'il y en a une. */
+function sourceFormat(file: FileInfo, mode: Mode): string | null {
+  if (mode === "video") {
+    if (file.video && VIDEO_ON_WHEEL.has(file.video)) return file.video;
+    return file.format === "gif" ? "gif" : null;
+  }
+  const ids = formatsFor("image").map((format) => format.id as string);
+  return file.format && ids.includes(file.format) ? file.format : null;
+}
+
+/** Formats grisés : celui d'origine, ou tous si aucun fichier n'est convertible dans ce mode. */
+export function disabledFormats(files: FileInfo[], mode: Mode): Set<string> {
+  const all = new Set<string>(formatsFor(mode).map((format) => format.id));
   if (files.length === 0) return new Set();
-  if (files.every((file) => file.format === null)) return new Set(ALL_FORMATS);
-  const first = files[0].format;
-  const sameFormat = files.every((file) => file.format === first);
-  return sameFormat && isOutputFormat(first) ? new Set([first]) : new Set();
+  if (!files.some((file) => convertible(file, mode))) return all;
+  const first = sourceFormat(files[0], mode);
+  const sameFormat = files.every((file) => sourceFormat(file, mode) === first);
+  return sameFormat && first !== null ? new Set([first]) : new Set();
+}
+
+/** Mode adapté aux fichiers : vidéo si ce ne sont que des vidéos, image si ce ne sont que
+ * des images ; `null` pour un mélange ou un GIF, qui va dans les deux. */
+export function preferredMode(files: FileInfo[]): Mode | null {
+  if (files.length === 0) return null;
+  if (files.every((file) => file.video !== null)) return "video";
+  if (files.every((file) => file.format !== null && file.format !== "gif")) return "image";
+  return null;
 }
 
 /** Part utilisable sous un point, ou `null` (centre, extérieur, format grisé). */
-export function usableSector(x: number, y: number, disabled: Set<OutputFormat>): number | null {
+export function usableSector(
+  x: number,
+  y: number,
+  disabled: Set<string>,
+  mode: Mode,
+): number | null {
   const index = sectorAt(x, y);
-  return index === null || disabled.has(OUTPUT_FORMATS[index].id) ? null : index;
+  return index === null || disabled.has(formatsFor(mode)[index].id) ? null : index;
 }
 
 export interface HubText {
@@ -35,10 +62,14 @@ export interface HubText {
 }
 
 /** Texte du cercle central pour les fichiers chargés ou glissés. */
-export function hubText(files: FileInfo[]): HubText | null {
+export function hubText(files: FileInfo[], mode: Mode): HubText | null {
   if (files.length === 0) return null;
-  const unsupported = files.every((file) => file.format === null);
-  const hint = unsupported ? "Format non pris en charge" : undefined;
+  const unsupported = !files.some((file) => convertible(file, mode));
+  const hint = unsupported
+    ? mode === "image"
+      ? "Format non pris en charge"
+      : "Ce n'est pas une vidéo"
+    : undefined;
   if (files.length === 1) {
     const { name } = files[0];
     return { label: shortenMiddle(name, unsupported ? 18 : 22), tone: "file", title: name, hint };
@@ -54,19 +85,28 @@ export function hubText(files: FileInfo[]): HubText | null {
 /** Le centre décrit ce que fera la roue à l'endroit pointé, sinon le fichier en cours. */
 export function hubFor(
   pointer: Point | null,
-  disabled: Set<OutputFormat>,
+  disabled: Set<string>,
   files: FileInfo[],
   dragging: boolean,
+  mode: Mode,
 ): HubText | null {
   if (pointer) {
     const index = sectorAt(...pointer);
     if (index !== null) {
-      const { id, label } = OUTPUT_FORMATS[index];
-      if (!disabled.has(id)) return { label: `Convertir en ${label}`, tone: "action" };
-      const unsupported = disabled.size === ALL_FORMATS.size;
-      return { label: unsupported ? "Format non pris en charge" : `Déjà en ${label}`, tone: "muted" };
+      const format = formatsFor(mode)[index];
+      if (!disabled.has(format.id)) {
+        return { label: format.action ?? `Convertir en ${format.label}`, tone: "action" };
+      }
+      const nothingConvertible = disabled.size === formatsFor(mode).length;
+      return {
+        label: nothingConvertible ? "Format non pris en charge" : `Déjà en ${format.label}`,
+        tone: "muted",
+      };
     }
-    if (dragging && isInsideHub(...pointer)) return { label: "Relâcher ici pour annuler", tone: "muted" };
+    if (isInsideHub(...pointer)) {
+      if (dragging) return { label: "Relâcher ici pour annuler", tone: "muted" };
+      return { label: mode === "image" ? "Passer en vidéo" : "Passer en images", tone: "action" };
+    }
   }
-  return hubText(files);
+  return hubText(files, mode);
 }

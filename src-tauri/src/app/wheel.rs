@@ -26,6 +26,10 @@ const WHEEL_SIZE: f64 = 360.0;
 const IMAGE_EXTENSIONS: [&str; 12] = [
     "png", "jpg", "jpeg", "webp", "avif", "gif", "bmp", "tif", "tiff", "ico", "svg", "svgz",
 ];
+const VIDEO_EXTENSIONS: [&str; 16] = [
+    "mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "mts", "m2ts",
+    "3gp", "ogv", "gif",
+];
 
 /// D'où viennent les fichiers proposés à l'ouverture de la roue.
 #[derive(Debug, PartialEq, Eq)]
@@ -63,8 +67,6 @@ enum Mode {
 struct Opened {
     id: u32,
     mode: Mode,
-    /// Des fichiers vont suivre (sélection en cours de lecture).
-    loading_files: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -109,7 +111,6 @@ fn open_on_main_thread<R: Runtime>(app: &AppHandle<R>, source: Source) {
     let opened = Opened {
         id,
         mode: Mode::Focus,
-        loading_files: lookup.is_some(),
     };
     if let Err(err) = present(app, opened) {
         eprintln!("rutile : impossible d'afficher la roue : {err}");
@@ -165,7 +166,6 @@ pub fn open_for_drop<R: Runtime>(app: &AppHandle<R>) {
         let opened = Opened {
             id,
             mode: Mode::Drop,
-            loading_files: false,
         };
         if let Err(err) = present(&handle, opened) {
             eprintln!("rutile : impossible d'afficher la roue : {err}");
@@ -345,16 +345,30 @@ pub fn primary_button_pressed() -> Option<bool> {
     platform::mouse::primary_button_pressed()
 }
 
-/// Sélecteur de fichiers du système, affiché au-dessus de la roue qui reste ouverte.
+/// Sélecteur de fichiers du système, affiché au-dessus de la roue qui reste ouverte ;
+/// il ne propose que les images ou que les vidéos, selon le mode de la roue.
 #[tauri::command]
-pub async fn pick_files<R: Runtime>(app: AppHandle<R>) -> Vec<FileInfo> {
+pub async fn pick_files<R: Runtime>(app: AppHandle<R>, videos: bool) -> Vec<FileInfo> {
+    let (title, filter, extensions): (_, _, &[&str]) = if videos {
+        (
+            "Choisir les vidéos à convertir",
+            "Vidéos",
+            &VIDEO_EXTENSIONS,
+        )
+    } else {
+        (
+            "Choisir les images à convertir",
+            "Images",
+            &IMAGE_EXTENSIONS,
+        )
+    };
     let dialog = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         dialog
             .dialog()
             .file()
-            .set_title("Choisir les images à convertir")
-            .add_filter("Images", &IMAGE_EXTENSIONS)
+            .set_title(title)
+            .add_filter(filter, extensions)
             .blocking_pick_files()
     })
     .await

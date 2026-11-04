@@ -1,7 +1,9 @@
 # Rutile
 
-Utilitaire léger qui tourne en arrière-plan et convertit des images grâce à une roue radiale :
-chaque part de la roue correspond à un format de sortie (PNG, JPEG, WebP, AVIF, SVG, ICO).
+Utilitaire léger qui tourne en arrière-plan et convertit des images et des vidéos grâce à une
+roue radiale : chaque part de la roue correspond à un format de sortie. Un clic au centre fait
+passer la roue du mode Images (PNG, JPEG, WebP, AVIF, SVG, ICO) au mode Vidéo (MP4, WebM, MOV,
+MKV, GIF, MP3).
 La roue s'ouvre avec un raccourci clavier, depuis l'icône de la barre système, ou en secouant
 un fichier pendant qu'on le glisse.
 
@@ -36,6 +38,21 @@ avertissement au premier lancement.
 - Paquet `.deb` pour Debian et Ubuntu : la commande `rutile` est alors dans le `PATH`.
 - L'icône de la barre système demande, sous GNOME, l'extension « AppIndicator ».
 
+### Pour le mode Vidéo : FFmpeg
+
+Rutile utilise le FFmpeg déjà installé sur la machine, sans l'embarquer.
+
+| Système | Installation |
+|---|---|
+| macOS | `brew install ffmpeg` |
+| Windows | `winget install Gyan.FFmpeg` |
+| Linux | `sudo apt install ffmpeg`, `sudo dnf install ffmpeg`, ou `brew install ffmpeg` sur Bazzite |
+
+Rutile le cherche dans le `PATH`, puis aux emplacements de Homebrew, MacPorts, winget et
+Linuxbrew (une app lancée depuis le Finder n'hérite pas du `PATH` du terminal). La variable
+`RUTILE_FFMPEG` peut aussi indiquer son chemin. Sans FFmpeg, le mode Vidéo l'indique au centre
+de la roue, avec la commande d'installation.
+
 ## Utilisation
 
 ### Ouvrir la roue
@@ -52,11 +69,18 @@ avertissement au premier lancement.
 Si une autre app utilise déjà le même raccourci, macOS le lui laisse sans rien signaler :
 il faut le libérer dans l'autre app ou en choisir un autre dans les réglages.
 
+### Images ou vidéos
+
+- Un clic au centre de la roue passe du mode Images au mode Vidéo, et inversement.
+- Des vidéos sélectionnées ou glissées font passer la roue en mode Vidéo d'elles-mêmes, et
+  des images en mode Images. Un GIF animé se convertit dans les deux modes.
+
 ### Choisir le fichier
 
 - Si le Finder ou l'Explorateur est au premier plan, la roue reprend les fichiers qui y sont
   sélectionnés : il suffit de cliquer sur un format. Le format d'origine est grisé.
-- Sinon, le centre de la roue devient un bouton « Choisir… ».
+- Sinon, un clic sur un format ouvre le sélecteur de fichiers (images ou vidéos selon le
+  mode), puis convertit aussitôt dans ce format.
 - On peut toujours glisser un ou plusieurs fichiers directement sur une part.
 - Linux : aucune interface commune ne donne la sélection des gestionnaires de fichiers.
   Avec Nautilus, un script dans `~/.local/share/nautilus/scripts/` (clic droit → Scripts)
@@ -72,6 +96,8 @@ il faut le libérer dans l'autre app ou en choisir un autre dans les réglages.
 - Glisser une image sur une part et relâcher : elle est convertie tout de suite. Pendant le
   glisser, la part visée s'éclaire en bleu et le centre annonce l'action (« Convertir en WebP »).
 - Relâcher au centre, sur un format grisé ou hors du disque annule.
+- Une vidéo affiche son avancement au centre. `Échap` ferme la roue sans arrêter la
+  conversion, et la notification arrive à la fin.
 - Pendant un glisser, quelques allers-retours rapides ouvrent la roue sous le curseur, sans
   voler le focus. Lâché ailleurs, ou sans fichier au-dessus d'elle pendant 3 secondes, la roue
   se referme. La sensibilité se règle de « franc » à « léger ».
@@ -150,6 +176,17 @@ Puis fermer et rouvrir la session, et activer le secouage dans les réglages.
 Les métadonnées (EXIF, profil de couleur ICC) ne sont pas conservées, seule l'orientation EXIF
 est appliquée : une photo en Display P3 peut donc légèrement changer de couleur.
 
+### Vidéos
+
+- Entrée : tout ce que lit FFmpeg (MP4, MOV, WebM, MKV, AVI, WMV, FLV, MPEG-TS…), et les GIF
+  animés. Le conteneur est reconnu d'après le contenu du fichier.
+- MP4 et MOV : H.264 (libx264, ou l'encodeur matériel du système à défaut) et son AAC ; les
+  dimensions impaires sont arrondies, comme l'exige le H.264.
+- WebM : VP9 et Opus. MKV : les pistes sont recopiées sans réencodage, c'est instantané.
+- GIF : 12 images par seconde, 640 px de large au plus, palette calculée sur la vidéo.
+- MP3 : seulement le son ; une vidéo muette le refuse avec un message clair.
+- Même règle de nom que pour les images : `clip.mp4`, puis `clip-1.mp4`… jamais d'écrasement.
+
 ## Développement
 
 Prérequis : [Rust](https://rustup.rs) stable, Node 22 et les
@@ -160,12 +197,13 @@ x86_64 (Windows, Linux, Mac Intel), `nasm` est aussi nécessaire au décodeur AV
 npm install
 npm run tauri dev        # lance l'app (icône dans la barre système)
 npm test                 # tests de l'interface
-cargo test --workspace   # conversion (48 paires de formats), secouage, réglages…
+cargo test --workspace   # conversion (48 paires d'images, vidéos avec FFmpeg), secouage…
 npm run tauri build      # paquets d'installation du système courant
 ```
 
 - Aperçu de l'interface sans Tauri : `npm run dev`, puis `http://localhost:1420/?file=photo.png`
-  pour la roue ou `http://localhost:1420/?view=settings` pour les réglages.
+  (ou `?file=clip.mov`) pour la roue, `http://localhost:1420/?view=settings` pour les réglages.
+- Les tests vidéo utilisent le FFmpeg de la machine ; sans lui, ils s'annoncent ignorés.
 - Conversion sans interface :
   `cargo run -p rutile-converter --release --example convert -- photo.jpg webp 80`
 - Le code système (`crates/platform`) n'a ni Tauri ni code C : il se vérifie pour les autres
@@ -187,7 +225,7 @@ Windows, l'AppImage et le `.deb`.
 src/                    interface React + TypeScript
   wheel/                roue : rendu, géométrie, survol, dépôt
   settings/             fenêtre de réglages
-crates/converter/       conversion d'images, sans Tauri
+crates/converter/       conversion d'images (Rust) et de vidéos (FFmpeg), sans Tauri
 crates/shake_detector/  reconnaissance du secouage à partir des mouvements de la souris
 crates/platform/        code propre à chaque système : souris, sélection, session
 src-tauri/              app Tauri

@@ -7,19 +7,30 @@ import {
   WHEEL_DRAG_EVENT,
   WHEEL_FILES_EVENT,
   WHEEL_OPEN_EVENT,
+  WHEEL_PROGRESS_EVENT,
   convertFiles,
+  convertVideos,
   hideWheel,
   inspectFiles,
   pickFiles,
   primaryButtonPressed,
+  videoSupport,
   wheelReady,
   type FileInfo,
+  type VideoSupport,
   type WheelDrag,
   type WheelFiles,
   type WheelOpened,
 } from "../ipc";
-import { OUTPUT_FORMATS } from "./formats";
-import { type HubText, type Point, disabledFormats, hubFor, usableSector } from "./selection";
+import { type Mode, OUTPUT_FORMATS, VIDEO_FORMATS, formatsFor } from "./formats";
+import {
+  type HubText,
+  type Point,
+  disabledFormats,
+  hubFor,
+  preferredMode,
+  usableSector,
+} from "./selection";
 import { type Phase, Wheel, type Work } from "./Wheel";
 
 /** Sans état du bouton de la souris (Wayland), délai laissé pour amener un fichier. */
@@ -37,40 +48,58 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const DROP_HINT: HubText = { label: "Déposez sur un format", tone: "muted" };
 
-// Hors de Tauri (aperçu dans un navigateur), `?file=photo.png` simule un fichier
+// Hors de Tauri (aperçu dans un navigateur), `?file=photo.png` ou `?file=clip.mov` simule
+// un fichier
 function previewFiles(): FileInfo[] {
   const name = new URLSearchParams(window.location.search).get("file");
   if (!name) return [];
   const extension = name.split(".").pop()?.toLowerCase();
   const id = extension === "jpg" ? "jpeg" : extension;
   const format = OUTPUT_FORMATS.find((f) => f.id === id)?.id ?? null;
-  return [{ path: name, name, format }];
+  const video = VIDEO_FORMATS.find((f) => f.id === id && f.id !== "gif" && f.id !== "mp3");
+  return [{ path: name, name, format, video: (video?.id as FileInfo["video"]) ?? null }];
 }
 
 export function WheelApp() {
   const [phase, setPhase] = useState<Phase>("closed");
   const [openCount, setOpenCount] = useState(0);
+  // Images ou vidéos : le clic au centre bascule, et les fichiers reçus le choisissent
+  const [mode, setMode] = useState<Mode>("image");
   // Fichiers connus sans glisser : sélection du Finder ou de l'Explorateur, `--open`, sélecteur
   const [files, setFiles] = useState<FileInfo[]>([]);
-  // La sélection est en cours de lecture : pas encore de bouton « Choisir… »
-  const [loadingFiles, setLoadingFiles] = useState(false);
-  const [mode, setMode] = useState<WheelOpened["mode"]>("focus");
+  const [openMode, setOpenMode] = useState<WheelOpened["mode"]>("focus");
   // Fichiers en cours de glisser au-dessus de la roue
   const [dragFiles, setDragFiles] = useState<FileInfo[] | null>(null);
   // Souris ou fichier glissé, en pixels CSS de la roue
   const [pointer, setPointer] = useState<Point | null>(null);
   const [work, setWork] = useState<Work | null>(null);
+  // Demandé à la première entrée en mode Vidéo
+  const [video, setVideo] = useState<VideoSupport | null>(null);
 
+  const videoMissing = mode === "video" && video?.available === false;
   const shown = dragFiles ?? files;
-  const disabled = useMemo(() => disabledFormats(shown), [shown]);
-  const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled);
-  const dropHint = mode === "drop" ? DROP_HINT : null;
-  const hub = hubFor(pointer, disabled, shown, dragFiles !== null) ?? dropHint;
-  const canPick = mode === "focus" && shown.length === 0 && !loadingFiles && work === null;
+  const disabled = useMemo(
+    () =>
+      videoMissing
+        ? new Set<string>(formatsFor("video").map((format) => format.id))
+        : disabledFormats(shown, mode),
+    [shown, mode, videoMissing],
+  );
+  const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, mode);
+  const missingHint: HubText | null =
+    videoMissing && video
+      ? { label: "FFmpeg introuvable", tone: "muted", hint: video.installHint }
+      : null;
+  const hub =
+    hubFor(pointer, disabled, shown, dragFiles !== null, mode) ??
+    missingHint ??
+    (openMode === "drop" ? DROP_HINT : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   const busyRef = useRef(false);
   const dragOverRef = useRef(false);
   const focusedRef = useRef(false);
@@ -79,6 +108,17 @@ export function WheelApp() {
   const openId = useRef(0);
   const pickingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
+
+  /** Les fichiers reçus choisissent le mode : vidéos d'un côté, images de l'autre. */
+  const adoptMode = useCallback((infos: FileInfo[]) => {
+    const preferred = preferredMode(infos);
+    if (preferred) setMode(preferred);
+    return preferred ?? modeRef.current;
+  }, []);
+
+  useEffect(() => {
+    if (mode === "video" && video === null && isTauri()) void videoSupport().then(setVideo);
+  }, [mode, video]);
 
   const close = useCallback(() => {
     if (phaseRef.current !== "open") return;
@@ -89,7 +129,6 @@ export function WheelApp() {
       setPointer(null);
       setDragFiles(null);
       setWork(null);
-      setLoadingFiles(false);
       if (isTauri()) {
         setFiles([]);
         void hideWheel();
@@ -105,20 +144,25 @@ export function WheelApp() {
   }, []);
 
   const convert = useCallback(
-    async (targets: FileInfo[], index: number) => {
+    async (targets: FileInfo[], index: number, targetMode: Mode) => {
       if (targets.length === 0 || busyRef.current) return;
+      // Une vidéo peut durer : si la roue est refermée puis rouverte entre-temps, le résultat
+      // de cette conversion ne concerne plus la nouvelle roue
+      const id = openId.current;
       busyRef.current = true;
-      setWork({ index, state: "working" });
+      setWork({ index, state: "working", progress: targetMode === "video" ? 0 : undefined });
+      const paths = targets.map((file) => file.path);
       let state: Work["state"] = "failed";
       try {
-        const outcome = await convertFiles(
-          targets.map((file) => file.path),
-          OUTPUT_FORMATS[index].id,
-        );
+        const outcome =
+          targetMode === "video"
+            ? await convertVideos(paths, VIDEO_FORMATS[index].id)
+            : await convertFiles(paths, OUTPUT_FORMATS[index].id);
         if (outcome.converted > 0) state = "done";
       } catch (error) {
         console.error("rutile : conversion interrompue", error);
       }
+      if (openId.current !== id) return;
       // Bref retour visuel ; le détail est dans la notification
       setWork({ index, state });
       await sleep(RESULT_VISIBLE_MS);
@@ -137,25 +181,37 @@ export function WheelApp() {
       busyRef.current = false;
       setDragFiles(null);
       setPointer(null);
-      const index = usableSector(x, y, disabledFormats(dropped));
+      const dropMode = adoptMode(dropped);
+      const index = usableSector(x, y, disabledFormats(dropped, dropMode), dropMode);
       // Lâché au centre, sur un format grisé ou hors du disque : rien à faire
       if (index === null) close();
-      else await convert(dropped, index);
+      else await convert(dropped, index, dropMode);
     },
-    [close, convert],
+    [adoptMode, close, convert],
   );
 
-  const pick = useCallback(async () => {
-    if (pickingRef.current || busyRef.current) return;
-    // Le sélecteur prend le clavier : la roue ne doit pas se fermer pour autant
-    pickingRef.current = true;
-    try {
-      const picked = await pickFiles();
-      if (picked.length > 0) setFiles(picked);
-    } finally {
-      pickingRef.current = false;
-    }
-  }, []);
+  /** Clic sur une part : convertit les fichiers connus, ou les fait choisir d'abord. */
+  const select = useCallback(
+    async (index: number) => {
+      if (files.length > 0) {
+        await convert(files, index, mode);
+        return;
+      }
+      if (pickingRef.current || busyRef.current) return;
+      // Le sélecteur prend le clavier : la roue ne doit pas se fermer pour autant
+      pickingRef.current = true;
+      try {
+        const picked = await pickFiles(mode === "video");
+        if (picked.length > 0) {
+          setFiles(picked);
+          await convert(picked, index, mode);
+        }
+      } finally {
+        pickingRef.current = false;
+      }
+    },
+    [convert, files, mode],
+  );
 
   // Ouverte par un secouage : la roue attend le fichier, et se ferme s'il est lâché ailleurs
   // ou s'il n'arrive pas dans les 3 secondes
@@ -205,7 +261,9 @@ export function WheelApp() {
 
   useEffect(() => {
     if (!isTauri()) {
-      setFiles(previewFiles());
+      const preview = previewFiles();
+      setFiles(preview);
+      adoptMode(preview);
       setPhase("open");
       return;
     }
@@ -219,9 +277,10 @@ export function WheelApp() {
         await listen<WheelOpened>(WHEEL_OPEN_EVENT, ({ payload }) => {
           window.clearTimeout(closeTimer.current);
           openId.current = payload.id;
-          setMode(payload.mode);
+          // Une conversion encore en cours appartient à l'ouverture précédente
+          busyRef.current = false;
+          setOpenMode(payload.mode);
           setFiles([]);
-          setLoadingFiles(payload.loadingFiles);
           setPointer(null);
           setWork(null);
           setOpenCount((count) => count + 1);
@@ -236,7 +295,14 @@ export function WheelApp() {
           // Une sélection lue après une nouvelle ouverture n'a plus lieu d'être
           if (payload.id !== openId.current) return;
           setFiles(payload.files);
-          setLoadingFiles(false);
+          adoptMode(payload.files);
+        }),
+      );
+      keep(
+        await listen<number>(WHEEL_PROGRESS_EVENT, ({ payload }) => {
+          setWork((current) =>
+            current?.state === "working" ? { ...current, progress: payload } : current,
+          );
         }),
       );
       keep(
@@ -254,7 +320,10 @@ export function WheelApp() {
               dragOverRef.current = true;
               setPointer([payload.x, payload.y]);
               void inspectFiles(payload.paths).then((infos) => {
-                if (dragOverRef.current) setDragFiles(infos);
+                if (!dragOverRef.current) return;
+                setDragFiles(infos);
+                // Une vidéo glissée retourne la roue en mode Vidéo pendant le glisser
+                adoptMode(infos);
               });
               break;
             case "over":
@@ -278,7 +347,7 @@ export function WheelApp() {
       cancelled = true;
       cleanups.forEach((cleanup) => cleanup());
     };
-  }, [close, closeUnlessDragging, drop, watchDrop]);
+  }, [adoptMode, close, closeUnlessDragging, drop, watchDrop]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -292,14 +361,15 @@ export function WheelApp() {
     <Wheel
       key={openCount}
       phase={phase}
+      mode={mode}
       disabled={disabled}
       highlighted={highlighted}
       hub={hub}
       work={work}
       onPointer={setPointer}
-      onSelect={(index) => void convert(files, index)}
-      onPickFile={canPick ? () => void pick() : undefined}
+      onSelect={(index) => void select(index)}
       onOutsideClick={close}
+      onToggleMode={() => setMode((current) => (current === "image" ? "video" : "image"))}
     />
   );
 }

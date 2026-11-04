@@ -1,7 +1,7 @@
 import { useRef, type CSSProperties, type MouseEvent } from "react";
+import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
-import { OUTPUT_FORMATS } from "./formats";
-import type { OutputFormat } from "./formats";
+import { type Mode, formatsFor } from "./formats";
 import {
   BUTTON_RADIUS,
   CENTER,
@@ -24,19 +24,47 @@ export type Phase = "open" | "closing" | "closed";
 export interface Work {
   index: number;
   state: "working" | "done" | "failed";
+  /** Avancement de 0 à 1, connu pour les vidéos. */
+  progress?: number;
 }
 
 interface WheelProps {
   phase: Phase;
-  disabled: Set<OutputFormat>;
+  mode: Mode;
+  disabled: Set<string>;
   highlighted: number | null;
   hub: HubText | null;
   work: Work | null;
   onPointer: (point: Point | null) => void;
   onSelect: (index: number) => void;
   onOutsideClick: () => void;
-  /** Présent quand aucun fichier n'est connu : le centre devient le bouton « Choisir… ». */
-  onPickFile?: () => void;
+  /** Clic au centre : passe du mode Images au mode Vidéo, et inversement. */
+  onToggleMode: () => void;
+}
+
+const MODE_NAMES: Record<Mode, string> = { image: "Images", video: "Vidéo" };
+
+function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
+  return mode === "image" ? <GemIcon size={size} /> : <FilmIcon size={size} />;
+}
+
+/** Anneau d'avancement d'une conversion vidéo. */
+function ProgressRing({ progress }: { progress: number }) {
+  const radius = 12;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <svg className="progress-ring" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+      <circle className="progress-track" cx="15" cy="15" r={radius} />
+      <circle
+        className="progress-value"
+        cx="15"
+        cy="15"
+        r={radius}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - progress)}
+      />
+    </svg>
+  );
 }
 
 function localPoint(event: MouseEvent<HTMLElement>): Point {
@@ -61,8 +89,18 @@ function useWedge(highlighted: number | null) {
   return { angle: angle.current, appearing };
 }
 
-function HubContent({ hub, work }: { hub: HubText | null; work: Work | null }) {
+function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | null; mode: Mode }) {
   if (work?.state === "working") {
+    if (work.progress !== undefined) {
+      return (
+        <>
+          <ProgressRing progress={work.progress} />
+          <span className="hub-label" data-tone="muted">
+            {Math.round(work.progress * 100)} %
+          </span>
+        </>
+      );
+    }
     return (
       <>
         <span className="spinner" aria-hidden="true" />
@@ -85,11 +123,21 @@ function HubContent({ hub, work }: { hub: HubText | null; work: Work | null }) {
       </span>
     );
   }
-  if (!hub) return <GemIcon size={38} />;
+  if (!hub) {
+    return (
+      // La clé rejoue le retournement à chaque changement de mode
+      <span className="hub-text hub-mode" key={mode}>
+        <ModeIcon mode={mode} size={30} />
+        <span className="hub-label" data-tone="muted">
+          {MODE_NAMES[mode]}
+        </span>
+      </span>
+    );
+  }
   return (
     // La clé relance l'animation d'apparition à chaque changement de texte
     <span className="hub-text" key={hub.label}>
-      {hub.tone === "file" && <GemIcon size={18} />}
+      {hub.tone === "file" && <ModeIcon mode={mode} size={18} />}
       <span className="hub-label" data-tone={hub.tone}>
         {hub.label}
       </span>
@@ -100,6 +148,7 @@ function HubContent({ hub, work }: { hub: HubText | null; work: Work | null }) {
 
 export function Wheel({
   phase,
+  mode,
   disabled,
   highlighted,
   hub,
@@ -107,10 +156,11 @@ export function Wheel({
   onPointer,
   onSelect,
   onOutsideClick,
-  onPickFile,
+  onToggleMode,
 }: WheelProps) {
   const wedge = useWedge(highlighted);
   const busy = work !== null;
+  const formats = formatsFor(mode);
 
   // Un clic n'importe où dans une part vaut un clic sur son bouton
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -120,7 +170,7 @@ export function Wheel({
       onOutsideClick();
       return;
     }
-    const index = usableSector(x, y, disabled);
+    const index = usableSector(x, y, disabled, mode);
     if (index !== null) onSelect(index);
   };
 
@@ -167,7 +217,7 @@ export function Wheel({
           })}
         </svg>
 
-        {OUTPUT_FORMATS.map((format, index) => {
+        {formats.map((format, index) => {
           const [x, y] = buttonCenter(index);
           const style = {
             left: x - BUTTON_RADIUS,
@@ -179,14 +229,19 @@ export function Wheel({
           const isDisabled = disabled.has(format.id);
           return (
             <button
-              key={format.id}
+              // La clé change avec le mode : les boutons réapparaissent l'un après l'autre
+              key={`${mode}-${format.id}`}
               type="button"
               className="format-button"
               style={style}
               disabled={isDisabled || busy}
               data-unavailable={isDisabled}
               data-active={highlighted === index}
-              aria-label={isDisabled ? `${format.label}, indisponible` : `Convertir en ${format.label}`}
+              aria-label={
+                isDisabled
+                  ? `${format.label}, indisponible`
+                  : (format.action ?? `Convertir en ${format.label}`)
+              }
               onFocus={() => onPointer(buttonCenter(index))}
               onBlur={() => onPointer(null)}
               onClick={() => onSelect(index)}
@@ -196,22 +251,20 @@ export function Wheel({
           );
         })}
 
-        {onPickFile && !hub && !work ? (
+        {busy ? (
+          <div className="hub" aria-live="polite">
+            <HubContent hub={hub} work={work} mode={mode} />
+          </div>
+        ) : (
           <button
             type="button"
-            className="hub hub-picker"
-            aria-label="Choisir les images à convertir"
-            onClick={onPickFile}
+            className="hub hub-toggle"
+            title={hub?.title}
+            aria-label={mode === "image" ? "Passer en mode vidéo" : "Passer en mode images"}
+            onClick={onToggleMode}
           >
-            <GemIcon size={26} />
-            <span className="hub-label" data-tone="pick">
-              Choisir…
-            </span>
+            <HubContent hub={hub} work={work} mode={mode} />
           </button>
-        ) : (
-          <div className="hub" title={hub?.title} aria-live="polite">
-            <HubContent hub={hub} work={work} />
-          </div>
         )}
       </div>
     </div>
