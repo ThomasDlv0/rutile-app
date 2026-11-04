@@ -1,0 +1,282 @@
+# Release déclenchée par un tag `v*` : paquets des trois systèmes avec tauri-action, auto-test
+# et lancement de l'app installée sur chaque système, puis publication si tout passe.
+#
+#   git tag v1.0.0 && git push origin v1.0.0
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      # Le tag, package.json, Cargo.toml et tauri.conf.json doivent annoncer la même version
+      - id: check
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          app="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          npm="$(node -p "require('./package.json').version")"
+          cargo="$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)"
+          echo "tag $tag · tauri.conf.json $app · package.json $npm · Cargo.toml $cargo"
+          if [ "$tag" != "$app" ] || [ "$tag" != "$npm" ] || [ "$tag" != "$cargo" ]; then
+            echo "::error::Le tag et les fichiers n'annoncent pas la même version"
+            exit 1
+          fi
+          test -f "docs/release-notes/v$tag.md" || { echo "::error::Notes de version absentes"; exit 1; }
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Paquets (${{ matrix.name }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Un seul .dmg pour Apple Silicon et Intel
+          - name: macos
+            os: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            ffmpeg: universal-apple-darwin
+            args: --target universal-apple-darwin --bundles dmg
+            bundles: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          - name: windows
+            os: windows-latest
+            rust-targets: ""
+            ffmpeg: x86_64-pc-windows-msvc
+            args: --bundles nsis,msi
+            bundles: |
+              target/release/bundle/nsis/*-setup.exe
+              target/release/bundle/msi/*.msi
+          # Ubuntu 22.04 : une glibc assez ancienne pour que l'AppImage tourne partout (Bazzite compris)
+          - name: linux
+            os: ubuntu-22.04
+            rust-targets: ""
+            ffmpeg: x86_64-unknown-linux-gnu
+            args: --bundles appimage,deb,rpm
+            bundles: |
+              target/release/bundle/appimage/*.AppImage
+              target/release/bundle/deb/*.deb
+              target/release/bundle/rpm/*.rpm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dépendances système (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev patchelf nasm
+
+      # Le décodeur AVIF (rav1d) assemble du code avec nasm sur x86_64
+      - uses: ilammy/setup-nasm@v1
+        if: runner.os != 'Linux'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.name }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: FFmpeg embarqué
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh ${{ matrix.ffmpeg }}
+
+      - uses: tauri-apps/tauri-action@v1
+        with:
+          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundles-${{ matrix.name }}
+          path: ${{ matrix.bundles }}
+          if-no-files-found: error
+
+  test-macos:
+    name: Test (macOS)
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles-macos
+          path: bundles
+
+      - name: App extraite du .dmg, auto-test
+        run: |
+          dmg="$(find bundles -name '*.dmg' | head -1)"
+          mount="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount"
+          cp -R "$mount/Rutile.app" "$RUNNER_TEMP/"
+          hdiutil detach "$mount"
+          bin="$RUNNER_TEMP/Rutile.app/Contents/MacOS"
+          lipo -info "$bin/rutile"
+          lipo -info "$bin/rutile-ffmpeg"
+          codesign -dv "$RUNNER_TEMP/Rutile.app" 2>&1 | grep -E "Identifier|Signature"
+          "$bin/rutile" --self-test
+
+      - name: Auto-test en Intel (Rosetta)
+        run: |
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 "$RUNNER_TEMP/Rutile.app/Contents/MacOS/rutile" --self-test
+          else
+            echo "::warning::Rosetta absent : la partie Intel n'est pas testée"
+          fi
+
+  test-windows:
+    name: Test (Windows)
+    needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles-windows
+          path: bundles
+
+      - name: Installation silencieuse (NSIS) et auto-test
+        run: |
+          $setup = Get-ChildItem bundles -Recurse -Filter '*-setup.exe' | Select-Object -First 1
+          $install = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Installation NSIS en échec (code $($install.ExitCode))" }
+          $exe = Join-Path $env:LOCALAPPDATA 'Rutile\rutile.exe'
+          if (-not (Test-Path $exe)) {
+            $exe = (Get-ChildItem $env:LOCALAPPDATA -Recurse -Depth 3 -Filter rutile.exe -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          }
+          if (-not $exe) { throw "rutile.exe introuvable après l'installation" }
+          "Installé : $exe"
+          Get-ChildItem (Split-Path $exe) | Format-Table Name, Length
+          # Une app Windows sans console écrit dans les fichiers redirigés
+          $test = Start-Process -FilePath $exe -ArgumentList '--self-test' -PassThru -NoNewWindow `
+            -RedirectStandardOutput self-test.txt -RedirectStandardError self-test-erreurs.txt
+          $null = $test.Handle
+          $test.WaitForExit()
+          Get-Content self-test.txt, self-test-erreurs.txt
+          if ($test.ExitCode -ne 0) { throw "Auto-test en échec (code $($test.ExitCode))" }
+          "RUTILE_EXE=$exe" >> $env:GITHUB_ENV
+
+      - name: Lancement normal pendant 10 s
+        run: |
+          $app = Start-Process -FilePath $env:RUTILE_EXE -PassThru
+          Start-Sleep -Seconds 10
+          if ($app.HasExited) { throw "L'app s'est arrêtée avant 10 s (code $($app.ExitCode))" }
+          Stop-Process -Id $app.Id -Force
+          "L'app tournait encore après 10 s."
+
+      - name: Installation silencieuse (MSI) et auto-test
+        run: |
+          $msi = Get-ChildItem bundles -Recurse -Filter '*.msi' | Select-Object -First 1
+          $install = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v msi.log" -PassThru -Wait
+          if ($install.ExitCode -ne 0) { Get-Content msi.log -Tail 40; throw "Installation MSI en échec (code $($install.ExitCode))" }
+          $exe = Join-Path $env:ProgramFiles 'Rutile\rutile.exe'
+          if (-not (Test-Path $exe)) { throw "rutile.exe introuvable dans Program Files" }
+          $test = Start-Process -FilePath $exe -ArgumentList '--self-test' -PassThru -NoNewWindow `
+            -RedirectStandardOutput msi-self-test.txt -RedirectStandardError msi-self-test-erreurs.txt
+          $null = $test.Handle
+          $test.WaitForExit()
+          Get-Content msi-self-test.txt, msi-self-test-erreurs.txt
+          if ($test.ExitCode -ne 0) { throw "Auto-test (MSI) en échec (code $($test.ExitCode))" }
+
+  test-linux:
+    name: Test (Linux)
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles-linux
+          path: bundles
+
+      - name: Outils de test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus-x11 rpm
+
+      - name: AppImage, auto-test
+        run: |
+          app="$(find bundles -name '*.AppImage' | head -1)"
+          chmod +x "$app"
+          xvfb-run -a "$app" --appimage-extract-and-run --self-test
+
+      - name: AppImage, lancement normal pendant 10 s
+        run: |
+          app="$(find bundles -name '*.AppImage' | head -1)"
+          set +e
+          dbus-run-session -- xvfb-run -a timeout 10 "$app" --appimage-extract-and-run
+          code=$?
+          set -e
+          # 124 : arrêtée par timeout, donc encore en vie au bout de 10 s
+          if [ "$code" -ne 124 ]; then
+            echo "::error::L'app s'est arrêtée avant 10 s (code $code)"
+            exit 1
+          fi
+          echo "L'app tournait encore après 10 s."
+
+      - name: Paquet .deb, installation et auto-test
+        run: |
+          sudo apt-get install -y "./$(find bundles -name '*.deb' | head -1)"
+          test -x /usr/bin/rutile-ffmpeg
+          xvfb-run -a rutile --self-test
+
+      - name: Paquet .rpm, contenu
+        run: |
+          rpm -qlp "$(find bundles -name '*.rpm' | head -1)" | tee rpm.txt
+          grep -qx '/usr/bin/rutile' rpm.txt
+          grep -qx '/usr/bin/rutile-ffmpeg' rpm.txt
+
+  release:
+    name: Publication
+    needs: [version, test-macos, test-windows, test-linux]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundles-*
+          path: bundles
+
+      - name: Noms clairs et empreintes
+        run: |
+          mkdir release
+          pick() { find bundles -name "$1" | head -1; }
+          cp "$(pick '*.dmg')" "release/Rutile_${VERSION}_macos_universal.dmg"
+          cp "$(pick '*-setup.exe')" "release/Rutile_${VERSION}_windows_x64_setup.exe"
+          cp "$(pick '*.msi')" "release/Rutile_${VERSION}_windows_x64.msi"
+          cp "$(pick '*.AppImage')" "release/Rutile_${VERSION}_linux_x86_64.AppImage"
+          cp "$(pick '*.deb')" "release/Rutile_${VERSION}_linux_amd64.deb"
+          cp "$(pick '*.rpm')" "release/Rutile_${VERSION}_linux_x86_64.rpm"
+          (cd release && sha256sum -- * > SHA256SUMS.txt)
+          ls -la release
+
+      - name: Release GitHub
+        run: |
+          notes="docs/release-notes/v${VERSION}.md"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Rutile $VERSION" --notes-file "$notes" --draft=false
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --title "Rutile $VERSION" \
+              --notes-file "$notes" --verify-tag
+          fi

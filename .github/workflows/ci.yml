@@ -1,0 +1,84 @@
+# À chaque push : interface (types, tests, compilation), Rust (clippy, tests), app complète et
+# auto-test des conversions, sur macOS, Windows et Linux, avec le FFmpeg embarqué dans l'app.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: CI (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+          - name: Linux
+            os: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Dépendances système (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev patchelf nasm
+
+      # Le décodeur AVIF (rav1d) assemble du code avec nasm sur x86_64
+      - uses: ilammy/setup-nasm@v1
+        if: runner.os == 'Windows'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Le FFmpeg qui sera embarqué : les tests vidéo et l'auto-test l'utilisent
+      - name: FFmpeg embarqué
+        run: |
+          bash scripts/fetch-ffmpeg.sh
+          path="$(realpath src-tauri/binaries/rutile-ffmpeg-*)"
+          if [ "$RUNNER_OS" = Windows ]; then path="$(cygpath -w "$path")"; fi
+          echo "RUTILE_FFMPEG=$path" >> "$GITHUB_ENV"
+
+      - name: Interface (types, tests, compilation)
+        run: |
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests Rust
+        run: cargo test --workspace
+
+      - name: Compilation de l'app
+        run: npx tauri build --debug --no-bundle
+
+      - name: Auto-test des conversions
+        run: |
+          app=target/debug/rutile
+          if [ "$RUNNER_OS" = Windows ]; then app="$app.exe"; fi
+          "$app" --self-test
