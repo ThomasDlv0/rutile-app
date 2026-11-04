@@ -17,10 +17,12 @@ import {
   openSettings,
   pickFiles,
   primaryButtonPressed,
+  shareFiles,
   videoSupport,
   wheelConfig,
   wheelReady,
   type FileInfo,
+  type ShareTarget,
   type WheelConfig,
   type VideoSupport,
   type WheelDrag,
@@ -32,9 +34,13 @@ import {
   type Mode,
   OUTPUT_FORMATS,
   VIDEO_FORMATS,
+  type WheelItem,
   appItems,
+  colorize,
   formatsFor,
+  shareItems,
 } from "./formats";
+import { isInsideHub } from "./geometry";
 import {
   type HubText,
   type Point,
@@ -59,15 +65,62 @@ const RESULT_VISIBLE_MS = 450;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const DROP_HINT: HubText = { label: "Déposez sur un format", tone: "muted" };
+/** Indication du centre quand la roue attend un fichier secoué, selon la roue. */
+const DROP_HINTS: Record<Mode, HubText | null> = {
+  image: { label: "Déposez sur un format", tone: "muted" },
+  video: { label: "Déposez sur un format", tone: "muted" },
+  apps: null,
+  share: { label: "Déposez sur un partage", tone: "muted" },
+};
 
-// Aperçu dans un navigateur : toutes les roues, et quelques apps sans icône
+const OPEN_LABELS = { working: "Ouverture…", done: "Ouvert" };
+/** Un service ouvre sa fenêtre (choix de l'appareil, du destinataire) ; le reste copie. */
+const SHARE_LABELS: Record<ShareTarget["kind"], Work["labels"]> = {
+  service: OPEN_LABELS,
+  folder: { working: "Copie…", done: "Copié" },
+  app: { working: "Copie…", done: "Copié" },
+};
+
+// Aperçu dans un navigateur : toutes les roues, et quelques apps et partages sans icône
 const PREVIEW_CONFIG: WheelConfig = {
   modes: [...ALL_MODES],
+  remember: false,
+  dwellMs: 1000,
+  colors: {},
+  highlight: null,
   apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
     name ? { path: name, name, icon: null } : null,
   ),
+  share: [
+    { kind: "service", id: "airdrop", name: "AirDrop", icon: null },
+    { kind: "service", id: "messages", name: "Messages", icon: null },
+    { kind: "app", path: "Signal", name: "Signal", icon: null },
+    null,
+    { kind: "folder", path: "Drive", name: "Google Drive", icon: null },
+    { kind: "service", id: "mail", name: "Mail", icon: null },
+  ],
 };
+
+function itemsFor(mode: Mode, config: WheelConfig): readonly WheelItem[] {
+  if (mode === "apps") return appItems(config.apps);
+  if (mode === "share") return shareItems(config.share);
+  return colorize(formatsFor(mode), config.colors);
+}
+
+/** Roue où mène un fichier glissé maintenu au centre : le partage depuis une autre roue, et
+ * depuis le partage, le convertisseur du fichier (ou la roue d'avant). */
+function dwellTargetFor(
+  mode: Mode,
+  files: FileInfo[],
+  modes: readonly Mode[],
+  beforeShare: Mode | null,
+): Mode | null {
+  if (mode !== "share") return modes.includes("share") ? "share" : null;
+  const candidates: (Mode | null)[] = [preferredMode(files), beforeShare, "image", "video"];
+  const usable = (candidate: Mode | null) =>
+    candidate !== null && candidate !== "share" && modes.includes(candidate);
+  return candidates.find(usable) ?? null;
+}
 
 // Hors de Tauri (aperçu dans un navigateur), `?file=photo.png` ou `?file=clip.mov` simule
 // un fichier
@@ -100,7 +153,7 @@ export function WheelApp() {
   const [video, setVideo] = useState<VideoSupport | null>(null);
 
   const videoMissing = mode === "video" && video?.available === false;
-  const items = mode === "apps" ? appItems(config.apps) : formatsFor(mode);
+  const items = itemsFor(mode, config);
   const next = nextMode(config.modes, mode);
   const shown = dragFiles ?? files;
   const disabled = useMemo(
@@ -111,15 +164,24 @@ export function WheelApp() {
     [shown, mode, videoMissing],
   );
   const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, items);
+  // Fichier glissé maintenu au centre : bascule entre conversion et partage. Après une bascule,
+  // il faut quitter le centre puis y revenir pour rebasculer
+  const [dwellArmed, setDwellArmed] = useState(true);
+  const beforeShareRef = useRef<Mode | null>(null);
+  const inHub = pointer !== null && isInsideHub(...pointer);
+  const dwellTarget =
+    dragFiles !== null && dwellArmed
+      ? dwellTargetFor(mode, dragFiles, config.modes, beforeShareRef.current)
+      : null;
+  const dwelling = dwellTarget !== null && work === null && inHub;
   const missingHint: HubText | null =
     videoMissing && video
       ? { label: "FFmpeg introuvable", tone: "muted", hint: video.installHint }
       : null;
-  const dropHint = mode === "apps" ? null : DROP_HINT;
   const hub =
-    hubFor(pointer, disabled, shown, dragFiles !== null, mode, items, next) ??
+    hubFor(pointer, disabled, shown, dragFiles !== null, mode, items, next, dwellTarget) ??
     missingHint ??
-    (openMode === "drop" ? dropHint : null);
+    (openMode === "drop" ? DROP_HINTS[mode] : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
   const phaseRef = useRef(phase);
@@ -136,18 +198,44 @@ export function WheelApp() {
   const openId = useRef(0);
   const pickingRef = useRef(false);
   const closeTimer = useRef<number | undefined>(undefined);
+  // Roue choisie par l'utilisateur depuis l'ouverture (clic ou maintien au centre) : les
+  // fichiers ne la changent plus
+  const chosenRef = useRef(false);
 
-  /** Les fichiers reçus passent du convertisseur d'images à celui de vidéos, et inversement.
-   * La roue des apps, choisie exprès, reste affichée. */
+  /** Une image ouvre le convertisseur d'images, une vidéo celui de vidéos, quelle que soit la
+   * roue d'ouverture ; une roue choisie à la main reste affichée. */
   const adoptMode = useCallback((infos: FileInfo[]): Mode => {
     const current = modeRef.current;
     const preferred = preferredMode(infos);
-    if (current === "apps" || !preferred || !configRef.current.modes.includes(preferred)) {
+    if (chosenRef.current || !preferred || !configRef.current.modes.includes(preferred)) {
       return current;
     }
+    modeRef.current = preferred;
     setMode(preferred);
     return preferred;
   }, []);
+
+  /** Clic au centre, ou fichier maintenu au centre : la roue est choisie à la main. */
+  const chooseMode = useCallback((chosen: Mode) => {
+    chosenRef.current = true;
+    modeRef.current = chosen;
+    setMode(chosen);
+  }, []);
+
+  useEffect(() => {
+    if (!inHub) setDwellArmed(true);
+  }, [inHub]);
+
+  // Quitter le centre avant la fin annule : le minuteur est défait avec `dwelling`
+  useEffect(() => {
+    if (!dwelling || !dwellTarget) return;
+    const timer = window.setTimeout(() => {
+      if (dwellTarget === "share") beforeShareRef.current = modeRef.current;
+      setDwellArmed(false);
+      chooseMode(dwellTarget);
+    }, config.dwellMs);
+    return () => window.clearTimeout(timer);
+  }, [dwelling, dwellTarget, config.dwellMs, chooseMode]);
 
   const applyConfig = useCallback((next: WheelConfig) => {
     configRef.current = next;
@@ -211,33 +299,59 @@ export function WheelApp() {
     [close],
   );
 
+  /** Action rapide depuis la part `index` (ouvrir une app, partager) : son issue s'affiche
+   * brièvement au centre, puis la roue se ferme. */
+  const perform = useCallback(
+    async (index: number, labels: Work["labels"], action: () => Promise<unknown>) => {
+      if (busyRef.current) return;
+      const id = openId.current;
+      busyRef.current = true;
+      setWork({ index, state: "working", labels });
+      let state: Work["state"] = "failed";
+      try {
+        await action();
+        state = "done";
+      } catch (error) {
+        console.error("rutile : action impossible", error);
+      }
+      if (openId.current !== id) return;
+      setWork({ index, state, labels });
+      await sleep(RESULT_VISIBLE_MS);
+      busyRef.current = false;
+      close();
+    },
+    [close],
+  );
+
   /** Lance l'app d'une part, en lui faisant ouvrir les fichiers déposés. Une part vide
    * ouvre les réglages pour en choisir une. */
   const openApp = useCallback(
     async (index: number, paths: string[]) => {
       if (busyRef.current) return;
       if (!configRef.current.apps[index]) {
-        void openSettings();
+        void openSettings("apps");
         close();
         return;
       }
-      const id = openId.current;
-      busyRef.current = true;
-      setWork({ index, state: "working", opened: true });
-      let state: Work["state"] = "failed";
-      try {
-        await launchApp(index, paths);
-        state = "done";
-      } catch (error) {
-        console.error("rutile : lancement impossible", error);
-      }
-      if (openId.current !== id) return;
-      setWork({ index, state, opened: true });
-      await sleep(RESULT_VISIBLE_MS);
-      busyRef.current = false;
-      close();
+      await perform(index, OPEN_LABELS, () => launchApp(index, paths));
     },
-    [close],
+    [close, perform],
+  );
+
+  /** Partage les fichiers avec la destination d'une part. Une part vide ouvre les réglages
+   * pour en choisir une. */
+  const shareTo = useCallback(
+    async (index: number, paths: string[]) => {
+      if (busyRef.current) return;
+      const target = configRef.current.share[index];
+      if (!target) {
+        void openSettings("share");
+        close();
+        return;
+      }
+      await perform(index, SHARE_LABELS[target.kind], () => shareFiles(index, paths));
+    },
+    [close, perform],
   );
 
   const drop = useCallback(
@@ -250,10 +364,14 @@ export function WheelApp() {
       setDragFiles(null);
       setPointer(null);
       const dropMode = adoptMode(dropped);
-      if (dropMode === "apps") {
-        const index = usableSector(x, y, new Set(), appItems(configRef.current.apps));
-        if (index === null || !configRef.current.apps[index]) close();
-        else await openApp(index, paths);
+      if (dropMode === "apps" || dropMode === "share") {
+        const config = configRef.current;
+        const index = usableSector(x, y, new Set(), itemsFor(dropMode, config));
+        const filled = index !== null && (dropMode === "apps" ? config.apps : config.share)[index];
+        // Lâché sur une part vide : rien à faire, les réglages s'ouvrent au clic seulement
+        if (index === null || !filled) close();
+        else if (dropMode === "apps") await openApp(index, paths);
+        else await shareTo(index, paths);
         return;
       }
       const dropItems = formatsFor(dropMode);
@@ -262,35 +380,48 @@ export function WheelApp() {
       if (index === null) close();
       else await convert(dropped, index, dropMode);
     },
-    [adoptMode, close, convert, openApp],
+    [adoptMode, close, convert, openApp, shareTo],
   );
 
-  /** Clic sur une part : lance l'app, convertit les fichiers connus, ou les fait choisir
-   * d'abord. */
+  /** Clic sur une part : lance l'app, convertit ou partage les fichiers connus, ou les fait
+   * choisir d'abord. */
   const select = useCallback(
     async (index: number) => {
       if (mode === "apps") {
         await openApp(index, []);
         return;
       }
+      const sharing = mode === "share";
+      // Une part de partage vide ouvre les réglages, sans demander de fichier
+      if (sharing && !configRef.current.share[index]) {
+        await shareTo(index, []);
+        return;
+      }
+      const run = (targets: FileInfo[]) =>
+        sharing
+          ? shareTo(
+              index,
+              targets.map((file) => file.path),
+            )
+          : convert(targets, index, mode);
       if (files.length > 0) {
-        await convert(files, index, mode);
+        await run(files);
         return;
       }
       if (pickingRef.current || busyRef.current) return;
       // Le sélecteur prend le clavier : la roue ne doit pas se fermer pour autant
       pickingRef.current = true;
       try {
-        const picked = await pickFiles(mode === "video");
+        const picked = await pickFiles(sharing ? "any" : mode === "video" ? "videos" : "images");
         if (picked.length > 0) {
           setFiles(picked);
-          await convert(picked, index, mode);
+          await run(picked);
         }
       } finally {
         pickingRef.current = false;
       }
     },
-    [convert, files, mode, openApp],
+    [convert, files, mode, openApp, shareTo],
   );
 
   // Ouverte par un secouage : la roue attend le fichier, et se ferme s'il est lâché ailleurs
@@ -359,7 +490,13 @@ export function WheelApp() {
           openId.current = payload.id;
           // Une conversion encore en cours appartient à l'ouverture précédente
           busyRef.current = false;
-          setMode(configRef.current.modes[0]);
+          chosenRef.current = false;
+          beforeShareRef.current = null;
+          // Dernière roue affichée si le réglage le demande, sinon la première de la liste
+          const { modes, remember } = configRef.current;
+          const opening = remember && modes.includes(modeRef.current) ? modeRef.current : modes[0];
+          modeRef.current = opening;
+          setMode(opening);
           setOpenMode(payload.mode);
           setFiles([]);
           setPointer(null);
@@ -454,7 +591,10 @@ export function WheelApp() {
       onPointer={setPointer}
       onSelect={(index) => void select(index)}
       onOutsideClick={close}
-      onToggleMode={() => next && setMode(next)}
+      dwelling={dwelling}
+      dwellMs={config.dwellMs}
+      accent={config.highlight}
+      onToggleMode={() => next && chooseMode(next)}
     />
   );
 }

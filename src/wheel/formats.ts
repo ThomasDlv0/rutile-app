@@ -1,31 +1,41 @@
-import type { AppView } from "../ipc";
+import type { AppView, ShareView } from "../ipc";
+import { readableInk } from "./color";
+
+// Couleurs par défaut des formats, comme des icônes de fichiers ; elles se changent dans
+// les réglages
+const BLUE = "#3b82f6";
+const ORANGE = "#f97316";
+const GREEN = "#16a34a";
+const VIOLET = "#8b5cf6";
+const GRAY = "#6b7280";
+const PINK = "#ec4899";
 
 // Ordre des parts, dans le sens horaire en partant du haut
 export const OUTPUT_FORMATS = [
-  { id: "png", label: "PNG" },
-  { id: "jpeg", label: "JPEG" },
-  { id: "webp", label: "WebP" },
-  { id: "avif", label: "AVIF" },
-  { id: "svg", label: "SVG" },
-  { id: "ico", label: "ICO" },
+  { id: "png", label: "PNG", color: BLUE },
+  { id: "jpeg", label: "JPEG", color: ORANGE },
+  { id: "webp", label: "WebP", color: GREEN },
+  { id: "avif", label: "AVIF", color: VIOLET },
+  { id: "svg", label: "SVG", color: "#f2b705" },
+  { id: "ico", label: "ICO", color: GRAY },
 ] as const;
 
 export const VIDEO_FORMATS = [
-  { id: "mp4", label: "MP4" },
-  { id: "webm", label: "WebM" },
-  { id: "mov", label: "MOV" },
-  { id: "mkv", label: "MKV" },
-  { id: "gif", label: "GIF" },
-  { id: "mp3", label: "MP3", action: "Extraire le son en MP3" },
+  { id: "mp4", label: "MP4", color: BLUE },
+  { id: "webm", label: "WebM", color: GREEN },
+  { id: "mov", label: "MOV", color: GRAY },
+  { id: "mkv", label: "MKV", color: VIOLET },
+  { id: "gif", label: "GIF", color: PINK },
+  { id: "mp3", label: "MP3", color: ORANGE, action: "Extraire le son en MP3" },
 ] as const;
 
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number]["id"];
 export type VideoFormat = (typeof VIDEO_FORMATS)[number]["id"];
 
 /** Les roues entre lesquelles le clic au centre fait passer. */
-export type Mode = "image" | "video" | "apps";
+export type Mode = "image" | "video" | "apps" | "share";
 
-export const ALL_MODES: readonly Mode[] = ["image", "video", "apps"];
+export const ALL_MODES: readonly Mode[] = ["image", "video", "apps", "share"];
 
 /** Contenu d'une part de la roue : un format, ou une app. */
 export interface WheelItem {
@@ -35,12 +45,26 @@ export interface WheelItem {
   action?: string;
   /** Icône d'app, en data URL. */
   icon?: string;
-  /** Part de la roue des apps sans app choisie. */
+  /** Couleur du bouton d'un format, et de son texte, choisi pour rester lisible. */
+  color?: string;
+  ink?: string;
+  /** Part de la roue des apps ou de partage laissée libre. */
   empty?: boolean;
 }
 
 export function formatsFor(mode: "image" | "video"): readonly WheelItem[] {
   return mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS;
+}
+
+/** Formats avec les couleurs choisies dans les réglages, et un texte lisible dessus. */
+export function colorize(
+  items: readonly WheelItem[],
+  colors: Readonly<Record<string, string>>,
+): WheelItem[] {
+  return items.map((item) => {
+    const color = colors[item.id] ?? item.color;
+    return color ? { ...item, color, ink: readableInk(color) } : item;
+  });
 }
 
 /** Parts de la roue des apps, à partir des apps choisies dans les réglages. */
@@ -49,5 +73,27 @@ export function appItems(apps: readonly (AppView | null)[]): WheelItem[] {
     const app = apps[index];
     if (!app) return { id: `app-${index}`, label: "+", action: "Ajouter une app", empty: true };
     return { id: `app-${index}`, label: app.name, action: `Ouvrir ${app.name}`, icon: app.icon ?? undefined };
+  });
+}
+
+/** Ce qu'annonce le centre au survol d'une destination. */
+export function shareAction(target: ShareView): string {
+  switch (target.kind) {
+    case "service":
+      return `Envoyer par ${target.name}`;
+    case "folder":
+      return `Copier dans ${target.name}`;
+    case "app":
+      return `Copier pour ${target.name}`;
+  }
+}
+
+/** Parts de la roue de partage, à partir des destinations choisies dans les réglages. */
+export function shareItems(targets: readonly (ShareView | null)[]): WheelItem[] {
+  return Array.from({ length: 6 }, (_, index) => {
+    const target = targets[index];
+    const id = `share-${index}`;
+    if (!target) return { id, label: "+", action: "Ajouter un partage", empty: true };
+    return { id, label: target.name, action: shareAction(target), icon: target.icon ?? undefined };
   });
 }

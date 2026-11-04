@@ -46,7 +46,7 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> tauri::Result<()
         .show_menu_on_left_click(cfg!(not(windows)))
         .on_menu_event(|app, event| match event.id().as_ref() {
             OPEN => wheel::open(app, Source::Selection),
-            SETTINGS => settings::open_window(app),
+            SETTINGS => settings::open_window(app, None),
             QUIT => app.exit(0),
             _ => {}
         })

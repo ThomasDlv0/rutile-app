@@ -44,8 +44,8 @@
       "deb"
     ],
     "category": "Utility",
-    "shortDescription": "Images, vidéos et apps sur une roue radiale",
-    "longDescription": "Rutile tourne en arrière-plan et, depuis une roue radiale ouverte par un raccourci clavier ou en secouant un fichier pendant un glisser, convertit des images (PNG, JPEG, WebP, AVIF, SVG, ICO) et des vidéos, ou lance les apps choisies.",
+    "shortDescription": "Images, vidéos, apps et partage sur une roue radiale",
+    "longDescription": "Rutile tourne en arrière-plan et, depuis une roue radiale ouverte par un raccourci clavier ou en secouant un fichier pendant un glisser, convertit des images (PNG, JPEG, WebP, AVIF, SVG, ICO) et des vidéos, lance les apps choisies ou partage des fichiers (AirDrop, Messages, Google Drive…).",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

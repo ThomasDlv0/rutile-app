@@ -2,6 +2,9 @@
 //! Windows et Linux depuis n'importe quelle machine (`cargo check --target …`).
 
 pub mod apps;
+#[cfg(target_os = "macos")]
+mod macos_image;
 pub mod mouse;
 pub mod selection;
 pub mod session;
+pub mod share;

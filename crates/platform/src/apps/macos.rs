@@ -1,14 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use objc2::AnyThread;
-use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSWorkspace};
-use objc2_foundation::{NSDictionary, NSFileManager, NSPoint, NSRect, NSSize, NSString};
+use objc2_app_kit::NSWorkspace;
+use objc2_foundation::{NSFileManager, NSString};
 
 use super::{App, Icon, name_from_file};
-
-/// Côté de l'icône en points ; un écran Retina la rend au double.
-const ICON_SIZE: f64 = 128.0;
+use crate::macos_image;
 
 pub fn describe(path: &Path) -> Option<App> {
     Some(App {
@@ -29,15 +26,7 @@ fn display_name(path: &Path) -> Option<String> {
 /// Icône telle que le Finder l'affiche, qu'elle vienne d'un `.icns` ou d'un catalogue d'assets.
 fn icon_png(path: &Path) -> Option<Vec<u8>> {
     let image = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(path.to_str()?));
-    let mut rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(ICON_SIZE, ICON_SIZE));
-    // SAFETY : rectangle valide pendant l'appel, sans contexte ni indications
-    let cg_image = unsafe { image.CGImageForProposedRect_context_hints(&mut rect, None, None) }?;
-    let bitmap = NSBitmapImageRep::initWithCGImage(NSBitmapImageRep::alloc(), &cg_image);
-    // SAFETY : dictionnaire de propriétés vide, accepté par AppKit
-    let png = unsafe {
-        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
-    }?;
-    Some(png.to_vec())
+    macos_image::png(&image)
 }
 
 /// `open -a` lance l'app ou la ramène au premier plan si elle tourne déjà.

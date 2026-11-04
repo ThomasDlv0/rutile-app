@@ -1,7 +1,7 @@
 [package]
 name = "rutile"
 version = "0.1.0"
-description = "Images, vidéos et apps sur une roue radiale"
+description = "Images, vidéos, apps et partage sur une roue radiale"
 edition = "2024"
 rust-version = "1.88"
 

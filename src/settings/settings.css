@@ -361,3 +361,315 @@ html.settings #root {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.settings-app-icon[data-small="true"] {
+  width: 22px;
+  height: 22px;
+}
+
+.settings-app-placeholder[data-small="true"] {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+/* Onglets, comme la barre d'outils des réglages de macOS */
+.settings-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  margin: 0 -6px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--row-divider);
+}
+
+.settings-tab {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 82px;
+  padding: 6px 4px 5px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--hint);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.settings-tab:hover {
+  color: var(--label);
+}
+
+.settings-tab[aria-selected="true"] {
+  background: var(--control);
+  color: var(--label);
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tab-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-tab[aria-selected="true"] .tab-icon {
+  stroke: var(--accent);
+}
+
+.tab-icon-knob {
+  fill: var(--page);
+}
+
+.settings-tab[aria-selected="true"] .tab-icon-knob {
+  fill: var(--control);
+}
+
+/* Feuille de choix d'une destination de partage */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 28px 28px;
+  background: rgba(0, 0, 0, 0.28);
+  animation: sheet-fade 140ms ease-out;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  outline: none;
+  background: var(--card);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+  animation: sheet-drop 200ms var(--spring);
+}
+
+.sheet-title {
+  margin: 0;
+  padding: 14px 16px 8px;
+  color: var(--title);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sheet-list {
+  overflow-y: auto;
+  padding: 0 8px 4px;
+}
+
+.sheet-group h4 {
+  margin: 8px 8px 3px;
+  color: var(--hint);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--label);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sheet-item:hover,
+.sheet-item:focus-visible {
+  outline: none;
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.sheet-item-glyph {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--hint);
+  font-size: 15px;
+}
+
+.sheet-item:hover .sheet-item-glyph,
+.sheet-item:focus-visible .sheet-item-glyph {
+  color: inherit;
+}
+
+.sheet-empty {
+  margin: 8px;
+  color: var(--hint);
+  font-size: 12px;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--row-divider);
+}
+
+.sheet-actions .shortcut-button {
+  min-width: 90px;
+  font-weight: 500;
+}
+
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-backdrop,
+  .sheet {
+    animation: none;
+  }
+}
+
+/* Couleurs */
+.tab-icon-dot {
+  fill: currentColor;
+  stroke: none;
+}
+
+.settings-tab[aria-selected="true"] .tab-icon-dot {
+  fill: var(--accent);
+}
+
+.color-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+}
+
+.wheel-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.segmented {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--control);
+}
+
+.segmented button {
+  min-width: 84px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--hint);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.segmented button[aria-selected="true"] {
+  background: var(--card);
+  color: var(--label);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 8px;
+}
+
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.color-field:hover {
+  background: var(--control);
+}
+
+.color-field input[type="color"] {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.color-field input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-field input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.color-field input[type="color"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-field-label {
+  font-weight: 500;
+}
+
+.color-field-code {
+  margin-left: auto;
+  color: var(--hint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shortcut-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

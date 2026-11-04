@@ -2,6 +2,7 @@ import { useRef, type CSSProperties, type MouseEvent } from "react";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
+import { ShareIcon } from "../ShareIcon";
 import type { Mode, WheelItem } from "./formats";
 import {
   BUTTON_RADIUS,
@@ -17,6 +18,7 @@ import {
   sectorPath,
   separatorAngles,
 } from "./geometry";
+import { glow } from "./color";
 import { type HubText, type Point, usableSector } from "./selection";
 
 export type Phase = "open" | "closing" | "closed";
@@ -27,8 +29,8 @@ export interface Work {
   state: "working" | "done" | "failed";
   /** Avancement de 0 à 1, connu pour les vidéos. */
   progress?: number;
-  /** Une app ouverte plutôt qu'un fichier converti. */
-  opened?: boolean;
+  /** Textes pendant et après l'action, « Conversion… » et « Converti » par défaut. */
+  labels?: { working: string; done: string };
 }
 
 interface WheelProps {
@@ -41,20 +43,36 @@ interface WheelProps {
   highlighted: number | null;
   hub: HubText | null;
   work: Work | null;
+  /** Fichier maintenu au centre : un anneau se remplit pendant `dwellMs` avant la bascule. */
+  dwelling: boolean;
+  dwellMs: number;
+  /** Couleur de la part survolée, choisie dans les réglages ; le bleu d'origine sinon. */
+  accent?: string | null;
+  /** Échelle d'affichage, pour l'aperçu réduit des réglages. */
+  scale?: number;
   onPointer: (point: Point | null) => void;
   onSelect: (index: number) => void;
   onOutsideClick: () => void;
-  /** Clic au centre : passe du mode Images au mode Vidéo, et inversement. */
+  /** Clic au centre : passe à la roue suivante. */
   onToggleMode: () => void;
 }
 
-const MODE_NAMES: Record<Mode, string> = { image: "Images", video: "Vidéo", apps: "Apps" };
+const MODE_NAMES: Record<Mode, string> = {
+  image: "Images",
+  video: "Vidéo",
+  apps: "Apps",
+  share: "Partage",
+};
 
 function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
   if (mode === "video") return <FilmIcon size={size} />;
   if (mode === "apps") return <AppsIcon size={size} />;
+  if (mode === "share") return <ShareIcon size={size} />;
   return <GemIcon size={size} />;
 }
+
+/** Roues dont les parts portent un nom (app, destination) plutôt qu'un format. */
+const NAMED_MODES: ReadonlySet<Mode> = new Set(["apps", "share"]);
 
 /** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. */
 function ItemContent({ item }: { item: WheelItem }) {
@@ -82,9 +100,10 @@ function ProgressRing({ progress }: { progress: number }) {
   );
 }
 
-function localPoint(event: MouseEvent<HTMLElement>): Point {
+/** Position dans la roue, ramenée à sa taille réelle si elle est affichée réduite. */
+function localPoint(event: MouseEvent<HTMLElement>, scale: number): Point {
   const rect = event.currentTarget.getBoundingClientRect();
-  return [event.clientX - rect.left, event.clientY - rect.top];
+  return [(event.clientX - rect.left) / scale, (event.clientY - rect.top) / scale];
 }
 
 /**
@@ -120,7 +139,7 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
       <>
         <span className="spinner" aria-hidden="true" />
         <span className="hub-label" data-tone="muted">
-          {work.opened ? "Ouverture…" : "Conversion…"}
+          {work.labels?.working ?? "Conversion…"}
         </span>
       </>
     );
@@ -133,7 +152,7 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
           {done ? "✓" : "!"}
         </span>
         <span className="hub-label" data-tone="action">
-          {done ? (work.opened ? "Ouvert" : "Converti") : "Échec"}
+          {done ? (work.labels?.done ?? "Converti") : "Échec"}
         </span>
       </span>
     );
@@ -170,6 +189,10 @@ export function Wheel({
   highlighted,
   hub,
   work,
+  dwelling,
+  dwellMs,
+  accent,
+  scale = 1,
   onPointer,
   onSelect,
   onOutsideClick,
@@ -181,7 +204,7 @@ export function Wheel({
   // Un clic n'importe où dans une part vaut un clic sur son bouton
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button")) return;
-    const [x, y] = localPoint(event);
+    const [x, y] = localPoint(event, scale);
     if (!isInsideDisk(x, y)) {
       onOutsideClick();
       return;
@@ -190,11 +213,16 @@ export function Wheel({
     if (index !== null) onSelect(index);
   };
 
+  const colors = accent
+    ? ({ "--accent": accent, "--accent-glow": glow(accent) } as CSSProperties)
+    : undefined;
+
   return (
     <div
       className="wheel-root"
+      style={colors}
       data-busy={busy}
-      onPointerMove={busy ? undefined : (event) => onPointer(localPoint(event))}
+      onPointerMove={busy ? undefined : (event) => onPointer(localPoint(event, scale))}
       onPointerLeave={busy ? undefined : () => onPointer(null)}
       onClick={busy ? undefined : handleClick}
     >
@@ -241,6 +269,8 @@ export function Wheel({
             width: BUTTON_RADIUS * 2,
             height: BUTTON_RADIUS * 2,
             "--order": index,
+            "--tile": format.color,
+            "--ink": format.ink,
           } as CSSProperties;
           const isDisabled = disabled.has(format.id);
           return (
@@ -250,13 +280,19 @@ export function Wheel({
               type="button"
               className="format-button"
               data-kind={
-                format.icon ? "icon" : format.empty ? "add" : mode === "apps" ? "name" : "format"
+                format.icon
+                  ? "icon"
+                  : format.empty
+                    ? "add"
+                    : NAMED_MODES.has(mode)
+                      ? "name"
+                      : "format"
               }
               style={style}
               disabled={isDisabled || busy}
               data-unavailable={isDisabled}
               data-active={highlighted === index}
-              title={mode === "apps" && !format.empty ? format.label : undefined}
+              title={NAMED_MODES.has(mode) && !format.empty ? format.label : undefined}
               aria-label={
                 isDisabled
                   ? `${format.label}, indisponible`
@@ -271,6 +307,16 @@ export function Wheel({
           );
         })}
 
+        {dwelling && (
+          <svg
+            className="dwell-ring"
+            viewBox="0 0 104 104"
+            aria-hidden="true"
+            style={{ "--dwell-ms": `${dwellMs}ms` } as CSSProperties}
+          >
+            <circle cx="52" cy="52" r="50" />
+          </svg>
+        )}
         {busy || !next ? (
           <div className="hub" title={hub?.title} aria-live="polite">
             <HubContent hub={hub} work={work} mode={mode} />

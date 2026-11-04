@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use platform::selection::{self, SelectionError};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, DragDropEvent, Emitter, Manager, PhysicalPosition, Runtime, WebviewWindow, Window,
 };
@@ -345,31 +345,38 @@ pub fn primary_button_pressed() -> Option<bool> {
     platform::mouse::primary_button_pressed()
 }
 
+/// Fichiers que propose le sélecteur, selon la roue affichée.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PickKind {
+    Images,
+    Videos,
+    /// Roue de partage : tous les fichiers.
+    Any,
+}
+
 /// Sélecteur de fichiers du système, affiché au-dessus de la roue qui reste ouverte ;
-/// il ne propose que les images ou que les vidéos, selon le mode de la roue.
+/// il ne propose que les images ou que les vidéos sur les roues de conversion.
 #[tauri::command]
-pub async fn pick_files<R: Runtime>(app: AppHandle<R>, videos: bool) -> Vec<FileInfo> {
-    let (title, filter, extensions): (_, _, &[&str]) = if videos {
-        (
-            "Choisir les vidéos à convertir",
-            "Vidéos",
-            &VIDEO_EXTENSIONS,
-        )
-    } else {
-        (
+pub async fn pick_files<R: Runtime>(app: AppHandle<R>, kind: PickKind) -> Vec<FileInfo> {
+    let (title, filter): (_, Option<(_, &[&str])>) = match kind {
+        PickKind::Images => (
             "Choisir les images à convertir",
-            "Images",
-            &IMAGE_EXTENSIONS,
-        )
+            Some(("Images", &IMAGE_EXTENSIONS)),
+        ),
+        PickKind::Videos => (
+            "Choisir les vidéos à convertir",
+            Some(("Vidéos", &VIDEO_EXTENSIONS)),
+        ),
+        PickKind::Any => ("Choisir les fichiers à partager", None),
     };
     let dialog = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
-        dialog
-            .dialog()
-            .file()
-            .set_title(title)
-            .add_filter(filter, extensions)
-            .blocking_pick_files()
+        let mut picker = dialog.dialog().file().set_title(title);
+        if let Some((name, extensions)) = filter {
+            picker = picker.add_filter(name, extensions);
+        }
+        picker.blocking_pick_files()
     })
     .await
     .ok()

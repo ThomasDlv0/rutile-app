@@ -1,19 +1,30 @@
 //! Réglages enregistrés dans `settings.json`, dans le dossier de configuration de l'app,
 //! et appliqués dès qu'ils changent.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use converter::Quality;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as _;
 
 use super::apps::{self, APP_SLOTS, AppSlot, AppView};
 use super::shake::{self, ShakeSettings};
+use super::share::{self, SHARE_SLOTS, ShareTarget, ShareView};
 use super::{shortcut, tray};
 
 pub const SETTINGS_LABEL: &str = "settings";
+/// Formats de sortie des roues de conversion, auxquels on peut donner une couleur.
+const COLORED_FORMATS: [&str; 12] = [
+    "png", "jpeg", "webp", "avif", "svg", "ico", "mp4", "webm", "mov", "mkv", "gif", "mp3",
+];
+/// Temps à passer au centre, un fichier glissé, avant de basculer entre conversion et partage.
+const DEFAULT_DWELL_MS: u32 = 1000;
+const DWELL_RANGE_MS: (u32, u32) = (400, 2500);
+/// Onglet à afficher, quand la fenêtre de réglages est déjà ouverte.
+const TAB_EVENT: &str = "settings://tab";
 
 /// Les roues entre lesquelles le clic au centre fait passer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,10 +33,16 @@ pub enum WheelMode {
     Image,
     Video,
     Apps,
+    Share,
 }
 
 impl WheelMode {
-    const ALL: [WheelMode; 3] = [WheelMode::Image, WheelMode::Video, WheelMode::Apps];
+    const ALL: [WheelMode; 4] = [
+        WheelMode::Image,
+        WheelMode::Video,
+        WheelMode::Apps,
+        WheelMode::Share,
+    ];
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,8 +62,19 @@ pub struct Settings {
     pub avif_quality: u8,
     /// Ordre du clic au centre, et roues affichées ou non.
     pub modes: Vec<ModeEntry>,
+    /// La roue se rouvre sur celle affichée à la fermeture, plutôt que sur la première.
+    pub remember_wheel: bool,
+    /// Millisecondes au centre, un fichier glissé, avant de basculer entre conversion et partage.
+    pub dwell_ms: u32,
+    /// Couleur choisie par format (« png » → « #3b82f6 ») ; un format absent garde la sienne.
+    pub format_colors: BTreeMap<String, String>,
+    /// Couleur de la part survolée ; absente, le bleu d'origine.
+    pub highlight_color: Option<String>,
     /// Une app (ou rien) par part, dans le sens horaire depuis le haut.
     pub apps: Vec<Option<AppSlot>>,
+    /// Une destination (ou rien) par part. Vide tant que la roue de partage n'a jamais été
+    /// réglée : elle reçoit alors les destinations trouvées sur la machine.
+    pub share: Vec<Option<ShareTarget>>,
 }
 
 impl Default for Settings {
@@ -63,7 +91,12 @@ impl Default for Settings {
             modes: WheelMode::ALL
                 .map(|id| ModeEntry { id, enabled: true })
                 .to_vec(),
+            remember_wheel: false,
+            dwell_ms: DEFAULT_DWELL_MS,
+            format_colors: BTreeMap::new(),
+            highlight_color: None,
             apps: vec![None; APP_SLOTS],
+            share: Vec::new(),
         }
     }
 }
@@ -99,6 +132,17 @@ impl Settings {
         }
         self.modes = modes;
         self.apps.resize(APP_SLOTS, None);
+        if !self.share.is_empty() {
+            self.share.resize(SHARE_SLOTS, None);
+        }
+        self.dwell_ms = self.dwell_ms.clamp(DWELL_RANGE_MS.0, DWELL_RANGE_MS.1);
+        // Seulement des formats connus, en « #rrggbb » minuscules
+        self.format_colors = std::mem::take(&mut self.format_colors)
+            .into_iter()
+            .filter(|(format, _)| COLORED_FORMATS.contains(&format.as_str()))
+            .filter_map(|(format, color)| Some((format, hex_color(&color)?)))
+            .collect();
+        self.highlight_color = self.highlight_color.as_deref().and_then(hex_color);
         self
     }
 
@@ -126,6 +170,13 @@ impl Settings {
     }
 }
 
+/// Couleur au format `#rrggbb`, en minuscules ; `None` pour tout le reste.
+fn hex_color(value: &str) -> Option<String> {
+    let digits = value.trim().strip_prefix('#')?;
+    (digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| format!("#{}", digits.to_ascii_lowercase()))
+}
+
 pub struct SettingsState(Mutex<Settings>);
 
 fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
@@ -136,11 +187,14 @@ fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
 /// Lit les réglages enregistrés et les garde en mémoire ; un fichier absent ou abîmé
 /// redonne les valeurs par défaut.
 pub fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
-    let settings = file(app)
+    let mut settings = file(app)
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-        .unwrap_or_default()
-        .sanitized();
+        .unwrap_or_default();
+    if settings.share.is_empty() {
+        settings.share = share::suggestions(app);
+    }
+    let settings = settings.sanitized();
     app.manage(SettingsState(Mutex::new(settings.clone())));
     settings
 }
@@ -177,12 +231,18 @@ pub struct SettingsView {
     version: String,
     /// Apps des parts, avec leurs icônes.
     apps: Vec<Option<AppView>>,
+    /// Destinations de la roue de partage, avec leurs icônes.
+    share: Vec<Option<ShareView>>,
+    /// Onglet demandé à l'ouverture de la fenêtre (une part vide de la roue, par exemple).
+    tab: Option<String>,
 }
 
 fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
     let settings = current(app);
     SettingsView {
         apps: apps::views(app, &settings.apps),
+        share: share::views(app, &settings.share),
+        tab: None,
         shortcut_label: shortcut::label(&settings.shortcut),
         settings,
         default_shortcut: shortcut::DEFAULT_SHORTCUT,
@@ -212,7 +272,10 @@ fn finder_permission() -> Option<&'static str> {
 
 #[tauri::command]
 pub fn get_settings<R: Runtime>(app: AppHandle<R>) -> SettingsView {
-    view(&app)
+    let tab = app
+        .try_state::<PendingTab>()
+        .and_then(|pending| pending.0.lock().unwrap().take());
+    SettingsView { tab, ..view(&app) }
 }
 
 /// Applique puis enregistre. Un raccourci refusé ou un secouage impossible est signalé,
@@ -245,7 +308,14 @@ pub fn update_settings<R: Runtime>(
 
     *app.state::<SettingsState>().0.lock().unwrap() = applied.clone();
     save(&app, &applied)?;
-    if applied.modes != previous.modes || applied.apps != previous.apps {
+    if applied.modes != previous.modes
+        || applied.remember_wheel != previous.remember_wheel
+        || applied.dwell_ms != previous.dwell_ms
+        || applied.format_colors != previous.format_colors
+        || applied.highlight_color != previous.highlight_color
+        || applied.apps != previous.apps
+        || applied.share != previous.share
+    {
         apps::config_changed(&app);
     }
     match problem {
@@ -283,17 +353,29 @@ pub fn open_permission_settings<R: Runtime>(app: AppHandle<R>) -> Result<(), Str
     }
 }
 
-/// Ouvre la fenêtre de réglages, ou la ramène devant si elle l'est déjà.
-pub fn open_window<R: Runtime>(app: &AppHandle<R>) {
+/// Onglet demandé avant que la fenêtre de réglages existe ; elle le lit à son chargement.
+#[derive(Default)]
+struct PendingTab(Mutex<Option<String>>);
+
+/// Ouvre la fenêtre de réglages, ou la ramène devant si elle l'est déjà, sur l'onglet `tab`
+/// s'il est donné.
+pub fn open_window<R: Runtime>(app: &AppHandle<R>, tab: Option<&str>) {
     if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
+        if let Some(tab) = tab {
+            let _ = window.emit_to(SETTINGS_LABEL, TAB_EVENT, tab);
+        }
         let _ = window.show();
         let _ = window.set_focus();
         return;
     }
+    if app.try_state::<PendingTab>().is_none() {
+        app.manage(PendingTab::default());
+    }
+    *app.state::<PendingTab>().0.lock().unwrap() = tab.map(str::to_owned);
     let built =
         WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("index.html".into()))
             .title("Réglages de Rutile")
-            .inner_size(480.0, 740.0)
+            .inner_size(480.0, 640.0)
             .resizable(false)
             .maximizable(false)
             .minimizable(false)
@@ -339,13 +421,26 @@ mod tests {
                 },
             ],
             apps: vec![None; 2],
+            share: vec![None; 9],
             ..Settings::default()
         }
         .sanitized();
         let order: Vec<WheelMode> = settings.modes.iter().map(|entry| entry.id).collect();
-        assert_eq!(order, [WheelMode::Apps, WheelMode::Image, WheelMode::Video]);
-        assert_eq!(settings.enabled_modes(), [WheelMode::Video]);
+        assert_eq!(
+            order,
+            [
+                WheelMode::Apps,
+                WheelMode::Image,
+                WheelMode::Video,
+                WheelMode::Share
+            ]
+        );
+        assert_eq!(
+            settings.enabled_modes(),
+            [WheelMode::Video, WheelMode::Share]
+        );
         assert_eq!(settings.apps.len(), APP_SLOTS);
+        assert_eq!(settings.share.len(), SHARE_SLOTS);
 
         let none_enabled = Settings {
             modes: WheelMode::ALL
@@ -355,6 +450,27 @@ mod tests {
         }
         .sanitized();
         assert_eq!(none_enabled.enabled_modes(), [WheelMode::Image]);
+    }
+
+    #[test]
+    fn seules_les_couleurs_valides_sont_gardees() {
+        let settings = Settings {
+            format_colors: BTreeMap::from([
+                ("png".into(), "#FF8800".into()),
+                ("webp".into(), "vert".into()),
+                ("bmp".into(), "#000000".into()),
+            ]),
+            highlight_color: Some("#12345".into()),
+            dwell_ms: 10,
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            settings.format_colors,
+            BTreeMap::from([("png".into(), "#ff8800".into())])
+        );
+        assert_eq!(settings.highlight_color, None);
+        assert_eq!(settings.dwell_ms, DWELL_RANGE_MS.0);
     }
 
     #[test]

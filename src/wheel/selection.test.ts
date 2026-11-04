@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileInfo } from "../ipc";
-import { appItems, formatsFor } from "./formats";
+import { appItems, formatsFor, shareItems } from "./formats";
 import { CENTER, polar } from "./geometry";
 import {
   disabledFormats,
@@ -26,6 +26,14 @@ const apps = appItems([
   { path: "/Applications/Signal.app", name: "Signal", icon: null },
   null,
   null,
+  null,
+  null,
+  null,
+]);
+const share = shareItems([
+  { kind: "service", id: "com.apple.share.AirDrop.send", name: "AirDrop", icon: null },
+  { kind: "folder", path: "/Drive", name: "Google Drive", icon: null },
+  { kind: "app", path: "/Applications/Signal.app", name: "Signal", icon: null },
   null,
   null,
   null,
@@ -157,8 +165,51 @@ describe("nextMode", () => {
   });
 });
 
-describe("disabledFormats sur la roue des apps", () => {
+describe("disabledFormats sur les roues des apps et de partage", () => {
   it("ne grise jamais rien", () => {
     expect(disabledFormats([file("notes.txt", null)], "apps").size).toBe(0);
+    expect(disabledFormats([file("notes.txt", null)], "share").size).toBe(0);
+  });
+});
+
+describe("roue de partage", () => {
+  it("annonce ce que fait chaque destination", () => {
+    const at = (angle: number) =>
+      hubFor(polar(120, angle), new Set(), [photo], true, "share", share, null)?.label;
+    expect(at(0)).toBe("Envoyer par AirDrop");
+    expect(at(60)).toBe("Copier dans Google Drive");
+    expect(at(120)).toBe("Copier pour Signal");
+    expect(at(180)).toBe("Ajouter un partage");
+  });
+
+  it("garde le nom du fichier, quel qu'il soit, hors des parts", () => {
+    expect(hubFor(null, new Set(), [file("notes.txt", null)], false, "share", share, null)).toEqual({
+      label: "notes.txt",
+      tone: "file",
+      title: "notes.txt",
+      hint: undefined,
+    });
+  });
+
+  it("pendant un glisser, le centre propose de rester pour basculer", () => {
+    const center: [number, number] = [CENTER, CENTER];
+    expect(hubFor(center, new Set(), [photo], true, "image", images, "video", "share")).toEqual({
+      label: "Restez pour partager",
+      tone: "action",
+      hint: "Relâchez pour annuler",
+    });
+    expect(hubFor(center, new Set(), [photo], true, "share", share, null, "image")?.label).toBe(
+      "Restez pour convertir",
+    );
+    expect(hubFor(center, new Set(), [photo], true, "share", share, null)?.label).toBe(
+      "Relâcher ici pour annuler",
+    );
+  });
+
+  it("le centre y mène depuis la roue précédente", () => {
+    const center: [number, number] = [CENTER, CENTER];
+    expect(hubFor(center, new Set(), [], false, "apps", apps, "share")?.label).toBe(
+      "Passer au partage",
+    );
   });
 });

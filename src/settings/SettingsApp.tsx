@@ -1,32 +1,72 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
+import { ShareIcon } from "../ShareIcon";
 import {
+  SETTINGS_TAB_EVENT,
   getSettings,
   openPermissionSettings,
   pickApp,
+  pickShareFolder,
   setLaunchAtLogin,
+  shareChoices,
   updateSettings,
+  videoSupport,
   type Settings,
+  type SettingsTab,
   type SettingsView,
+  type ShareChoice,
+  type ShareTarget,
+  type ShareView,
+  type VideoSupport,
 } from "../ipc";
-import type { Mode } from "../wheel/formats";
+import { DEFAULT_ACCENT } from "../wheel/color";
+import {
+  type Mode,
+  OUTPUT_FORMATS,
+  VIDEO_FORMATS,
+  type WheelItem,
+  colorize,
+} from "../wheel/formats";
+import { CENTER } from "../wheel/geometry";
+import { type Point, usableSector } from "../wheel/selection";
+import { Wheel } from "../wheel/Wheel";
 import { recordShortcut } from "./accelerator";
 import "./settings.css";
 
-type SectionId = "wheels" | "apps" | "shortcut" | "shake" | "quality" | "startup";
+type SectionId =
+  | "wheels"
+  | "colors"
+  | "apps"
+  | "share"
+  | "shortcut"
+  | "shake"
+  | "quality"
+  | "startup";
+
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: "general", label: "Général" },
+  { id: "wheels", label: "Roues" },
+  { id: "conversion", label: "Conversion" },
+  { id: "colors", label: "Couleurs" },
+  { id: "apps", label: "Apps" },
+  { id: "share", label: "Partage" },
+];
 
 const MODE_LABELS: Record<Mode, string> = {
   image: "Convertisseur d'images",
   video: "Convertisseur de vidéos",
   apps: "Applications",
+  share: "Partage",
 };
 
 function ModeIcon({ mode }: { mode: Mode }) {
   if (mode === "video") return <FilmIcon size={22} />;
   if (mode === "apps") return <AppsIcon size={22} />;
+  if (mode === "share") return <ShareIcon size={22} />;
   return <GemIcon size={22} />;
 }
 
@@ -40,7 +80,36 @@ const SLOT_POSITIONS = [
   "En haut à gauche",
 ];
 
+/** Ce que fait une destination, sous son nom. */
+const SHARE_KINDS: Record<ShareTarget["kind"], string> = {
+  service: "Partage du système",
+  folder: "Copie dans le dossier",
+  app: "Copie et ouvre l'app",
+};
+
 // Aperçu dans un navigateur, sans Tauri
+const PREVIEW_SHARE: (ShareView | null)[] = [
+  { kind: "service", id: "com.apple.share.AirDrop.send", name: "AirDrop", icon: null },
+  { kind: "service", id: "com.apple.share.Messages.window", name: "Messages", icon: null },
+  { kind: "app", path: "/Applications/Signal.app", name: "Signal", icon: null },
+  { kind: "folder", path: "/iCloud", name: "iCloud Drive", icon: null },
+  { kind: "service", id: "com.apple.share.Mail.compose", name: "Mail", icon: null },
+  null,
+];
+
+const PREVIEW_CHOICES: ShareChoice[] = [
+  ...PREVIEW_SHARE.filter((view) => view !== null).map((view) => ({
+    ...view,
+    group:
+      view.kind === "service"
+        ? "Partage du système"
+        : view.kind === "folder"
+          ? "Dossiers synchronisés"
+          : "Messageries",
+  })),
+  { kind: "service", id: "notes", name: "Notes", icon: null, group: "Partage du système" },
+];
+
 const PREVIEW: SettingsView = {
   settings: {
     shortcut: "CommandOrControl+Shift+Space",
@@ -53,8 +122,14 @@ const PREVIEW: SettingsView = {
       { id: "image", enabled: true },
       { id: "video", enabled: true },
       { id: "apps", enabled: true },
+      { id: "share", enabled: true },
     ],
+    rememberWheel: false,
+    dwellMs: 1000,
+    formatColors: {},
+    highlightColor: null,
     apps: [{ path: "/Applications/Finder.app", name: "Finder" }, null, null, null, null, null],
+    share: PREVIEW_SHARE.map((view) => view && targetOf(view)),
   },
   shortcutLabel: "⌘⇧Espace",
   defaultShortcut: "CommandOrControl+Shift+Space",
@@ -65,6 +140,8 @@ const PREVIEW: SettingsView = {
   platform: "macos",
   version: "0.1.0",
   apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
+  share: PREVIEW_SHARE,
+  tab: null,
 };
 
 const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, string> = {
@@ -77,12 +154,32 @@ const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, str
 /** Les curseurs n'enregistrent qu'une fois relâchés depuis un court instant. */
 const SLIDER_COMMIT_MS = 300;
 
+/** Destination à enregistrer, sans ce qui ne sert qu'à l'affichage. */
+function targetOf(view: ShareView): ShareTarget {
+  switch (view.kind) {
+    case "service":
+      return { kind: "service", id: view.id, name: view.name };
+    case "folder":
+      return { kind: "folder", path: view.path, name: view.name };
+    case "app":
+      return { kind: "app", path: view.path, name: view.name };
+  }
+}
+
 export function SettingsApp() {
   const [view, setView] = useState<SettingsView | null>(isTauri() ? null : PREVIEW);
+  const [tab, setTab] = useState<SettingsTab>("general");
   const [errors, setErrors] = useState<Partial<Record<SectionId, string>>>({});
 
   useEffect(() => {
-    if (isTauri()) void getSettings().then(setView);
+    if (!isTauri()) return;
+    void getSettings().then((loaded) => {
+      setView(loaded);
+      if (loaded.tab) setTab(loaded.tab);
+    });
+    // Une part vide de la roue ramène la fenêtre déjà ouverte sur le bon onglet
+    const unlisten = listen<SettingsTab>(SETTINGS_TAB_EVENT, ({ payload }) => setTab(payload));
+    return () => void unlisten.then((stop) => stop());
   }, []);
 
   const save = useCallback(async (section: SectionId, settings: Settings) => {
@@ -104,30 +201,122 @@ export function SettingsApp() {
   const { settings } = view;
   const change = (section: SectionId, patch: Partial<Settings>) =>
     void save(section, { ...settings, ...patch });
+
+  return (
+    <main className="settings-page">
+      <header className="settings-header">
+        <GemIcon size={40} />
+        <div>
+          <h1>Rutile</h1>
+          <p>Images, vidéos, apps et partage sur une roue radiale · version {view.version}</p>
+        </div>
+      </header>
+
+      <nav className="settings-tabs" role="tablist" aria-label="Réglages">
+        {TABS.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            className="settings-tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+          >
+            <TabIcon tab={id} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div role="tabpanel" aria-label={TABS.find(({ id }) => id === tab)?.label}>
+        {tab === "general" && (
+          <GeneralTab view={view} errors={errors} setErrors={setErrors} setView={setView} change={change} />
+        )}
+        {tab === "wheels" && <WheelsTab settings={settings} error={errors.wheels} change={change} />}
+        {tab === "conversion" && (
+          <ConversionTab settings={settings} error={errors.quality} change={change} />
+        )}
+        {tab === "apps" && <AppsTab view={view} errors={errors} change={change} />}
+        {tab === "colors" && <ColorsTab settings={settings} error={errors.colors} change={change} />}
+        {tab === "share" && <ShareTab view={view} errors={errors} change={change} />}
+      </div>
+    </main>
+  );
+}
+
+type Change = (section: SectionId, patch: Partial<Settings>) => void;
+type Errors = Partial<Record<SectionId, string>>;
+
+/** Icônes des onglets, au trait, dans la couleur du texte. */
+function TabIcon({ tab }: { tab: SettingsTab }) {
+  const paths: Record<SettingsTab, ReactNode> = {
+    general: (
+      <>
+        <path d="M3 5.5h14M3 10h14M3 14.5h14" />
+        <circle cx="12.5" cy="5.5" r="1.9" className="tab-icon-knob" />
+        <circle cx="6.5" cy="10" r="1.9" className="tab-icon-knob" />
+        <circle cx="11" cy="14.5" r="1.9" className="tab-icon-knob" />
+      </>
+    ),
+    wheels: (
+      <>
+        <circle cx="10" cy="10" r="7.2" />
+        <circle cx="10" cy="10" r="2.6" />
+        {[0, 60, 120, 180, 240, 300].map((angle) => {
+          const radians = ((angle - 90) * Math.PI) / 180;
+          return (
+            <line
+              key={angle}
+              x1={10 + 2.6 * Math.cos(radians)}
+              y1={10 + 2.6 * Math.sin(radians)}
+              x2={10 + 7.2 * Math.cos(radians)}
+              y2={10 + 7.2 * Math.sin(radians)}
+            />
+          );
+        })}
+      </>
+    ),
+    conversion: <path d="M4 7h11.5l-3-3M16 13H4.5l3 3" />,
+    colors: (
+      <>
+        <path d="M10 2.8a7.2 7.2 0 1 0 0 14.4c1.2 0 1.6-.9 1.2-1.8-.5-1.1.2-2.2 1.4-2.2h1.6a3 3 0 0 0 3-3A7.4 7.4 0 0 0 10 2.8Z" />
+        <circle cx="6.4" cy="9.2" r="1.1" className="tab-icon-dot" />
+        <circle cx="9.2" cy="6.2" r="1.1" className="tab-icon-dot" />
+        <circle cx="13" cy="7" r="1.1" className="tab-icon-dot" />
+      </>
+    ),
+    apps: (
+      <>
+        <rect x="3.2" y="3.2" width="5.6" height="5.6" rx="1.6" />
+        <rect x="11.2" y="3.2" width="5.6" height="5.6" rx="1.6" />
+        <rect x="3.2" y="11.2" width="5.6" height="5.6" rx="1.6" />
+        <rect x="11.2" y="11.2" width="5.6" height="5.6" rx="1.6" />
+      </>
+    ),
+    share: <path d="M7 8.5H5.5a1 1 0 0 0-1 1V16a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9.5a1 1 0 0 0-1-1H13M10 2.8V12M6.8 6 10 2.8 13.2 6" />,
+  };
+  return (
+    <svg className="tab-icon" width="22" height="22" viewBox="0 0 20 20" aria-hidden="true">
+      {paths[tab]}
+    </svg>
+  );
+}
+
+function GeneralTab({
+  view,
+  errors,
+  setErrors,
+  setView,
+  change,
+}: {
+  view: SettingsView;
+  errors: Errors;
+  setErrors: (update: (current: Errors) => Errors) => void;
+  setView: (view: SettingsView) => void;
+  change: Change;
+}) {
+  const { settings } = view;
   const isMac = view.platform === "macos";
-  const enabledCount = settings.modes.filter((entry) => entry.enabled).length;
-  const appsEnabled = settings.modes.some((entry) => entry.id === "apps" && entry.enabled);
-
-  const moveMode = (index: number, delta: number) => {
-    const modes = [...settings.modes];
-    [modes[index], modes[index + delta]] = [modes[index + delta], modes[index]];
-    change("wheels", { modes });
-  };
-
-  const toggleMode = (index: number, enabled: boolean) => {
-    const modes = settings.modes.map((entry, i) => (i === index ? { ...entry, enabled } : entry));
-    change("wheels", { modes });
-  };
-
-  const setApp = (slot: number, app: Settings["apps"][number]) => {
-    const apps = settings.apps.map((current, i) => (i === slot ? app : current));
-    change("apps", { apps });
-  };
-
-  const chooseApp = async (slot: number) => {
-    const picked = isTauri() ? await pickApp() : null;
-    if (picked) setApp(slot, picked);
-  };
 
   const toggleLaunchAtLogin = async (enabled: boolean) => {
     setErrors((current) => ({ ...current, startup: undefined }));
@@ -140,121 +329,32 @@ export function SettingsApp() {
   };
 
   return (
-    <main className="settings-page">
-      <header className="settings-header">
-        <GemIcon size={40} />
-        <div>
-          <h1>Rutile</h1>
-          <p>Images, vidéos et apps sur une roue radiale · version {view.version}</p>
-        </div>
-      </header>
-
-      <Section title="Roues" error={errors.wheels}>
-        {settings.modes.map((entry, index) => (
-          <Row
-            key={entry.id}
-            label={MODE_LABELS[entry.id]}
-            icon={<ModeIcon mode={entry.id} />}
-          >
-            <div className="order-buttons">
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Monter ${MODE_LABELS[entry.id]}`}
-                disabled={index === 0}
-                onClick={() => moveMode(index, -1)}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Descendre ${MODE_LABELS[entry.id]}`}
-                disabled={index === settings.modes.length - 1}
-                onClick={() => moveMode(index, 1)}
-              >
-                ↓
-              </button>
-            </div>
-            <Toggle
-              checked={entry.enabled}
-              label={MODE_LABELS[entry.id]}
-              // La dernière roue active ne peut pas être désactivée
-              disabled={entry.enabled && enabledCount === 1}
-              onChange={(enabled) => toggleMode(index, enabled)}
-            />
-          </Row>
-        ))}
-        <p className="section-note">
-          La roue s'ouvre sur la première active ; un clic au centre passe à la suivante, dans
-          cet ordre.
-        </p>
-      </Section>
-
-      {appsEnabled && (
-        <Section title="Applications de la roue" error={errors.apps}>
-          {SLOT_POSITIONS.map((position, slot) => {
-            const app = view.apps[slot];
-            return (
-              <Row
-                key={position}
-                label={app ? app.name : "Aucune application"}
-                hint={position}
-                muted={!app}
-                icon={
-                  app?.icon ? (
-                    <img className="settings-app-icon" src={app.icon} alt="" />
-                  ) : (
-                    <span className="settings-app-placeholder" aria-hidden="true">
-                      {app ? app.name.slice(0, 1) : "+"}
-                    </span>
-                  )
-                }
-              >
-                <button type="button" className="link-button" onClick={() => void chooseApp(slot)}>
-                  {app ? "Changer…" : "Choisir…"}
-                </button>
-                {app && (
-                  <button type="button" className="link-button" onClick={() => setApp(slot, null)}>
-                    Retirer
-                  </button>
-                )}
-              </Row>
-            );
-          })}
-          <p className="section-note">
-            Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
-          </p>
-        </Section>
-      )}
-
+    <>
       <Section title="Ouvrir la roue" error={errors.shortcut}>
         {view.shortcutsSupported ? (
-          <>
-            <Row
-              label="Raccourci clavier"
-              hint={
-                isMac
-                  ? "Si une autre app utilise déjà ce raccourci, macOS la sert en premier."
-                  : "Un nouvel appui referme la roue."
-              }
-            >
-              <ShortcutRecorder
-                label={view.shortcutLabel}
-                modifiersHint={isMac ? "Ajoutez ⌘, ⌃, ⌥ ou ⇧." : "Ajoutez Ctrl, Alt ou Maj."}
-                onRecord={(shortcut) => change("shortcut", { shortcut })}
-              />
-              {settings.shortcut !== view.defaultShortcut && (
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => change("shortcut", { shortcut: view.defaultShortcut })}
-                >
-                  Par défaut
-                </button>
-              )}
-            </Row>
-          </>
+          <Row
+            label="Raccourci clavier"
+            hint={
+              isMac
+                ? "Si une autre app utilise déjà ce raccourci, macOS la sert en premier."
+                : "Un nouvel appui referme la roue."
+            }
+          >
+            <ShortcutRecorder
+              label={view.shortcutLabel}
+              modifiersHint={isMac ? "Ajoutez ⌘, ⌃, ⌥ ou ⇧." : "Ajoutez Ctrl, Alt ou Maj."}
+              onRecord={(shortcut) => change("shortcut", { shortcut })}
+            />
+            {settings.shortcut !== view.defaultShortcut && (
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => change("shortcut", { shortcut: view.defaultShortcut })}
+              >
+                Par défaut
+              </button>
+            )}
+          </Row>
         ) : (
           <p className="section-note">
             Sous Wayland, les apps ne peuvent pas écouter le clavier. Liez la commande{" "}
@@ -292,7 +392,190 @@ export function SettingsApp() {
         </Row>
       </Section>
 
-      <Section title="Qualité des formats avec perte" error={errors.quality}>
+      <Section title="Démarrage" error={errors.startup}>
+        <Row label="Lancer Rutile à l'ouverture de session">
+          <Toggle
+            checked={view.launchAtLogin}
+            label="Lancement au démarrage"
+            onChange={(enabled) => void toggleLaunchAtLogin(enabled)}
+          />
+        </Row>
+      </Section>
+
+      {view.finderPermission && (
+        <Section title="Autorisations">
+          <Row
+            label="Lire la sélection du Finder"
+            hint="Pour convertir ou partager le fichier sélectionné quand la roue s'ouvre."
+          >
+            <span className="status" data-state={view.finderPermission}>
+              {PERMISSION_TEXT[view.finderPermission]}
+            </span>
+            {view.finderPermission === "denied" && (
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => void openPermissionSettings()}
+              >
+                Ouvrir les réglages
+              </button>
+            )}
+          </Row>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function WheelsTab({
+  settings,
+  error,
+  change,
+}: {
+  settings: Settings;
+  error?: string;
+  change: Change;
+}) {
+  const enabledCount = settings.modes.filter((entry) => entry.enabled).length;
+
+  const moveMode = (index: number, delta: number) => {
+    const modes = [...settings.modes];
+    [modes[index], modes[index + delta]] = [modes[index + delta], modes[index]];
+    change("wheels", { modes });
+  };
+
+  return (
+    <>
+      <Section title="Roues" error={error}>
+        {settings.modes.map((entry, index) => (
+          <Row key={entry.id} label={MODE_LABELS[entry.id]} icon={<ModeIcon mode={entry.id} />}>
+            <div className="order-buttons">
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Monter ${MODE_LABELS[entry.id]}`}
+                disabled={index === 0}
+                onClick={() => moveMode(index, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Descendre ${MODE_LABELS[entry.id]}`}
+                disabled={index === settings.modes.length - 1}
+                onClick={() => moveMode(index, 1)}
+              >
+                ↓
+              </button>
+            </div>
+            <Toggle
+              checked={entry.enabled}
+              label={MODE_LABELS[entry.id]}
+              // La dernière roue active ne peut pas être désactivée
+              disabled={entry.enabled && enabledCount === 1}
+              onChange={(enabled) =>
+                change("wheels", { modes: withMode(settings, entry.id, enabled) })
+              }
+            />
+          </Row>
+        ))}
+        <p className="section-note">Un clic au centre passe à la roue suivante, dans cet ordre.</p>
+      </Section>
+
+      <Section title="Comportement">
+        <Row
+          label="Temps au centre avant de basculer"
+          hint="Pendant un glisser, entre conversion et partage."
+        >
+          <Slider
+            label="Temps au centre avant de basculer"
+            value={settings.dwellMs}
+            min={400}
+            max={2500}
+            step={100}
+            showValue
+            formatValue={(ms) => `${(ms / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 1 })} s`}
+            onCommit={(dwellMs) => change("wheels", { dwellMs })}
+          />
+        </Row>
+        <Row
+          label="Rouvrir sur la dernière roue utilisée"
+          hint={
+            settings.rememberWheel
+              ? "La roue revient là où vous étiez."
+              : "Sinon, la roue s'ouvre sur la première de la liste."
+          }
+        >
+          <Toggle
+            checked={settings.rememberWheel}
+            label="Rouvrir sur la dernière roue"
+            onChange={(rememberWheel) => change("wheels", { rememberWheel })}
+          />
+        </Row>
+        <p className="section-note">
+          Une image ouvre directement le convertisseur d'images, une vidéo celui de vidéos. En
+          glissant un fichier, restez au centre pour passer à la roue de partage, puis revenez-y
+          pour repasser au convertisseur.
+        </p>
+      </Section>
+    </>
+  );
+}
+
+function withMode(settings: Settings, mode: Mode, enabled: boolean): Settings["modes"] {
+  return settings.modes.map((entry) => (entry.id === mode ? { ...entry, enabled } : entry));
+}
+
+/** Interrupteur d'une roue, en tête de son onglet. */
+function WheelSwitch({
+  settings,
+  mode,
+  label,
+  change,
+}: {
+  settings: Settings;
+  mode: Mode;
+  label: string;
+  change: Change;
+}) {
+  const enabled = settings.modes.some((entry) => entry.id === mode && entry.enabled);
+  const onlyOne = settings.modes.filter((entry) => entry.enabled).length === 1;
+  return (
+    <Row
+      label={label}
+      icon={<ModeIcon mode={mode} />}
+      hint={enabled ? "Ordre et autres roues dans l'onglet Roues." : "Désactivée : elle n'apparaît pas au clic sur le centre."}
+    >
+      <Toggle
+        checked={enabled}
+        label={label}
+        disabled={enabled && onlyOne}
+        onChange={(next) => change("wheels", { modes: withMode(settings, mode, next) })}
+      />
+    </Row>
+  );
+}
+
+function ConversionTab({
+  settings,
+  error,
+  change,
+}: {
+  settings: Settings;
+  error?: string;
+  change: Change;
+}) {
+  const [video, setVideo] = useState<VideoSupport | null>(
+    isTauri() ? null : { available: true, installHint: "brew install ffmpeg" },
+  );
+  useEffect(() => {
+    if (isTauri()) void videoSupport().then(setVideo);
+  }, []);
+
+  return (
+    <>
+      <Section title="Qualité des formats avec perte" error={error}>
         {(
           [
             ["JPEG", "jpegQuality"],
@@ -314,38 +597,455 @@ export function SettingsApp() {
         <p className="section-note">Plus la qualité est haute, plus le fichier est lourd.</p>
       </Section>
 
-      <Section title="Démarrage" error={errors.startup}>
-        <Row label="Lancer Rutile à l'ouverture de session">
-          <Toggle
-            checked={view.launchAtLogin}
-            label="Lancement au démarrage"
-            onChange={(enabled) => void toggleLaunchAtLogin(enabled)}
-          />
-        </Row>
+      <Section title="Vectorisation">
+        <p className="section-note">
+          Seule la sortie SVG est vectorisée : l'image est retracée en formes aux couleurs unies,
+          nette à toutes les tailles. C'est idéal pour un logo ou une icône, approximatif pour une
+          photo. PNG, JPEG, WebP, AVIF et ICO gardent les pixels, et un SVG converti vers eux est
+          d'abord rendu en pixels.
+        </p>
       </Section>
 
-      {view.finderPermission && (
-        <Section title="Autorisations">
-          <Row
-            label="Lire la sélection du Finder"
-            hint="Pour convertir le fichier sélectionné quand la roue s'ouvre."
-          >
-            <span className="status" data-state={view.finderPermission}>
-              {PERMISSION_TEXT[view.finderPermission]}
+      <Section title="Vidéos">
+        <Row
+          label="FFmpeg"
+          hint={
+            video === null
+              ? "Recherche…"
+              : video.available
+                ? "Convertit les vidéos de la roue Vidéo."
+                : `Pour l'installer : ${video.installHint}`
+          }
+        >
+          {video && (
+            <span className="status" data-state={video.available ? "granted" : "denied"}>
+              {video.available ? "Installé" : "Introuvable"}
             </span>
-            {view.finderPermission === "denied" && (
+          )}
+        </Row>
+      </Section>
+    </>
+  );
+}
+
+/** Formats d'une roue de conversion, avec leur couleur par défaut. */
+const COLOR_GROUPS: { mode: "image" | "video"; title: string; formats: readonly WheelItem[] }[] = [
+  { mode: "image", title: "Images", formats: OUTPUT_FORMATS },
+  { mode: "video", title: "Vidéos", formats: VIDEO_FORMATS },
+];
+
+/** Échelle de l'aperçu de la roue dans les réglages. */
+const PREVIEW_SCALE = 0.6;
+
+type ColorDraft = { colors: Record<string, string>; highlight: string | null };
+
+function ColorsTab({
+  settings,
+  error,
+  change,
+}: {
+  settings: Settings;
+  error?: string;
+  change: Change;
+}) {
+  // Les couleurs s'appliquent à l'aperçu tout de suite, et s'enregistrent un instant après
+  const [draft, setDraft] = useState<ColorDraft>({
+    colors: settings.formatColors,
+    highlight: settings.highlightColor,
+  });
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => setDraft({ colors: settings.formatColors, highlight: settings.highlightColor }),
+    [settings.formatColors, settings.highlightColor],
+  );
+  const [previewMode, setPreviewMode] = useState<"image" | "video">("image");
+
+  const update = (next: ColorDraft) => {
+    setDraft(next);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(
+      () => change("colors", { formatColors: next.colors, highlightColor: next.highlight }),
+      SLIDER_COMMIT_MS,
+    );
+  };
+
+  const setFormatColor = (format: WheelItem, color: string) => {
+    const colors = { ...draft.colors };
+    // Revenir à la couleur d'origine retire le choix, plutôt que de l'enregistrer
+    if (color === format.color) delete colors[format.id];
+    else colors[format.id] = color;
+    update({ ...draft, colors });
+  };
+
+  const customized = Object.keys(draft.colors).length > 0 || draft.highlight !== null;
+
+  return (
+    <>
+      <Section title="Aperçu">
+        <div className="color-preview">
+          <div className="segmented" role="tablist" aria-label="Roue de l'aperçu">
+            {COLOR_GROUPS.map(({ mode, title }) => (
               <button
+                key={mode}
                 type="button"
-                className="link-button"
-                onClick={() => void openPermissionSettings()}
+                role="tab"
+                aria-selected={previewMode === mode}
+                onClick={() => setPreviewMode(mode)}
               >
-                Ouvrir les réglages
+                {title}
               </button>
-            )}
-          </Row>
+            ))}
+          </div>
+          <WheelPreview
+            mode={previewMode}
+            colors={draft.colors}
+            highlight={draft.highlight}
+          />
+          <p className="row-hint">Survolez la roue pour voir la surbrillance.</p>
+        </div>
+      </Section>
+
+      {COLOR_GROUPS.map(({ mode, title, formats }) => (
+        <Section key={mode} title={title}>
+          <div className="color-grid">
+            {formats.map((format) => (
+              <ColorField
+                key={format.id}
+                label={format.label}
+                value={draft.colors[format.id] ?? format.color ?? DEFAULT_ACCENT}
+                onChange={(color) => setFormatColor(format, color)}
+              />
+            ))}
+          </div>
         </Section>
+      ))}
+
+      <Section title="Surbrillance" error={error}>
+        <Row label="Part survolée" hint="Secteur éclairé et anneau autour du bouton visé.">
+          <ColorField
+            label="Part survolée"
+            value={draft.highlight ?? DEFAULT_ACCENT}
+            hideLabel
+            onChange={(color) =>
+              update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color })
+            }
+          />
+        </Row>
+        <Row label="Couleurs d'origine" hint="Le texte des boutons reste lisible : blanc ou foncé selon la couleur.">
+          <button
+            type="button"
+            className="shortcut-button"
+            disabled={!customized}
+            onClick={() => update({ colors: {}, highlight: null })}
+          >
+            Réinitialiser
+          </button>
+        </Row>
+      </Section>
+    </>
+  );
+}
+
+/** Pastille de couleur qui ouvre le sélecteur du système, avec son code. */
+function ColorField({
+  label,
+  value,
+  hideLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  hideLabel?: boolean;
+  onChange: (color: string) => void;
+}) {
+  return (
+    <label className="color-field">
+      <input
+        type="color"
+        aria-label={`Couleur ${label}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value.toLowerCase())}
+      />
+      {!hideLabel && <span className="color-field-label">{label}</span>}
+      <span className="color-field-code">{value.toUpperCase()}</span>
+    </label>
+  );
+}
+
+/** Roue réduite, aux couleurs en cours de réglage ; le survol y fonctionne comme sur la vraie. */
+function WheelPreview({
+  mode,
+  colors,
+  highlight,
+}: {
+  mode: "image" | "video";
+  colors: Record<string, string>;
+  highlight: string | null;
+}) {
+  const [pointer, setPointer] = useState<Point | null>(null);
+  const items = colorize(mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS, colors);
+  const highlighted = pointer && usableSector(...pointer, new Set(), items);
+  const hovered = highlighted === null ? null : items[highlighted];
+  return (
+    <div
+      className="wheel-preview"
+      style={{ width: CENTER * 2 * PREVIEW_SCALE, height: CENTER * 2 * PREVIEW_SCALE }}
+    >
+      <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: "top left" }}>
+        <Wheel
+          phase="open"
+          mode={mode}
+          next={null}
+          items={items}
+          disabled={new Set()}
+          highlighted={highlighted}
+          hub={
+            hovered
+              ? { label: hovered.action ?? `Convertir en ${hovered.label}`, tone: "action" }
+              : null
+          }
+          work={null}
+          dwelling={false}
+          dwellMs={1000}
+          accent={highlight}
+          scale={PREVIEW_SCALE}
+          onPointer={setPointer}
+          onSelect={() => {}}
+          onOutsideClick={() => {}}
+          onToggleMode={() => {}}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
+  const { settings } = view;
+
+  const setApp = (slot: number, app: Settings["apps"][number]) => {
+    const apps = settings.apps.map((current, i) => (i === slot ? app : current));
+    change("apps", { apps });
+  };
+
+  const chooseApp = async (slot: number) => {
+    const picked = isTauri() ? await pickApp() : null;
+    if (picked) setApp(slot, picked);
+  };
+
+  return (
+    <>
+      <Section title="Roue des apps" error={errors.wheels}>
+        <WheelSwitch settings={settings} mode="apps" label="Afficher la roue des apps" change={change} />
+      </Section>
+      <Section title="Applications" error={errors.apps}>
+        {SLOT_POSITIONS.map((position, slot) => {
+          const app = view.apps[slot];
+          return (
+            <Row
+              key={position}
+              label={app ? app.name : "Aucune application"}
+              hint={position}
+              muted={!app}
+              icon={<ItemIcon icon={app?.icon} name={app?.name} />}
+            >
+              <button type="button" className="link-button" onClick={() => void chooseApp(slot)}>
+                {app ? "Changer…" : "Choisir…"}
+              </button>
+              {app && (
+                <button type="button" className="link-button" onClick={() => setApp(slot, null)}>
+                  Retirer
+                </button>
+              )}
+            </Row>
+          );
+        })}
+        <p className="section-note">
+          Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
+        </p>
+      </Section>
+    </>
+  );
+}
+
+function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
+  const { settings } = view;
+  // Part dont on choisit la destination
+  const [picking, setPicking] = useState<number | null>(null);
+  const paste = view.platform === "macos" ? "⌘V" : "Ctrl+V";
+
+  const setTarget = (slot: number, target: ShareTarget | null) => {
+    const share = settings.share.map((current, i) => (i === slot ? target : current));
+    change("share", { share });
+  };
+
+  return (
+    <>
+      <Section title="Roue de partage" error={errors.wheels}>
+        <WheelSwitch
+          settings={settings}
+          mode="share"
+          label="Afficher la roue de partage"
+          change={change}
+        />
+      </Section>
+      <Section title="Destinations" error={errors.share}>
+        {SLOT_POSITIONS.map((position, slot) => {
+          const target = view.share[slot];
+          return (
+            <Row
+              key={position}
+              label={target ? target.name : "Aucune destination"}
+              hint={target ? `${position} · ${SHARE_KINDS[target.kind]}` : position}
+              muted={!target}
+              icon={<ItemIcon icon={target?.icon} name={target?.name} />}
+            >
+              <button type="button" className="link-button" onClick={() => setPicking(slot)}>
+                {target ? "Changer…" : "Choisir…"}
+              </button>
+              {target && (
+                <button type="button" className="link-button" onClick={() => setTarget(slot, null)}>
+                  Retirer
+                </button>
+              )}
+            </Row>
+          );
+        })}
+        <p className="section-note">
+          {view.platform === "macos" && "AirDrop, Messages et Mail ouvrent leur fenêtre d'envoi. "}
+          Un dossier synchronisé (Google Drive, iCloud Drive…) reçoit une copie, que son app met
+          en ligne. Pour Signal et les messageries sans partage, le fichier est copié puis l'app
+          s'ouvre : collez-le avec {paste} dans la conversation.
+        </p>
+      </Section>
+      {picking !== null && (
+        <SharePicker
+          position={SLOT_POSITIONS[picking]}
+          onPick={(target) => {
+            setTarget(picking, target);
+            setPicking(null);
+          }}
+          onCancel={() => setPicking(null)}
+        />
       )}
-    </main>
+    </>
+  );
+}
+
+/** Feuille de choix d'une destination : services, dossiers synchronisés, messageries, ou
+ * un dossier et une app quelconques. */
+function SharePicker({
+  position,
+  onPick,
+  onCancel,
+}: {
+  position: string;
+  onPick: (target: ShareTarget) => void;
+  onCancel: () => void;
+}) {
+  const [choices, setChoices] = useState<ShareChoice[] | null>(isTauri() ? null : PREVIEW_CHOICES);
+  const sheet = useRef<HTMLDivElement>(null);
+  const cancel = useRef(onCancel);
+  cancel.current = onCancel;
+
+  // Lues une fois à l'ouverture : les icônes des services prennent un instant
+  useEffect(() => {
+    if (isTauri()) void shareChoices().then(setChoices);
+    sheet.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancel.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const groups = new Map<string, ShareChoice[]>();
+  for (const choice of choices ?? []) {
+    groups.set(choice.group, [...(groups.get(choice.group) ?? []), choice]);
+  }
+
+  const pickFolder = async () => {
+    const folder = isTauri() ? await pickShareFolder() : null;
+    if (folder) onPick(targetOf(folder));
+  };
+
+  const pickMessagingApp = async () => {
+    const app = isTauri() ? await pickApp() : null;
+    if (app) onPick({ kind: "app", path: app.path, name: app.name });
+  };
+
+  return (
+    <div className="sheet-backdrop" onClick={onCancel}>
+      <div
+        ref={sheet}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Destination ${position.toLowerCase()}`}
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 className="sheet-title">Destination · {position.toLowerCase()}</h3>
+        <div className="sheet-list">
+          {choices === null && <p className="sheet-empty">Recherche des destinations…</p>}
+          {[...groups].map(([group, items]) => (
+            <div key={group} className="sheet-group">
+              <h4>{group}</h4>
+              {items.map((choice) => (
+                <button
+                  key={choice.kind === "service" ? choice.id : choice.path}
+                  type="button"
+                  className="sheet-item"
+                  onClick={() => onPick(targetOf(choice))}
+                >
+                  <ItemIcon icon={choice.icon} name={choice.name} small />
+                  <span>{choice.name}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+          <div className="sheet-group">
+            <h4>Autre</h4>
+            <button type="button" className="sheet-item" onClick={() => void pickFolder()}>
+              <span className="sheet-item-glyph" aria-hidden="true">
+                ⌂
+              </span>
+              <span>Un dossier…</span>
+            </button>
+            <button type="button" className="sheet-item" onClick={() => void pickMessagingApp()}>
+              <span className="sheet-item-glyph" aria-hidden="true">
+                ✉
+              </span>
+              <span>Une messagerie…</span>
+            </button>
+          </div>
+        </div>
+        <div className="sheet-actions">
+          <button type="button" className="shortcut-button" onClick={onCancel}>
+            Annuler
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Icône d'app ou de destination, ou initiale (« + » pour une part vide). */
+function ItemIcon({
+  icon,
+  name,
+  small,
+}: {
+  icon?: string | null;
+  name?: string;
+  small?: boolean;
+}) {
+  if (icon) {
+    return <img className="settings-app-icon" data-small={small} src={icon} alt="" />;
+  }
+  return (
+    <span className="settings-app-placeholder" data-small={small} aria-hidden="true">
+      {name ? name.slice(0, 1) : "+"}
+    </span>
   );
 }
 
@@ -419,8 +1119,10 @@ function Slider({
   value,
   min,
   max,
+  step,
   disabled,
   showValue,
+  formatValue = String,
   ends,
   onCommit,
 }: {
@@ -428,8 +1130,10 @@ function Slider({
   value: number;
   min: number;
   max: number;
+  step?: number;
   disabled?: boolean;
   showValue?: boolean;
+  formatValue?: (value: number) => string;
   ends?: [string, string];
   onCommit: (value: number) => void;
 }) {
@@ -451,13 +1155,14 @@ function Slider({
         aria-label={label}
         min={min}
         max={max}
+        step={step}
         value={draft}
         disabled={disabled}
         style={{ "--fill": `${((draft - min) / (max - min)) * 100}%` } as React.CSSProperties}
         onChange={(event) => update(Number(event.target.value))}
       />
       {ends && <span className="slider-end">{ends[1]}</span>}
-      {showValue && <span className="slider-value">{draft}</span>}
+      {showValue && <span className="slider-value">{formatValue(draft)}</span>}
     </div>
   );
 }

@@ -7,6 +7,7 @@ pub mod notify;
 pub mod permissions;
 pub mod settings;
 pub mod shake;
+pub mod share;
 pub mod shortcut;
 pub mod tray;
 pub mod wheel;

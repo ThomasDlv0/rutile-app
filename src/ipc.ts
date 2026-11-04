@@ -54,8 +54,9 @@ export const hideWheel = () => invoke("hide_wheel");
 /** `null` quand le système ne permet pas de le savoir. */
 export const primaryButtonPressed = () => invoke<boolean | null>("primary_button_pressed");
 export const inspectFiles = (paths: string[]) => invoke<FileInfo[]>("inspect_files", { paths });
-/** Sélecteur de fichiers du système, filtré selon le mode ; liste vide si l'utilisateur annule. */
-export const pickFiles = (videos: boolean) => invoke<FileInfo[]>("pick_files", { videos });
+/** Sélecteur de fichiers du système, filtré selon la roue ; liste vide si l'utilisateur annule. */
+export const pickFiles = (kind: "images" | "videos" | "any") =>
+  invoke<FileInfo[]>("pick_files", { kind });
 /** Se termine quand la conversion est finie ; Rust envoie la notification. */
 export const convertFiles = (paths: string[], format: OutputFormat) =>
   invoke<Outcome>("convert_files", { paths, format });
@@ -80,8 +81,18 @@ export interface Settings {
   avifQuality: number;
   /** Ordre du clic au centre, et roues affichées ou non. */
   modes: { id: Mode; enabled: boolean }[];
+  /** La roue se rouvre sur celle affichée à la fermeture, plutôt que sur la première. */
+  rememberWheel: boolean;
+  /** Millisecondes au centre, un fichier glissé, avant de basculer entre conversion et partage. */
+  dwellMs: number;
+  /** Couleur choisie par format (« png » → « #3b82f6 ») ; un format absent garde la sienne. */
+  formatColors: Record<string, string>;
+  /** Couleur de la part survolée ; `null` pour le bleu d'origine. */
+  highlightColor: string | null;
   /** Une app (ou rien) par part, dans le sens horaire depuis le haut. */
   apps: (AppSlot | null)[];
+  /** Une destination (ou rien) par part de la roue de partage. */
+  share: (ShareTarget | null)[];
 }
 
 export interface SettingsView {
@@ -98,7 +109,16 @@ export interface SettingsView {
   version: string;
   /** Apps des parts, avec leurs icônes. */
   apps: (AppView | null)[];
+  /** Destinations de la roue de partage, avec leurs icônes. */
+  share: (ShareView | null)[];
+  /** Onglet demandé à l'ouverture (une part vide de la roue, par exemple). */
+  tab: SettingsTab | null;
 }
+
+export type SettingsTab = "general" | "wheels" | "conversion" | "colors" | "apps" | "share";
+
+/** Onglet demandé alors que la fenêtre de réglages est déjà ouverte. */
+export const SETTINGS_TAB_EVENT = "settings://tab";
 
 export const getSettings = () => invoke<SettingsView>("get_settings");
 /** Applique et enregistre ; rejette avec un message en français si une valeur est refusée. */
@@ -121,10 +141,18 @@ export interface AppSlot {
   name: string;
 }
 
-/** Roues actives dans l'ordre du clic au centre, et apps des parts. */
+/** Roues actives dans l'ordre du clic au centre, apps et destinations de partage des parts. */
 export interface WheelConfig {
   modes: Mode[];
+  /** Rouvrir sur la dernière roue affichée. */
+  remember: boolean;
+  /** Temps au centre avant de basculer entre conversion et partage. */
+  dwellMs: number;
+  /** Couleurs choisies pour les formats, et pour la part survolée. */
+  colors: Record<string, string>;
+  highlight: string | null;
   apps: (AppView | null)[];
+  share: (ShareView | null)[];
 }
 
 /** Réglages des roues modifiés : la roue relit sa configuration. */
@@ -136,4 +164,29 @@ export const pickApp = () => invoke<AppSlot | null>("pick_app");
 /** Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers s'il y en a. */
 export const launchApp = (slot: number, paths: string[]) =>
   invoke("launch_app", { slot, paths });
-export const openSettings = () => invoke("open_settings");
+/** Ouvre les réglages, sur l'onglet `tab` s'il est donné. */
+export const openSettings = (tab?: SettingsTab) => invoke("open_settings", { tab });
+
+/** Destination d'une part de la roue de partage. */
+export type ShareTarget =
+  /** Service du système (macOS) : AirDrop, Messages, Mail… */
+  | { kind: "service"; id: string; name: string }
+  /** Dossier où copier les fichiers : Google Drive, iCloud Drive… */
+  | { kind: "folder"; path: string; name: string }
+  /** Messagerie sans extension de partage : fichiers copiés, puis app ouverte. */
+  | { kind: "app"; path: string; name: string };
+
+export type ShareView = ShareTarget & {
+  /** PNG en data URL. */
+  icon: string | null;
+};
+
+/** Destination proposée dans les réglages, rangée par famille. */
+export type ShareChoice = ShareView & { group: string };
+
+export const shareChoices = () => invoke<ShareChoice[]>("share_choices");
+/** Sélecteur de dossier ; `null` si l'utilisateur annule. */
+export const pickShareFolder = () => invoke<ShareView | null>("pick_share_folder");
+/** Partage les fichiers avec la destination de la part `slot`. */
+export const shareFiles = (slot: number, paths: string[]) =>
+  invoke("share_files", { slot, paths });

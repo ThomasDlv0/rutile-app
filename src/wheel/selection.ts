@@ -13,12 +13,13 @@ const SWITCH_LABELS: Record<Mode, string> = {
   image: "Passer aux images",
   video: "Passer en vidéo",
   apps: "Passer aux apps",
+  share: "Passer au partage",
 };
 
 /** Le fichier peut-il être traité dans ce mode ? Un GIF animé passe aussi en vidéo, et
- * n'importe quel fichier peut s'ouvrir avec une app. */
+ * n'importe quel fichier peut s'ouvrir avec une app ou se partager. */
 export function convertible(file: FileInfo, mode: Mode): boolean {
-  if (mode === "apps") return true;
+  if (mode === "apps" || mode === "share") return true;
   return mode === "image" ? file.format !== null : file.video !== null || file.format === "gif";
 }
 
@@ -33,9 +34,9 @@ function sourceFormat(file: FileInfo, mode: "image" | "video"): string | null {
 }
 
 /** Formats grisés : celui d'origine, ou tous si aucun fichier n'est convertible dans ce mode.
- * Rien n'est grisé sur la roue des apps. */
+ * Rien n'est grisé sur les roues des apps et de partage. */
 export function disabledFormats(files: FileInfo[], mode: Mode): Set<string> {
-  if (mode === "apps" || files.length === 0) return new Set();
+  if (mode === "apps" || mode === "share" || files.length === 0) return new Set();
   const all = new Set<string>(formatsFor(mode).map((format) => format.id));
   if (!files.some((file) => convertible(file, mode))) return all;
   const first = sourceFormat(files[0], mode);
@@ -105,7 +106,8 @@ function itemAction(item: WheelItem, dragging: boolean, mode: Mode): string {
   return item.action ?? `Convertir en ${item.label}`;
 }
 
-/** Le centre décrit ce que fera la roue à l'endroit pointé, sinon le fichier en cours. */
+/** Le centre décrit ce que fera la roue à l'endroit pointé, sinon le fichier en cours.
+ * `dwellTarget` : pendant un glisser, roue où mène un temps passé au centre. */
 export function hubFor(
   pointer: Point | null,
   disabled: Set<string>,
@@ -114,6 +116,7 @@ export function hubFor(
   mode: Mode,
   items: readonly WheelItem[],
   next: Mode | null,
+  dwellTarget: Mode | null = null,
 ): HubText | null {
   if (pointer) {
     const index = sectorAt(...pointer);
@@ -129,6 +132,10 @@ export function hubFor(
       };
     }
     if (isInsideHub(...pointer)) {
+      if (dragging && dwellTarget) {
+        const label = dwellTarget === "share" ? "Restez pour partager" : "Restez pour convertir";
+        return { label, tone: "action", hint: "Relâchez pour annuler" };
+      }
       if (dragging) return { label: "Relâcher ici pour annuler", tone: "muted" };
       if (next) return { label: SWITCH_LABELS[next], tone: "action" };
     }

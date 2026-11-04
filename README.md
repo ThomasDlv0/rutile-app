@@ -3,7 +3,8 @@
 Utilitaire léger qui tourne en arrière-plan et convertit des images et des vidéos grâce à une
 roue radiale : chaque part de la roue correspond à un format de sortie. Un clic au centre fait
 passer d'une roue à l'autre : Images (PNG, JPEG, WebP, AVIF, SVG, ICO), Vidéo (MP4, WebM, MOV,
-MKV, GIF, MP3) et Apps, où chaque part lance une app choisie dans les réglages.
+MKV, GIF, MP3), Apps, où chaque part lance une app choisie dans les réglages, et Partage
+(AirDrop, Messages, Google Drive, Signal…).
 La roue s'ouvre avec un raccourci clavier, depuis l'icône de la barre système, ou en secouant
 un fichier pendant qu'on le glisse.
 
@@ -69,13 +70,18 @@ de la roue, avec la commande d'installation.
 Si une autre app utilise déjà le même raccourci, macOS le lui laisse sans rien signaler :
 il faut le libérer dans l'autre app ou en choisir un autre dans les réglages.
 
-### Images, vidéos ou apps
+### Images, vidéos, apps ou partage
 
 - Un clic au centre de la roue passe à la roue suivante, dans l'ordre choisi dans les
-  réglages. La roue s'ouvre toujours sur la première.
-- Des vidéos sélectionnées ou glissées font passer la roue en mode Vidéo d'elles-mêmes, et
-  des images en mode Images. Un GIF animé se convertit dans les deux modes. Sur la roue des
-  apps, rien ne change de roue tout seul.
+  réglages. La roue s'ouvre sur la première, ou sur la dernière utilisée si le réglage
+  « Rouvrir sur la dernière roue utilisée » est activé.
+- Des images sélectionnées ou glissées ouvrent le convertisseur d'images, des vidéos celui de
+  vidéos, quelle que soit la roue d'ouverture. Un GIF animé se convertit dans les deux. Une
+  roue choisie à la main (clic au centre) ne change plus jusqu'à la fermeture.
+- Pendant un glisser, rester 0,7 s au centre passe à la roue de partage : un anneau bleu se
+  remplit autour du centre pour l'annoncer. Relâcher au centre annule toujours.
+- Les formats sont des tuiles de couleur (PNG bleu, JPEG orange, WebP vert…) ; les apps et
+  les destinations de partage montrent leur icône.
 
 ### Roue des apps
 
@@ -83,6 +89,25 @@ il faut le libérer dans l'autre app ou en choisir un autre dans les réglages.
 - Un clic sur une part lance l'app.
 - Un ou plusieurs fichiers glissés sur une part s'ouvrent avec cette app.
 - Une part vide affiche « + » : un clic ouvre les réglages pour lui choisir une app.
+
+### Roue de partage
+
+Chaque part envoie les fichiers sélectionnés dans le Finder, glissés dessus ou choisis au clic
+(sélecteur de fichiers) vers une destination, choisie dans Réglages → Partage :
+
+- Service du système (macOS) : AirDrop, Messages, Mail, Notes, Rappels, Photos… et toute
+  extension de partage installée. Sa fenêtre d'envoi s'ouvre (choix de l'appareil, du
+  destinataire).
+- Dossier synchronisé : Google Drive, iCloud Drive, Dropbox, OneDrive, trouvés tout seuls dès
+  que leur app est installée, ou n'importe quel dossier. Le fichier y est copié (jamais
+  écrasé : `photo-1.png` si le nom est pris), le Finder ou l'Explorateur montre la copie, et
+  l'app du service la met en ligne. Un clic sans fichier ouvre simplement le dossier.
+- Messagerie sans extension de partage, comme Signal : le fichier est mis dans le
+  presse-papiers et l'app s'ouvre ; il reste à le coller (`⌘V`, `Ctrl+V`) dans la
+  conversation. Une notification le rappelle.
+
+Au premier lancement, la roue reçoit ce qui est installé : AirDrop, Messages, une messagerie,
+les dossiers synchronisés et Mail.
 
 ### Choisir le fichier
 
@@ -118,15 +143,21 @@ notification) montre le fichier dans le Finder ou l'Explorateur.
 
 ### Réglages
 
-Depuis l'icône de la barre système → « Réglages… » : roues actives et leur ordre, apps de la
-roue des apps, raccourci, secouage et sensibilité, qualité JPEG / WebP / AVIF, lancement à
-l'ouverture de session et, sur macOS, état de l'autorisation du Finder.
+Depuis l'icône de la barre système → « Réglages… », en cinq onglets :
 
-- Roues : chacune (convertisseur d'images, convertisseur de vidéos, applications) s'active
-  ou se désactive, et les flèches changent l'ordre du clic au centre. Une roue reste toujours
-  active : avec la seule roue des apps, Rutile devient un lanceur d'apps.
-- Applications de la roue : une app par part, de « En haut » à « En haut à gauche » dans le
-  sens des aiguilles d'une montre. Le sélecteur s'ouvre dans le dossier des applications. Ils s'appliquent tout de suite et sont enregistrés dans
+- Général : raccourci, secouage et sensibilité, lancement à l'ouverture de session et, sur
+  macOS, état de l'autorisation du Finder.
+- Roues : chacune (convertisseur d'images, convertisseur de vidéos, applications, partage)
+  s'active ou se désactive, et les flèches changent l'ordre du clic au centre. Une roue reste
+  toujours active : avec la seule roue des apps, Rutile devient un lanceur d'apps. La roue
+  peut aussi se rouvrir sur la dernière utilisée.
+- Conversion : qualité JPEG / WebP / AVIF, ce que fait la vectorisation, présence de FFmpeg.
+- Apps : une app par part, de « En haut » à « En haut à gauche » dans le sens des aiguilles
+  d'une montre. Le sélecteur s'ouvre dans le dossier des applications.
+- Partage : une destination par part, parmi les services, dossiers synchronisés et
+  messageries trouvés, ou un dossier et une app quelconques.
+
+Une part vide de la roue ouvre directement le bon onglet. Ils s'appliquent tout de suite et sont enregistrés dans
 `settings.json`, dans le dossier de configuration de l'app (`~/Library/Application Support/
 fr.rutile.desktop` sur macOS, `%APPDATA%\fr.rutile.desktop` sous Windows,
 `~/.config/fr.rutile.desktop` sous Linux).
@@ -168,6 +199,9 @@ Puis fermer et rouvrir la session, et activer le secouage dans les réglages.
 | Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
 | Bouton « Afficher » de la notification | oui | tant que la notification est à l'écran | oui | oui |
 | Roue des apps | `.app`, avec icône | `.exe` ou raccourci `.lnk`, sans icône (nom seul) | fichier `.desktop`, avec icône | idem X11 |
+| Partage : services (AirDrop…) | oui | non | non | non |
+| Partage : dossiers synchronisés | oui | oui | oui | oui |
+| Partage : messageries (presse-papiers) | oui | oui | avec `xclip` | avec `wl-copy` |
 
 - Windows : le hook souris ne voit pas les fenêtres d'une app lancée en administrateur.
 - Wayland : la roue passe par XWayland (`GDK_BACKEND=x11`), seul moyen sous GNOME de la garder
@@ -185,8 +219,10 @@ Puis fermer et rouvrir la session, et activer le secouage dans les réglages.
 - JPEG : la transparence devient un fond blanc. ICO : tailles 16, 32, 48 et 256 px,
   l'image étant centrée sur un fond transparent si elle n'est pas carrée.
 - SVG en entrée : rendu à sa taille, agrandi à 512 px de côté s'il est plus petit.
-- SVG en sortie : vectorisation approximative (image réduite à 1024 px pour le tracé,
-  dimensions d'origine conservées). Les dégradés deviennent des aplats.
+- SVG en sortie : seule conversion vectorisée. L'image est retracée en formes (image réduite
+  à 1024 px pour le tracé, dimensions d'origine conservées) ; les dégradés deviennent des
+  aplats. Parfait pour un logo, approximatif pour une photo. Les autres formats restent en
+  pixels.
 - Qualité par défaut : JPEG 90, WebP 85, AVIF 70.
 
 Les métadonnées (EXIF, profil de couleur ICC) ne sont pas conservées, seule l'orientation EXIF
@@ -243,7 +279,7 @@ src/                    interface React + TypeScript
   settings/             fenêtre de réglages
 crates/converter/       conversion d'images (Rust) et de vidéos (FFmpeg), sans Tauri
 crates/shake_detector/  reconnaissance du secouage à partir des mouvements de la souris
-crates/platform/        code propre à chaque système : souris, sélection, session, apps
+crates/platform/        code propre à chaque système : souris, sélection, session, apps, partage
 src-tauri/              app Tauri
-  src/app/              roue, apps, raccourci, barre système, réglages, notifications…
+  src/app/              roue, apps, partage, raccourci, barre système, réglages…
 ```

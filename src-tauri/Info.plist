@@ -10,6 +10,9 @@
   <string>fr</string>
   <!-- Texte de la demande d'autorisation macOS pour lire la sélection du Finder -->
   <key>NSAppleEventsUsageDescription</key>
-  <string>Rutile lit les fichiers sélectionnés dans le Finder pour les convertir.</string>
+  <string>Rutile lit les fichiers sélectionnés dans le Finder pour les convertir ou les partager.</string>
+  <!-- Copie dans un dossier synchronisé (Google Drive, Dropbox, OneDrive) de la roue de partage -->
+  <key>NSFileProviderDomainUsageDescription</key>
+  <string>Rutile copie les fichiers que vous partagez dans ce dossier synchronisé.</string>
 </dict>
 </plist>

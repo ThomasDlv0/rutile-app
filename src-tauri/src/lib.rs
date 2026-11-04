@@ -58,6 +58,9 @@ pub fn run() {
             app::apps::pick_app,
             app::apps::launch_app,
             app::apps::open_settings,
+            app::share::share_choices,
+            app::share::pick_share_folder,
+            app::share::share_files,
         ])
         .setup(|app| {
             // Pas d'icône dans le Dock (LSUIElement fait de même pour l'app installée)
