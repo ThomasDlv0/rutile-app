@@ -243,6 +243,9 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(WHEEL_LABEL) {
         super::macos_panel::convert(&window)?;
     }
+    // Les autres systèmes n'ont rien à préparer
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
     Ok(())
 }
 

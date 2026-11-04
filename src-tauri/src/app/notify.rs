@@ -23,7 +23,8 @@ const REMEMBERED: i32 = 50;
 pub enum Action {
     /// « Afficher » : montre les fichiers dans le Finder ou l'Explorateur.
     Reveal(Vec<PathBuf>),
-    /// « Ouvrir les réglages » : ouvre une page des réglages du système.
+    /// « Ouvrir les réglages » : ouvre une page des réglages du système (macOS seulement).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenUrl(String),
 }
 
