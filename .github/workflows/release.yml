@@ -181,13 +181,30 @@ jobs:
           Stop-Process -Id $app.Id -Force
           "L'app tournait encore après 10 s."
 
+      # Le MSI reprendrait le dossier enregistré par l'installation NSIS : on la retire d'abord,
+      # ce qui vérifie aussi la désinstallation
+      - name: Désinstallation silencieuse (NSIS)
+        run: |
+          $dir = Split-Path $env:RUTILE_EXE
+          # `_?=` : le désinstalleur travaille sur place et rend la main une fois fini
+          $uninstall = Start-Process -FilePath (Join-Path $dir 'uninstall.exe') -ArgumentList '/S', "_?=$dir" -PassThru -Wait
+          if ($uninstall.ExitCode -ne 0) { throw "Désinstallation en échec (code $($uninstall.ExitCode))" }
+          if (Test-Path $env:RUTILE_EXE) { throw "rutile.exe est encore là après la désinstallation" }
+          "Désinstallé."
+
       - name: Installation silencieuse (MSI) et auto-test
         run: |
           $msi = Get-ChildItem bundles -Recurse -Filter '*.msi' | Select-Object -First 1
           $install = Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart /l*v msi.log" -PassThru -Wait
           if ($install.ExitCode -ne 0) { Get-Content msi.log -Tail 40; throw "Installation MSI en échec (code $($install.ExitCode))" }
-          $exe = Join-Path $env:ProgramFiles 'Rutile\rutile.exe'
-          if (-not (Test-Path $exe)) { throw "rutile.exe introuvable dans Program Files" }
+          Select-String -Path msi.log -Pattern 'INSTALLDIR|Product:|Installation success|completed successfully' -Encoding Unicode |
+            Select-Object -Last 8 | ForEach-Object { $_.Line }
+          # Program Files en général, mais on cherche plutôt que de supposer le dossier
+          $exe = Get-ChildItem $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA `
+              -Recurse -Depth 2 -Filter rutile.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { Get-Content msi.log -Tail 60; throw "rutile.exe introuvable après l'installation MSI" }
+          "Installé : $exe"
           $test = Start-Process -FilePath $exe -ArgumentList '--self-test' -PassThru -NoNewWindow `
             -RedirectStandardOutput msi-self-test.txt -RedirectStandardError msi-self-test-erreurs.txt
           $null = $test.Handle
@@ -205,10 +222,12 @@ jobs:
           name: bundles-linux
           path: bundles
 
+      # L'AppImage laisse au système la pile graphique (EGL, OpenGL), présente sur tout bureau
+      # mais pas sur cette machine sans écran
       - name: Outils de test
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb dbus-x11 rpm
+          sudo apt-get install -y xvfb dbus-x11 rpm libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri libgles2 libgbm1
 
       - name: AppImage, auto-test
         run: |
