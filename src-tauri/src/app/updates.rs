@@ -56,10 +56,19 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) {
 /// Dernière version publiée, si elle est plus récente que celle-ci.
 async fn find<R: Runtime>(app: &AppHandle<R>) -> Result<Option<Update>, String> {
     let updater = app.updater().map_err(|err| err.to_string())?;
-    match updater.check().await {
+    interpret(updater.check().await)
+}
+
+/// Réponse du module de mise à jour, en ce que Rutile en dit.
+fn interpret(checked: Result<Option<Update>, Error>) -> Result<Option<Update>, String> {
+    match checked {
         Ok(update) => Ok(update),
+        // GitHub a répondu sans latest.json : la dernière release n'en publie pas (celles
+        // d'avant les mises à jour automatiques), il n'y a donc rien à installer d'ici. Une
+        // panne de réseau donne une autre erreur.
+        Err(Error::ReleaseNotFound) => Ok(None),
         // Aucune mise à jour publiée pour ce type de paquet
-        Err(Error::TargetNotFound(_)) => Err(format!(
+        Err(Error::TargetNotFound(_) | Error::TargetsNotFound(_)) => Err(format!(
             "Cette installation ne se met pas à jour toute seule : téléchargez la nouvelle \
              version sur {RELEASES_URL}"
         )),
@@ -255,6 +264,20 @@ mod tests {
         assert_eq!(release.signature("darwin-aarch64-app").unwrap(), "c2ln");
         // Un .deb sans entrée ne reçoit pas l'AppImage
         assert!(release.download_url("linux-x86_64-deb").is_err());
+    }
+
+    #[test]
+    fn une_release_sans_manifeste_ne_propose_rien() {
+        assert!(matches!(interpret(Err(Error::ReleaseNotFound)), Ok(None)));
+    }
+
+    #[test]
+    fn un_paquet_absent_du_manifeste_renvoie_vers_les_versions() {
+        let targets = vec!["darwin-aarch64-app".into(), "darwin-aarch64".into()];
+        let Err(message) = interpret(Err(Error::TargetsNotFound(targets))) else {
+            panic!("une erreur était attendue");
+        };
+        assert!(message.contains(RELEASES_URL));
     }
 
     #[test]
