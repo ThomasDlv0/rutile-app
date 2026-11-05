@@ -99,7 +99,9 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 </p>
 
 Jusqu'à dix apps, une par part, avec leurs **pastilles de notifications** comme dans le Dock
-(macOS). Un fichier lâché sur une app s'ouvre avec elle.
+(macOS), y compris celles que le Dock garde pour une app fermée, comme Messages, si vous
+donnez à Rutile l'autorisation Accessibilité (Réglages → Apps). Un fichier lâché sur une app
+s'ouvre avec elle.
 
 ### À vos couleurs
 
@@ -111,8 +113,9 @@ Les réglages tiennent en six onglets :
 - **Roues** : ordre des roues (en les glissant) et activation, temps au centre avant de
   basculer, retour sur la dernière roue utilisée.
 - **Conversion** : qualité JPEG, WebP et AVIF.
-- **Couleurs** : une couleur par format et une pour la part survolée, avec un aperçu de la
-  roue en direct. Le texte passe en clair ou en foncé pour rester lisible.
+- **Couleurs** : une couleur par format et une pour la part survolée (le centre la prend
+  aussi), le contour de la roue (clair, noir ou aucun), avec un aperçu de la roue en direct.
+  Le texte passe en clair ou en foncé pour rester lisible.
 - **Apps** et **Partage** : de six à dix parts chacune, à réordonner en les glissant.
 
 <br clear="right">
@@ -166,10 +169,12 @@ premier lancement, expliqué ci-dessous.
 
    Autre possibilité : Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ».
 3. Rutile n'a pas d'icône dans le Dock : elle apparaît dans la barre des menus.
-4. Autorisations : Rutile ne demande **pas** l'accessibilité (le secouage lit l'état de la
-   souris sans intercepter d'événement). macOS demande seulement, à la première utilisation,
-   l'**Automatisation → Finder** (lire les fichiers sélectionnés) et les **notifications**.
-   Un refus se corrige dans Réglages Système → Confidentialité et sécurité → Automatisation.
+4. Autorisations : macOS demande, à la première utilisation, l'**Automatisation → Finder**
+   (lire les fichiers sélectionnés) et les **notifications**. Un refus se corrige dans
+   Réglages Système → Confidentialité et sécurité → Automatisation. Le secouage n'a pas
+   besoin de l'accessibilité (il lit l'état de la souris sans intercepter d'événement) ;
+   elle ne sert qu'aux pastilles des apps fermées, et Rutile ne la demande que si vous
+   cliquez sur « Autoriser… » dans Réglages → Apps.
 
 </details>
 
@@ -228,7 +233,8 @@ premier lancement, expliqué ci-dessous.
 |---|---|
 | **Ouvrir la roue** | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>Espace</kbd> (macOS) ou <kbd>Ctrl</kbd> <kbd>Maj</kbd> <kbd>Espace</kbd> (Windows, Linux X11), modifiable dans Réglages → Général ; ou l'icône de la barre système, ou `rutile --open [fichiers…]` |
 | **Secouer** | pendant un glisser, quelques allers-retours rapides ouvrent la roue sous le curseur |
-| **Changer de roue** | un clic au centre ; pendant un glisser, rester au centre bascule entre conversion et partage |
+| **Changer de roue** | un clic au centre ou <kbd>↑</kbd> <kbd>↓</kbd> ; pendant un glisser, rester au centre bascule entre conversion et partage |
+| **Au clavier** | <kbd>←</kbd> <kbd>→</kbd> passent d'une part à l'autre, <kbd>Entrée</kbd> lance la part choisie ; <kbd>1</kbd> à <kbd>9</kbd> (<kbd>0</kbd> pour la dixième) la lancent directement, en partant du haut dans le sens horaire |
 | **Annuler** | relâcher au centre, <kbd>Échap</kbd> ou un clic à l'extérieur |
 | **Réglages** | icône de la barre système → « Réglages… » |
 
@@ -326,6 +332,19 @@ combinaison dans Réglages → Général. Sous GNOME Wayland, passez par un racc
 </details>
 
 <details>
+<summary><strong>Une pastille du Dock n'apparaît pas sur la roue (macOS)</strong></summary>
+<br>
+
+Sans autorisation, Rutile ne voit que les pastilles des apps ouvertes. Messages ou Mail
+gardent la leur dans le Dock une fois fermés : pour la voir aussi sur la roue, cliquez sur
+« Autoriser… » dans Réglages → Apps, puis activez Rutile dans Réglages Système →
+Confidentialité et sécurité → Accessibilité. Rutile n'étant pas signé par Apple, macOS peut
+ne plus le reconnaître après une mise à jour : retirez-le de la liste avec « − », puis
+autorisez-le de nouveau.
+
+</details>
+
+<details>
 <summary><strong>macOS dit que Rutile est endommagée</strong></summary>
 <br>
 
@@ -367,7 +386,7 @@ sous Windows et 161 Mo sur macOS, qui contient les versions Apple Silicon et Int
 | Secouage | oui, pendant un glisser de fichiers | oui | oui | avec le groupe `input` |
 | Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
 | Roue des apps | `.app`, avec icône | `.exe` ou `.lnk`, sans icône (nom seul) | `.desktop`, avec icône | idem X11 |
-| Pastilles de notifications | oui | non | non | non |
+| Pastilles de notifications | apps ouvertes ; apps fermées avec l'accessibilité | non | non | non |
 | Partage : menu du système, services (AirDrop…) | oui | non | non | non |
 | Partage : dossiers synchronisés | oui | oui | oui | oui |
 | Partage : messageries (presse-papiers) | oui | oui | avec `xclip` | avec `wl-copy` |

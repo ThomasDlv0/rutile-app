@@ -54,7 +54,11 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
     }
 }
 
-/// Pastilles de notifications des apps ouvertes, par chemin d'app, comme dans le Dock. Seul
+#[cfg(target_os = "macos")]
+pub use macos::{ACCESSIBILITY_SETTINGS_URL, dock_access, request_dock_access};
+
+/// Pastilles de notifications, par chemin d'app, comme dans le Dock : celles des apps
+/// ouvertes, et celles des apps fermées si Rutile peut lire le Dock (`dock_access`). Seul
 /// macOS les rend lisibles par une autre app.
 pub fn badges() -> HashMap<PathBuf, String> {
     #[cfg(target_os = "macos")]

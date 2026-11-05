@@ -90,6 +90,7 @@ const PREVIEW_CONFIG: WheelConfig = {
   dwellMs: 1000,
   colors: {},
   highlight: null,
+  border: "light",
   apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
     name ? { path: name, name, icon: null } : null,
   ),
@@ -618,13 +619,25 @@ export function WheelApp() {
     };
   }, [phase, mode, openCount]);
 
+  // Échap ferme ; ↑ ↓ passent à la roue précédente ou suivante, comme un clic au centre
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      if (busyRef.current || phaseRef.current !== "open") return;
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      const target = nextMode(configRef.current.modes, modeRef.current, step);
+      if (!target) return;
+      setPointer(null);
+      chooseMode(target);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [close]);
+  }, [chooseMode, close]);
 
   const wheel = (
     <Wheel
@@ -643,7 +656,9 @@ export function WheelApp() {
       dwelling={dwelling}
       dwellMs={config.dwellMs}
       accent={config.highlight}
+      border={config.border}
       scale={fit}
+      keyboard
       onToggleMode={() => next && chooseMode(next)}
     />
   );

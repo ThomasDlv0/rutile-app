@@ -72,6 +72,9 @@ export interface VideoSupport {
 
 export const videoSupport = () => invoke<VideoSupport>("video_support");
 
+/** Contour du disque de la roue : le trait clair d'origine, noir, ou aucun. */
+export type WheelBorder = "light" | "dark" | "none";
+
 export interface Settings {
   shortcut: string;
   shakeEnabled: boolean;
@@ -89,6 +92,7 @@ export interface Settings {
   formatColors: Record<string, string>;
   /** Couleur de la part survolée ; `null` pour le bleu d'origine. */
   highlightColor: string | null;
+  wheelBorder: WheelBorder;
   /** Une app (ou rien) par part, dans le sens horaire depuis le haut. */
   apps: (AppSlot | null)[];
   /** Une destination (ou rien) par part de la roue de partage. */
@@ -117,6 +121,8 @@ export interface SettingsView {
   launchAtLogin: boolean;
   /** macOS seulement : autorisation de lire la sélection du Finder. */
   finderPermission: "granted" | "denied" | "notAsked" | "unknown" | null;
+  /** macOS seulement : autorisation Accessibilité, pour les pastilles des apps fermées. */
+  dockAccess: boolean | null;
   platform: "macos" | "windows" | "linux" | string;
   version: string;
   /** Apps des parts, avec leurs icônes. */
@@ -138,7 +144,9 @@ export const updateSettings = (settings: Settings) =>
   invoke<SettingsView>("update_settings", { settings });
 export const setLaunchAtLogin = (enabled: boolean) =>
   invoke<boolean>("set_launch_at_login", { enabled });
-export const openPermissionSettings = () => invoke("open_permission_settings");
+/** Volet des Réglages Système (macOS) où se donne l'autorisation : lire le Finder, ou le Dock. */
+export const openPermissionSettings = (pane: "automation" | "accessibility") =>
+  invoke("open_permission_settings", { pane });
 
 /** App d'une part de la roue des apps. */
 export interface AppView {
@@ -163,6 +171,7 @@ export interface WheelConfig {
   /** Couleurs choisies pour les formats, et pour la part survolée. */
   colors: Record<string, string>;
   highlight: string | null;
+  border: WheelBorder;
   apps: (AppView | null)[];
   share: (ShareView | null)[];
 }
@@ -175,6 +184,10 @@ export const wheelConfig = () => invoke<WheelConfig>("wheel_config");
 export const pickApp = () => invoke<AppSlot | null>("pick_app");
 /** Pastilles de notifications des apps de la roue (macOS), dans l'ordre des parts. */
 export const appBadges = () => invoke<(string | null)[]>("app_badges");
+/** macOS : Rutile peut-il lire les pastilles du Dock, celles des apps fermées comprises ? */
+export const dockBadgesAllowed = () => invoke<boolean | null>("dock_badges_allowed");
+/** Demande l'autorisation Accessibilité ; vrai si elle est déjà accordée. */
+export const allowDockBadges = () => invoke<boolean>("allow_dock_badges");
 /** Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers s'il y en a. */
 export const launchApp = (slot: number, paths: string[]) =>
   invoke("launch_app", { slot, paths });

@@ -8,7 +8,9 @@ import { ShareIcon } from "../ShareIcon";
 import {
   SETTINGS_TAB_EVENT,
   UPDATE_PROGRESS_EVENT,
+  allowDockBadges,
   checkUpdate,
+  dockBadgesAllowed,
   getSettings,
   installUpdate,
   openPermissionSettings,
@@ -26,6 +28,7 @@ import {
   type ShareView,
   type UpdateStatus,
   type VideoSupport,
+  type WheelBorder,
 } from "../ipc";
 import { DEFAULT_ACCENT } from "../wheel/color";
 import {
@@ -144,6 +147,7 @@ const PREVIEW: SettingsView = {
     dwellMs: 1000,
     formatColors: {},
     highlightColor: null,
+    wheelBorder: "light",
     apps: [{ path: "/Applications/Finder.app", name: "Finder" }, null, null, null, null, null],
     share: PREVIEW_SHARE.map((view) => view && targetOf(view)),
     autoUpdate: true,
@@ -154,6 +158,7 @@ const PREVIEW: SettingsView = {
   wayland: false,
   launchAtLogin: false,
   finderPermission: "granted",
+  dockAccess: false,
   platform: "macos",
   version: "1.1.0",
   apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
@@ -381,6 +386,10 @@ function GeneralTab({
             Raccourcis personnalisés.
           </p>
         )}
+        <p className="section-note">
+          Dans la roue, ← et → choisissent une part, Entrée la lance ; les chiffres 1 à 9 (0 pour
+          la dixième) la lancent directement. ↑ et ↓ changent de roue, Échap la ferme.
+        </p>
       </Section>
 
       <Section title="Secouer un fichier" error={errors.shake}>
@@ -436,7 +445,7 @@ function GeneralTab({
               <button
                 type="button"
                 className="link-button"
-                onClick={() => void openPermissionSettings()}
+                onClick={() => void openPermissionSettings("automation")}
               >
                 Ouvrir les réglages
               </button>
@@ -485,8 +494,8 @@ function WheelsTab({
           </Row>
         ))}
         <p className="section-note">
-          Un clic au centre passe à la roue suivante, dans cet ordre. Glissez une ligne par sa
-          poignée pour la déplacer.
+          Un clic au centre (ou ↓ au clavier) passe à la roue suivante, dans cet ordre. Glissez
+          une ligne par sa poignée pour la déplacer.
         </p>
       </Section>
 
@@ -644,7 +653,17 @@ const COLOR_GROUPS: { mode: "image" | "video"; title: string; formats: readonly 
 /** Échelle de l'aperçu de la roue dans les réglages. */
 const PREVIEW_SCALE = 0.6;
 
-type ColorDraft = { colors: Record<string, string>; highlight: string | null };
+type ColorDraft = {
+  colors: Record<string, string>;
+  highlight: string | null;
+  border: WheelBorder;
+};
+
+const BORDERS: { id: WheelBorder; label: string }[] = [
+  { id: "light", label: "Clair" },
+  { id: "dark", label: "Noir" },
+  { id: "none", label: "Aucun" },
+];
 
 function ColorsTab({
   settings,
@@ -656,14 +675,16 @@ function ColorsTab({
   change: Change;
 }) {
   // Les couleurs s'appliquent à l'aperçu tout de suite, et s'enregistrent un instant après
+  const { formatColors, highlightColor, wheelBorder } = settings;
   const [draft, setDraft] = useState<ColorDraft>({
-    colors: settings.formatColors,
-    highlight: settings.highlightColor,
+    colors: formatColors,
+    highlight: highlightColor,
+    border: wheelBorder,
   });
   const timer = useRef<number | undefined>(undefined);
   useEffect(
-    () => setDraft({ colors: settings.formatColors, highlight: settings.highlightColor }),
-    [settings.formatColors, settings.highlightColor],
+    () => setDraft({ colors: formatColors, highlight: highlightColor, border: wheelBorder }),
+    [formatColors, highlightColor, wheelBorder],
   );
   const [previewMode, setPreviewMode] = useState<"image" | "video">("image");
 
@@ -671,7 +692,12 @@ function ColorsTab({
     setDraft(next);
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(
-      () => change("colors", { formatColors: next.colors, highlightColor: next.highlight }),
+      () =>
+        change("colors", {
+          formatColors: next.colors,
+          highlightColor: next.highlight,
+          wheelBorder: next.border,
+        }),
       SLIDER_COMMIT_MS,
     );
   };
@@ -684,7 +710,8 @@ function ColorsTab({
     update({ ...draft, colors });
   };
 
-  const customized = Object.keys(draft.colors).length > 0 || draft.highlight !== null;
+  const customized =
+    Object.keys(draft.colors).length > 0 || draft.highlight !== null || draft.border !== "light";
 
   return (
     <>
@@ -707,9 +734,28 @@ function ColorsTab({
             mode={previewMode}
             colors={draft.colors}
             highlight={draft.highlight}
+            border={draft.border}
           />
           <p className="row-hint">Survolez la roue pour voir la surbrillance.</p>
         </div>
+      </Section>
+
+      <Section title="Contour">
+        <Row label="Contour de la roue" hint="Le trait qui entoure le disque.">
+          <div className="segmented" role="radiogroup" aria-label="Contour de la roue">
+            {BORDERS.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={draft.border === id}
+                onClick={() => update({ ...draft, border: id })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Row>
       </Section>
 
       {COLOR_GROUPS.map(({ mode, title, formats }) => (
@@ -743,7 +789,7 @@ function ColorsTab({
             type="button"
             className="shortcut-button"
             disabled={!customized}
-            onClick={() => update({ colors: {}, highlight: null })}
+            onClick={() => update({ colors: {}, highlight: null, border: "light" })}
           >
             Réinitialiser
           </button>
@@ -784,10 +830,12 @@ function WheelPreview({
   mode,
   colors,
   highlight,
+  border,
 }: {
   mode: "image" | "video";
   colors: Record<string, string>;
   highlight: string | null;
+  border: WheelBorder;
 }) {
   const [pointer, setPointer] = useState<Point | null>(null);
   const items = colorize(mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS, colors);
@@ -815,6 +863,7 @@ function WheelPreview({
           dwelling={false}
           dwellMs={1000}
           accent={highlight}
+          border={border}
           scale={PREVIEW_SCALE}
           onPointer={setPointer}
           onSelect={() => {}}
@@ -889,7 +938,58 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
             " Les pastilles de notifications du Dock s'affichent sur les icônes."}
         </p>
       </Section>
+      {view.dockAccess !== null && (
+        <Section title="Pastilles de notifications">
+          <DockBadgesRow allowed={view.dockAccess} />
+        </Section>
+      )}
     </>
+  );
+}
+
+/** macOS : les pastilles des apps ouvertes se lisent sans autorisation ; celles que le Dock
+ * garde pour les apps fermées demandent l'autorisation Accessibilité. */
+function DockBadgesRow({ allowed: initial }: { allowed: boolean }) {
+  const [allowed, setAllowed] = useState(initial);
+  // Demandée une fois : si macOS ne la propose plus, il reste les Réglages Système
+  const [asked, setAsked] = useState(false);
+
+  // De retour des Réglages Système, l'autorisation a pu changer
+  useEffect(() => {
+    if (!isTauri()) return;
+    const refresh = () => void dockBadgesAllowed().then((value) => setAllowed(value === true));
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, []);
+
+  const ask = async () => {
+    setAsked(true);
+    setAllowed(isTauri() ? await allowDockBadges() : false);
+  };
+
+  return (
+    <Row
+      label="Pastilles des apps fermées"
+      hint="Messages ou Mail gardent la leur dans le Dock une fois fermés ; Rutile l'y lit avec l'autorisation Accessibilité."
+    >
+      {allowed ? (
+        <span className="status" data-state="granted">
+          Autorisée
+        </span>
+      ) : asked ? (
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => void openPermissionSettings("accessibility")}
+        >
+          Ouvrir les réglages
+        </button>
+      ) : (
+        <button type="button" className="link-button" onClick={() => void ask()}>
+          Autoriser…
+        </button>
+      )}
+    </Row>
   );
 }
 

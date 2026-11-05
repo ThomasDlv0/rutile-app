@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_dialog::DialogExt;
 
-use super::settings::{self, WheelMode};
+use super::settings::{self, WheelBorder, WheelMode};
 use super::share::{self, ShareView};
 use super::wheel::WHEEL_LABEL;
 
@@ -112,6 +112,7 @@ pub struct WheelConfig {
     /// Couleurs choisies pour les formats, et pour la part survolée.
     colors: BTreeMap<String, String>,
     highlight: Option<String>,
+    border: WheelBorder,
     apps: Vec<Option<AppView>>,
     share: Vec<Option<ShareView>>,
 }
@@ -125,6 +126,7 @@ pub fn wheel_config<R: Runtime>(app: AppHandle<R>) -> WheelConfig {
         dwell_ms: settings.dwell_ms,
         colors: settings.format_colors.clone(),
         highlight: settings.highlight_color.clone(),
+        border: settings.wheel_border,
         apps: views(&app, &settings.apps),
         share: share::views(&app, &settings.share),
     }
@@ -173,6 +175,30 @@ pub async fn app_badges<R: Runtime>(app: AppHandle<R>) -> Vec<Option<String>> {
     })
     .await
     .unwrap_or_default()
+}
+
+/// macOS : Rutile peut-il lire le Dock, et donc les pastilles des apps fermées ? `None`
+/// ailleurs.
+pub fn dock_access() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    return Some(platform::apps::dock_access());
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
+#[tauri::command]
+pub fn dock_badges_allowed() -> Option<bool> {
+    dock_access()
+}
+
+/// Demande l'autorisation Accessibilité : macOS propose d'ouvrir les Réglages Système. Vrai
+/// si elle est déjà accordée.
+#[tauri::command]
+pub fn allow_dock_badges() -> bool {
+    #[cfg(target_os = "macos")]
+    return platform::apps::request_dock_access();
+    #[cfg(not(target_os = "macos"))]
+    false
 }
 
 /// Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers déposés.

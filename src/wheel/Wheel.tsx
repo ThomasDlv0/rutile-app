@@ -1,8 +1,9 @@
-import { useRef, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type MouseEvent } from "react";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
 import { ShareIcon } from "../ShareIcon";
+import type { WheelBorder } from "../ipc";
 import type { Mode, WheelItem } from "./formats";
 import {
   BUTTON_RADIUS,
@@ -20,7 +21,7 @@ import {
   separatorAngles,
 } from "./geometry";
 import { glow } from "./color";
-import { type HubText, type Point, usableSector } from "./selection";
+import { type HubText, type Point, digitSector, stepSector, usableSector } from "./selection";
 
 export type Phase = "open" | "closing" | "closed";
 
@@ -49,8 +50,11 @@ interface WheelProps {
   dwellMs: number;
   /** Couleur de la part survolée, choisie dans les réglages ; le bleu d'origine sinon. */
   accent?: string | null;
+  border?: WheelBorder;
   /** Échelle d'affichage, pour l'aperçu réduit des réglages. */
   scale?: number;
+  /** La roue répond au clavier de toute la fenêtre (pas l'aperçu des réglages). */
+  keyboard?: boolean;
   onPointer: (point: Point | null) => void;
   onSelect: (index: number) => void;
   onOutsideClick: () => void;
@@ -207,7 +211,9 @@ export function Wheel({
   dwelling,
   dwellMs,
   accent,
+  border = "light",
   scale = 1,
+  keyboard = false,
   onPointer,
   onSelect,
   onOutsideClick,
@@ -216,6 +222,32 @@ export function Wheel({
   const count = items.length;
   const wedge = useWedge(highlighted, count);
   const busy = work !== null;
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // ← → passent d'une part à l'autre : le focus l'éclaire et Entrée la lance. Un chiffre la
+  // lance directement.
+  useEffect(() => {
+    if (!keyboard || busy) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const digit = digitSector(event.code, count);
+      if (digit !== null) {
+        event.preventDefault();
+        if (!event.repeat && !disabled.has(items[digit].id)) onSelect(digit);
+        return;
+      }
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      const focused = buttons.current.findIndex(
+        (button) => button !== null && button === document.activeElement,
+      );
+      const step = event.key === "ArrowRight" ? 1 : -1;
+      const index = stepSector(focused >= 0 ? focused : highlighted, step, disabled, items);
+      if (index !== null) buttons.current[index]?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keyboard, busy, count, disabled, items, highlighted, onSelect]);
 
   // Un clic n'importe où dans une part vaut un clic sur son bouton
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -230,13 +262,18 @@ export function Wheel({
   };
 
   const colors = accent
-    ? ({ "--accent": accent, "--accent-glow": glow(accent) } as CSSProperties)
+    ? ({
+        "--accent": accent,
+        "--accent-glow": glow(accent),
+        "--accent-ring": glow(accent, 0.6),
+      } as CSSProperties)
     : undefined;
 
   return (
     <div
       className="wheel-root"
       style={colors}
+      data-border={border}
       data-busy={busy}
       onPointerMove={busy ? undefined : (event) => onPointer(localPoint(event, scale))}
       onPointerLeave={busy ? undefined : () => onPointer(null)}
@@ -293,6 +330,9 @@ export function Wheel({
             <button
               // La clé change avec le mode : les boutons réapparaissent l'un après l'autre
               key={`${mode}-${format.id}`}
+              ref={(button) => {
+                buttons.current[index] = button;
+              }}
               type="button"
               className="format-button"
               data-kind={

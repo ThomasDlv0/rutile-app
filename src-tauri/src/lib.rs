@@ -63,6 +63,8 @@ pub fn run() {
             app::apps::wheel_config,
             app::apps::pick_app,
             app::apps::app_badges,
+            app::apps::dock_badges_allowed,
+            app::apps::allow_dock_badges,
             app::updates::check_update,
             app::updates::install_update,
             app::apps::launch_app,

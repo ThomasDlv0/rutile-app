@@ -45,6 +45,20 @@ impl WheelMode {
     ];
 }
 
+/// Contour du disque de la roue.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WheelBorder {
+    Dark,
+    None,
+    /// Le trait gris clair d'origine. Une valeur inconnue (version plus récente, fichier
+    /// modifié à la main) se lit comme lui, sans faire perdre les autres réglages ; serde
+    /// veut cette variante en dernier.
+    #[default]
+    #[serde(other)]
+    Light,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModeEntry {
     pub id: WheelMode,
@@ -70,6 +84,7 @@ pub struct Settings {
     pub format_colors: BTreeMap<String, String>,
     /// Couleur de la part survolée ; absente, le bleu d'origine.
     pub highlight_color: Option<String>,
+    pub wheel_border: WheelBorder,
     /// Une app (ou rien) par part, dans le sens horaire depuis le haut.
     pub apps: Vec<Option<AppSlot>>,
     /// Une destination (ou rien) par part. Vide tant que la roue de partage n'a jamais été
@@ -97,6 +112,7 @@ impl Default for Settings {
             dwell_ms: DEFAULT_DWELL_MS,
             format_colors: BTreeMap::new(),
             highlight_color: None,
+            wheel_border: WheelBorder::Light,
             apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
             auto_update: true,
@@ -231,6 +247,8 @@ pub struct SettingsView {
     launch_at_login: bool,
     /// macOS : autorisation de lire la sélection du Finder.
     finder_permission: Option<&'static str>,
+    /// macOS : autorisation Accessibilité, pour les pastilles des apps fermées.
+    dock_access: Option<bool>,
     platform: &'static str,
     version: String,
     /// Apps des parts, avec leurs icônes.
@@ -254,6 +272,7 @@ fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
         wayland: platform::session::is_wayland_session(),
         launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
         finder_permission: finder_permission(),
+        dock_access: apps::dock_access(),
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
     }
@@ -317,6 +336,7 @@ pub fn update_settings<R: Runtime>(
         || applied.dwell_ms != previous.dwell_ms
         || applied.format_colors != previous.format_colors
         || applied.highlight_color != previous.highlight_color
+        || applied.wheel_border != previous.wheel_border
         || applied.apps != previous.apps
         || applied.share != previous.share
     {
@@ -340,19 +360,36 @@ pub fn set_launch_at_login<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Resu
     launcher.is_enabled().map_err(|err| err.to_string())
 }
 
-/// macOS : volet Automatisation des Réglages Système, pour autoriser la lecture du Finder.
+/// Volet des Réglages Système où se donne une autorisation.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionPane {
+    /// Lire la sélection du Finder.
+    Automation,
+    /// Lire les pastilles du Dock.
+    Accessibility,
+}
+
+/// macOS : ouvre le volet des Réglages Système où se donne l'autorisation `pane`.
 #[tauri::command]
-pub fn open_permission_settings<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+pub fn open_permission_settings<R: Runtime>(
+    app: AppHandle<R>,
+    pane: PermissionPane,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         use tauri_plugin_opener::OpenerExt;
+        let url = match pane {
+            PermissionPane::Automation => platform::selection::AUTOMATION_SETTINGS_URL,
+            PermissionPane::Accessibility => platform::apps::ACCESSIBILITY_SETTINGS_URL,
+        };
         app.opener()
-            .open_url(platform::selection::AUTOMATION_SETTINGS_URL, None::<&str>)
+            .open_url(url, None::<&str>)
             .map_err(|err| err.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = app;
+        let _ = (app, pane);
         Ok(())
     }
 }
@@ -499,5 +536,19 @@ mod tests {
         assert_eq!(settings.shortcut, shortcut::DEFAULT_SHORTCUT);
         assert_eq!(settings.shake_sensitivity, 10);
         assert_eq!(settings.jpeg_quality, 1);
+    }
+
+    #[test]
+    fn un_contour_inconnu_redevient_le_contour_clair() {
+        let read = |json: &str| serde_json::from_str::<Settings>(json).unwrap();
+        let settings = read(r#"{ "wheelBorder": "dark", "jpegQuality": 75 }"#);
+        assert_eq!(settings.wheel_border, WheelBorder::Dark);
+        let settings = read(r#"{ "wheelBorder": "arc-en-ciel", "jpegQuality": 75 }"#);
+        assert_eq!(settings.wheel_border, WheelBorder::Light);
+        assert_eq!(settings.jpeg_quality, 75);
+        assert_eq!(
+            serde_json::to_value(WheelBorder::None).unwrap(),
+            serde_json::json!("none")
+        );
     }
 }

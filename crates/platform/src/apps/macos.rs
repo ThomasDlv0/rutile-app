@@ -6,8 +6,8 @@ use std::process::Command;
 use objc2::msg_send;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2_app_kit::NSWorkspace;
-use objc2_foundation::{NSArray, NSFileManager, NSString};
+use objc2_app_kit::{NSRunningApplication, NSWorkspace};
+use objc2_foundation::{NSArray, NSDictionary, NSFileManager, NSNumber, NSString, NSURL};
 
 use super::{App, Icon, name_from_file};
 use crate::macos_image;
@@ -86,8 +86,18 @@ fn launch_services() -> Option<(CopyRunningApplications, CopyInformationItem)> {
     }
 }
 
-/// Pastilles du Dock des apps ouvertes (« 3 », « ! »…), par chemin d'app.
+/// Pastilles du Dock (« 3 », « ! »…), par chemin d'app : celles que le Dock affiche si Rutile
+/// peut le lire, et celles des apps ouvertes.
 pub fn badges() -> HashMap<PathBuf, String> {
+    let mut badges = dock_badges();
+    for (path, label) in running_badges() {
+        badges.entry(path).or_insert(label);
+    }
+    badges
+}
+
+/// Pastilles des apps ouvertes, que LaunchServices donne sans autorisation.
+fn running_badges() -> HashMap<PathBuf, String> {
     let mut badges = HashMap::new();
     let Some((running, item)) = launch_services() else {
         return badges;
@@ -108,6 +118,93 @@ pub fn badges() -> HashMap<PathBuf, String> {
         }
     }
     badges
+}
+
+// Accessibilité : le Dock donne la pastille de chacune de ses icônes, y compris celles des
+// apps fermées qui la gardent (une app qui reçoit ses notifications sans être ouverte).
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: *const AnyObject) -> u8;
+    fn AXUIElementCreateApplication(pid: c_int) -> *mut AnyObject;
+    fn AXUIElementCopyAttributeValue(
+        element: *const AnyObject,
+        attribute: *const NSString,
+        value: *mut *mut AnyObject,
+    ) -> c_int;
+}
+
+/// Volet Accessibilité des Réglages Système.
+pub const ACCESSIBILITY_SETTINGS_URL: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+
+/// Rutile a-t-il l'autorisation Accessibilité, qui lui permet de lire le Dock ?
+pub fn dock_access() -> bool {
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
+/// Demande l'autorisation : macOS inscrit Rutile dans la liste Accessibilité et propose
+/// d'ouvrir les Réglages Système. Vrai si elle est déjà accordée.
+pub fn request_dock_access() -> bool {
+    let key = NSString::from_str("AXTrustedCheckOptionPrompt");
+    let prompt = NSNumber::new_bool(true);
+    let options = NSDictionary::from_slices(&[&*key], &[&*prompt]);
+    unsafe { AXIsProcessTrustedWithOptions(Retained::as_ptr(&options).cast()) != 0 }
+}
+
+fn dock_badges() -> HashMap<PathBuf, String> {
+    let mut badges = HashMap::new();
+    if !dock_access() {
+        return badges;
+    }
+    let found = NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(
+        "com.apple.dock",
+    ));
+    let Some(dock) = found.firstObject() else {
+        return badges;
+    };
+    let pid: c_int = unsafe { msg_send![&*dock, processIdentifier] };
+    // Fonction « Create » : l'élément nous appartient
+    let Some(dock) = (unsafe { Retained::from_raw(AXUIElementCreateApplication(pid)) }) else {
+        return badges;
+    };
+    // Le Dock contient une liste, qui contient les icônes ; les dossiers et la corbeille
+    // n'ont pas de pastille
+    for list in children(&dock) {
+        for icon in children(&list) {
+            let label = attribute(&icon, "AXStatusLabel")
+                .and_then(|label| label.downcast::<NSString>().ok())
+                .map(|label| label.to_string().trim().to_string())
+                .filter(|label| !label.is_empty());
+            let path = attribute(&icon, "AXURL")
+                .and_then(|url| url.downcast::<NSURL>().ok())
+                .and_then(|url| url.path());
+            if let (Some(label), Some(path)) = (label, path) {
+                badges.insert(PathBuf::from(path.to_string()), label);
+            }
+        }
+    }
+    badges
+}
+
+/// Attribut d'un élément d'accessibilité, s'il en a un.
+fn attribute(element: &AnyObject, name: &str) -> Option<Retained<AnyObject>> {
+    let name = NSString::from_str(name);
+    let mut value = std::ptr::null_mut();
+    let status = unsafe { AXUIElementCopyAttributeValue(element, &*name, &mut value) };
+    // Fonction « Copy » : la valeur rendue nous appartient
+    if status == 0 {
+        unsafe { Retained::from_raw(value) }
+    } else {
+        None
+    }
+}
+
+fn children(element: &AnyObject) -> Vec<Retained<AnyObject>> {
+    attribute(element, "AXChildren")
+        .and_then(|children| children.downcast::<NSArray>().ok())
+        .map(|children| children.to_vec())
+        .unwrap_or_default()
 }
 
 /// Texte d'une étiquette `{ label = "3" }`, ou `None` quand l'app n'affiche rien.

@@ -3,11 +3,13 @@ import type { FileInfo } from "../ipc";
 import { appItems, formatsFor, shareItems } from "./formats";
 import { CENTER, polar } from "./geometry";
 import {
+  digitSector,
   disabledFormats,
   hubFor,
   hubText,
   nextMode,
   preferredMode,
+  stepSector,
   usableSector,
 } from "./selection";
 
@@ -163,6 +165,11 @@ describe("nextMode", () => {
   it("ne change rien avec une seule roue", () => {
     expect(nextMode(["apps"], "apps")).toBeNull();
   });
+
+  it("revient à la roue précédente avec un pas de -1", () => {
+    expect(nextMode(["apps", "image", "video"], "image", -1)).toBe("apps");
+    expect(nextMode(["apps", "image", "video"], "apps", -1)).toBe("video");
+  });
 });
 
 describe("disabledFormats sur les roues des apps et de partage", () => {
@@ -235,5 +242,43 @@ describe("appItems", () => {
     const [item] = shareItems([{ kind: "system", name: "Partager…", icon: null }]);
     expect(item.action).toBe("Partager avec…");
     expect(item.icon).toMatch(/^data:image\/svg\+xml,/);
+  });
+});
+
+describe("stepSector", () => {
+  it("part du haut vers la droite, ou de la dernière part vers la gauche", () => {
+    expect(stepSector(null, 1, new Set(), images)).toBe(0);
+    expect(stepSector(null, -1, new Set(), images)).toBe(images.length - 1);
+  });
+
+  it("fait le tour de la roue dans les deux sens", () => {
+    expect(stepSector(2, 1, new Set(), images)).toBe(3);
+    expect(stepSector(images.length - 1, 1, new Set(), images)).toBe(0);
+    expect(stepSector(0, -1, new Set(), images)).toBe(images.length - 1);
+  });
+
+  it("saute les formats grisés", () => {
+    const disabled = disabledFormats([photo], "image");
+    const png = images.findIndex((format) => format.id === "png");
+    expect(stepSector(png - 1, 1, disabled, images)).toBe(png + 1);
+  });
+
+  it("ne trouve rien quand tout est grisé", () => {
+    const all = new Set(images.map((format) => format.id));
+    expect(stepSector(null, 1, all, images)).toBeNull();
+  });
+});
+
+describe("digitSector", () => {
+  it("numérote les parts depuis le haut, le 0 pour la dixième", () => {
+    expect(digitSector("Digit1", 6)).toBe(0);
+    expect(digitSector("Numpad6", 6)).toBe(5);
+    expect(digitSector("Digit0", 10)).toBe(9);
+  });
+
+  it("ignore les chiffres sans part et les autres touches", () => {
+    expect(digitSector("Digit7", 6)).toBeNull();
+    expect(digitSector("Digit0", 6)).toBeNull();
+    expect(digitSector("KeyA", 6)).toBeNull();
   });
 });

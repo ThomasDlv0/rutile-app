@@ -53,11 +53,39 @@ export function preferredMode(files: FileInfo[]): "image" | "video" | null {
   return null;
 }
 
-/** Roue qui suit `mode` dans l'ordre des réglages, ou `null` s'il n'y en a qu'une. */
-export function nextMode(modes: readonly Mode[], mode: Mode): Mode | null {
+/** Roue qui suit `mode` dans l'ordre des réglages (celle d'avant pour `step` -1), ou `null`
+ * s'il n'y en a qu'une. */
+export function nextMode(modes: readonly Mode[], mode: Mode, step: 1 | -1 = 1): Mode | null {
   if (modes.length < 2) return null;
   const index = modes.indexOf(mode);
-  return modes[(index + 1) % modes.length];
+  return modes[(index + step + modes.length) % modes.length];
+}
+
+/** Part choisie au clavier depuis `from` : la suivante dans le sens horaire (`step` 1) ou la
+ * précédente, en sautant les formats grisés. Sans part de départ, on part du haut (la part 0)
+ * ou de la dernière. `null` si aucune part n'est utilisable. */
+export function stepSector(
+  from: number | null,
+  step: 1 | -1,
+  disabled: Set<string>,
+  items: readonly WheelItem[],
+): number | null {
+  const count = items.length;
+  let index = from ?? (step === 1 ? -1 : 0);
+  for (let tried = 0; tried < count; tried++) {
+    index = (index + step + count) % count;
+    if (!disabled.has(items[index].id)) return index;
+  }
+  return null;
+}
+
+/** Part d'une touche chiffre : 1 pour la première (en haut), puis dans le sens horaire, 0 pour
+ * la dixième. Lue par `KeyboardEvent.code`, elle marche sans Maj sur un clavier AZERTY. */
+export function digitSector(code: string, count: number): number | null {
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(code)?.[1];
+  if (digit === undefined) return null;
+  const index = digit === "0" ? 9 : Number(digit) - 1;
+  return index < count ? index : null;
 }
 
 /** Part utilisable sous un point, ou `null` (centre, extérieur, format grisé). */

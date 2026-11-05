@@ -11,6 +11,7 @@
   --button-border: rgba(255, 255, 255, 0.14);
   --accent: #2f7cf6;
   --accent-glow: rgba(47, 124, 246, 0.55);
+  --accent-ring: rgba(47, 124, 246, 0.6);
   --danger: #d9493e;
   --text: #e6e6e8;
   --text-strong: #ffffff;
@@ -89,6 +90,15 @@ body,
   fill: var(--disk);
   stroke: var(--disk-border);
   stroke-width: 1.5;
+}
+
+/* Contour du disque choisi dans les réglages : clair par défaut, noir ou aucun */
+.wheel-root[data-border="dark"] {
+  --disk-border: rgba(0, 0, 0, 0.85);
+}
+
+.wheel-root[data-border="none"] {
+  --disk-border: transparent;
 }
 
 .separator {
@@ -276,6 +286,11 @@ body,
   outline-offset: 2px;
 }
 
+/* Choisie au clavier, la part est déjà éclairée : le contour de focus ferait double emploi */
+.format-button[data-active="true"]:focus-visible {
+  outline: none;
+}
+
 .format-button:disabled {
   cursor: default;
 }
@@ -353,7 +368,7 @@ body,
 
 .hub-toggle:hover {
   background-color: #262629;
-  border-color: rgba(47, 124, 246, 0.6);
+  border-color: var(--accent-ring);
   transform: scale(1.04);
 }
 
