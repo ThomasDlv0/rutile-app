@@ -167,14 +167,15 @@ fn un_fichier_qui_n_est_pas_une_video_echoue_proprement() {
 #[test]
 fn un_autre_format_deguise_en_video_est_refuse() {
     let dir = tempfile::tempdir().unwrap();
-    if video::ffmpeg().is_none() {
+    let Some(ffmpeg) = video::ffmpeg() else {
         eprintln!("FFmpeg absent : test ignoré");
         return;
-    }
+    };
     // Sans limite, FFmpeg lirait cette image avec son lecteur de PNG, comme n'importe lequel
-    // de ses centaines de lecteurs de format : seuls les conteneurs vidéo passent
+    // de ses centaines de lecteurs de format : seuls les conteneurs vidéo passent. L'image
+    // est faite par le FFmpeg de Rutile, le seul présent en intégration continue
     let disguised = dir.path().join("image.ts");
-    let status = Command::new(ffmpeg_path())
+    let status = Command::new(ffmpeg.path())
         .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
         .args([
             "-i",

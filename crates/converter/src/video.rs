@@ -312,6 +312,11 @@ impl Ffmpeg {
 
     /// Durée en secondes et présence de pistes, lues par ffprobe s'il est là, sinon dans ce
     /// qu'affiche FFmpeg (le FFmpeg embarqué vient sans ffprobe).
+    /// Chemin de l'exécutable utilisé.
+    pub fn path(&self) -> &Path {
+        &self.ffmpeg
+    }
+
     pub(crate) fn probe(&self, input: &Path) -> Probe {
         self.probe_limited(input, &INPUT_LIMITS)
     }
