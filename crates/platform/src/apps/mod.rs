@@ -1,5 +1,6 @@
 //! Applications de la roue des apps : nom, icône et lancement, propres à chaque système.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
@@ -51,6 +52,15 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
         let _ = (app, files);
         Err("système non pris en charge".into())
     }
+}
+
+/// Pastilles de notifications des apps ouvertes, par chemin d'app, comme dans le Dock. Seul
+/// macOS les rend lisibles par une autre app.
+pub fn badges() -> HashMap<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    return macos::badges();
+    #[cfg(not(target_os = "macos"))]
+    HashMap::new()
 }
 
 /// Ce que propose le sélecteur d'app : extensions acceptées et dossier de départ.

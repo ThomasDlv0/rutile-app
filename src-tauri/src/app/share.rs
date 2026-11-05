@@ -16,9 +16,9 @@ use tauri_plugin_opener::OpenerExt;
 use super::apps;
 use super::notify::{self, Action, Message};
 use super::settings;
+#[cfg(target_os = "macos")]
+use super::wheel::WHEEL_LABEL;
 
-/// Une destination par part.
-pub const SHARE_SLOTS: usize = 6;
 /// Garde-fou contre une boucle infinie si le dossier refuse toute création.
 const MAX_ATTEMPTS: u32 = 10_000;
 
@@ -32,6 +32,17 @@ pub enum ShareTarget {
     Folder { path: PathBuf, name: String },
     /// Messagerie qui reçoit les fichiers par le presse-papiers.
     App { path: PathBuf, name: String },
+    /// Menu de partage du système (macOS) : on y choisit l'app, puis le destinataire.
+    System { name: String },
+}
+
+/// Nom de la destination « menu de partage du système ».
+const SHARE_MENU_NAME: &str = "Partager…";
+
+fn share_menu_target() -> ShareTarget {
+    ShareTarget::System {
+        name: SHARE_MENU_NAME.into(),
+    }
 }
 
 /// Destination telle que l'interface l'affiche, avec son icône.
@@ -85,6 +96,8 @@ fn icon<R: Runtime>(app: &AppHandle<R>, target: &ShareTarget) -> Option<String> 
             })
         }
         ShareTarget::App { path, .. } => apps::file_icon(app, path),
+        // Dessinée par l'interface
+        ShareTarget::System { .. } => None,
     }
 }
 
@@ -145,8 +158,11 @@ pub fn suggestions<R: Runtime>(app: &AppHandle<R>) -> Vec<Option<ShareTarget>> {
             .map(folder_target),
     );
     targets.extend(service(MAIL));
+    if platform::share::HAS_SHARE_MENU {
+        targets.push(share_menu_target());
+    }
     let mut slots: Vec<Option<ShareTarget>> = targets.into_iter().map(Some).collect();
-    slots.resize(SHARE_SLOTS, None);
+    apps::fit_slots(&mut slots);
     slots
 }
 
@@ -168,6 +184,7 @@ pub async fn share_choices<R: Runtime>(app: AppHandle<R>) -> Vec<ShareChoice> {
 }
 
 fn choices<R: Runtime>(app: &AppHandle<R>) -> Vec<ShareChoice> {
+    let menu = platform::share::HAS_SHARE_MENU.then(|| ("Partage du système", share_menu_target()));
     let services = refresh_services(app).into_iter().map(|service| {
         let target = ShareTarget::Service {
             id: service.id,
@@ -182,7 +199,8 @@ fn choices<R: Runtime>(app: &AppHandle<R>) -> Vec<ShareChoice> {
         .into_iter()
         .filter_map(app_target)
         .map(|target| ("Messageries", target));
-    services
+    menu.into_iter()
+        .chain(services)
         .chain(folders)
         .chain(messaging)
         .map(|(group, target)| ShareChoice {
@@ -290,6 +308,7 @@ async fn share_with<R: Runtime>(
             }
             Ok(())
         }
+        ShareTarget::System { .. } => show_share_menu(app, paths).await,
         ShareTarget::App { path, name } => {
             on_main_thread(app, move || platform::share::copy_files(&paths)).await?;
             tauri::async_runtime::spawn_blocking(move || platform::apps::launch(&path, &[]))
@@ -306,6 +325,40 @@ async fn share_with<R: Runtime>(
             Ok(())
         }
     }
+}
+
+/// Ouvre le menu de partage près du centre de la roue, et attend qu'un service y soit choisi
+/// ou qu'il se referme : la roue reste ouverte tant que le menu l'est.
+#[cfg(target_os = "macos")]
+async fn show_share_menu<R: Runtime>(
+    app: &AppHandle<R>,
+    paths: Vec<PathBuf>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WHEEL_LABEL)
+        .ok_or("Fenêtre de la roue introuvable.")?;
+    let (sender, receiver) = mpsc::channel();
+    on_main_thread(app, move || {
+        let view = window.ns_view().map_err(|err| err.to_string())?;
+        let done = Box::new(move |chosen: bool| {
+            let _ = sender.send(chosen);
+        });
+        platform::share::show_picker(view, &paths, done)
+    })
+    .await?;
+    tauri::async_runtime::spawn_blocking(move || receiver.recv())
+        .await
+        .map_err(|err| err.to_string())?
+        .map(|_chosen| ())
+        .map_err(|_| "Le menu de partage s'est fermé sans réponse.".into())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn show_share_menu<R: Runtime>(
+    _app: &AppHandle<R>,
+    _paths: Vec<PathBuf>,
+) -> Result<(), String> {
+    Err("Ce système n'a pas de menu de partage commun aux apps.".into())
 }
 
 #[cfg(target_os = "macos")]

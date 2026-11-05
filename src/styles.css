@@ -221,6 +221,29 @@ body,
   filter: drop-shadow(0 0 10px var(--accent-glow)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 }
 
+/* Pastille rouge des notifications, comme dans le Dock de macOS */
+.app-badge {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px rgba(22, 22, 24, 0.85),
+    0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
 .item-label {
   max-width: 50px;
   overflow: hidden;

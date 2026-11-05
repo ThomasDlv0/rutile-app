@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as _;
 
-use super::apps::{self, APP_SLOTS, AppSlot, AppView};
+use super::apps::{self, AppSlot, AppView, MIN_SLOTS};
 use super::shake::{self, ShakeSettings};
-use super::share::{self, SHARE_SLOTS, ShareTarget, ShareView};
+use super::share::{self, ShareTarget, ShareView};
 use super::{shortcut, tray};
 
 pub const SETTINGS_LABEL: &str = "settings";
@@ -95,7 +95,7 @@ impl Default for Settings {
             dwell_ms: DEFAULT_DWELL_MS,
             format_colors: BTreeMap::new(),
             highlight_color: None,
-            apps: vec![None; APP_SLOTS],
+            apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
         }
     }
@@ -131,9 +131,10 @@ impl Settings {
             modes[0].enabled = true;
         }
         self.modes = modes;
-        self.apps.resize(APP_SLOTS, None);
+        apps::fit_slots(&mut self.apps);
+        // Vide : les suggestions du premier lancement le rempliront
         if !self.share.is_empty() {
-            self.share.resize(SHARE_SLOTS, None);
+            apps::fit_slots(&mut self.share);
         }
         self.dwell_ms = self.dwell_ms.clamp(DWELL_RANGE_MS.0, DWELL_RANGE_MS.1);
         // Seulement des formats connus, en « #rrggbb » minuscules
@@ -421,7 +422,7 @@ mod tests {
                 },
             ],
             apps: vec![None; 2],
-            share: vec![None; 9],
+            share: vec![None; 14],
             ..Settings::default()
         }
         .sanitized();
@@ -439,8 +440,18 @@ mod tests {
             settings.enabled_modes(),
             [WheelMode::Video, WheelMode::Share]
         );
-        assert_eq!(settings.apps.len(), APP_SLOTS);
-        assert_eq!(settings.share.len(), SHARE_SLOTS);
+        assert_eq!(settings.apps.len(), MIN_SLOTS);
+        assert_eq!(settings.share.len(), apps::MAX_SLOTS);
+        let nine = Settings {
+            apps: vec![None; 9],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            nine.apps.len(),
+            9,
+            "entre six et dix emplacements, rien ne change"
+        );
 
         let none_enabled = Settings {
             modes: WheelMode::ALL

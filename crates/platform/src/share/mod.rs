@@ -46,6 +46,22 @@ pub fn share(id: &str, files: &[PathBuf]) -> Result<(), String> {
     }
 }
 
+/// Le système a un menu de partage commun à toutes les apps, où l'on choisit l'app puis le
+/// destinataire. Seul macOS le rend utilisable depuis une autre app.
+pub const HAS_SHARE_MENU: bool = cfg!(target_os = "macos");
+
+/// Ouvre le menu de partage de macOS pour `files`, près du centre de `view` (la NSView de la
+/// fenêtre), puis appelle `done` avec `true` si un service a été choisi. Depuis le thread
+/// principal.
+#[cfg(target_os = "macos")]
+pub fn show_picker(
+    view: *mut std::ffi::c_void,
+    files: &[PathBuf],
+    done: Box<dyn FnOnce(bool)>,
+) -> Result<(), String> {
+    macos::show_picker(view, files, done)
+}
+
 /// Dossier synchronisé avec un service en ligne : y copier un fichier l'envoie en ligne.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloudFolder {

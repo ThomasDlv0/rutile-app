@@ -16,8 +16,10 @@ use super::settings::{self, WheelMode};
 use super::share::{self, ShareView};
 use super::wheel::WHEEL_LABEL;
 
-/// Une app par part de la roue.
-pub const APP_SLOTS: usize = 6;
+/// Emplacements des roues des apps et de partage, une part chacun : six au moins, et dix au
+/// plus pour que les icônes ne se touchent pas.
+pub const MIN_SLOTS: usize = 6;
+pub const MAX_SLOTS: usize = 10;
 /// Réglages des roues modifiés : la roue relit sa configuration.
 const CONFIG_EVENT: &str = "wheel://config";
 const ICON_SIZE: u32 = 128;
@@ -73,6 +75,14 @@ pub fn file_png(path: &Path) -> Option<Vec<u8>> {
     match platform::apps::describe(path)?.icon? {
         Icon::Encoded(png) => Some(png),
         Icon::File(file) => converter::icon_png(&std::fs::read(file).ok()?, ICON_SIZE),
+    }
+}
+
+/// Ramène une liste d'emplacements entre MIN_SLOTS et MAX_SLOTS.
+pub fn fit_slots<T: Clone>(slots: &mut Vec<Option<T>>) {
+    slots.truncate(MAX_SLOTS);
+    if slots.len() < MIN_SLOTS {
+        slots.resize(MIN_SLOTS, None);
     }
 }
 
@@ -145,6 +155,24 @@ pub async fn pick_app<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
     .await
     .ok()
     .flatten()
+}
+
+/// Pastilles de notifications des apps de la roue, dans l'ordre des parts (macOS seulement).
+#[tauri::command]
+pub async fn app_badges<R: Runtime>(app: AppHandle<R>) -> Vec<Option<String>> {
+    let slots = settings::current(&app).apps;
+    tauri::async_runtime::spawn_blocking(move || {
+        let badges = platform::apps::badges();
+        slots
+            .iter()
+            .map(|slot| {
+                slot.as_ref()
+                    .and_then(|slot| badges.get(&slot.path).cloned())
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers déposés.

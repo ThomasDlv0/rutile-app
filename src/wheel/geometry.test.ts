@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { CENTER, DISK_RADIUS, HUB_RADIUS, polar, sectorAt } from "./geometry";
+import {
+  CENTER,
+  DISK_RADIUS,
+  HUB_RADIUS,
+  buttonCenter,
+  polar,
+  sectorAt,
+  separatorAngles,
+} from "./geometry";
 import { shortenMiddle } from "./fileName";
 
 describe("sectorAt", () => {
@@ -20,6 +28,20 @@ describe("sectorAt", () => {
   it("revient à la première part juste avant le haut", () => {
     const [x, y] = polar(120, 355);
     expect(sectorAt(x, y)).toBe(0);
+  });
+
+  it("suit le nombre de parts d'une roue d'apps ou de partage", () => {
+    for (const count of [8, 10]) {
+      for (let index = 0; index < count; index++) {
+        const [x, y] = buttonCenter(index, count);
+        expect(sectorAt(x, y, count)).toBe(index);
+      }
+      expect(separatorAngles(count)).toHaveLength(count);
+    }
+    const [x, y] = polar(120, 40);
+    expect(sectorAt(x, y, 6)).toBe(1);
+    expect(sectorAt(x, y, 10)).toBe(1);
+    expect(sectorAt(x, y, 8)).toBe(1);
   });
 
   it("ignore le cercle central et l'extérieur du disque", () => {

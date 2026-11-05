@@ -8,8 +8,11 @@ export const BUTTON_ORBIT = 123;
 export const SEPARATOR_START = 52;
 export const SEPARATOR_END = 157;
 
+/** Parts d'une roue de formats ; celles des apps et du partage en ont de 6 à MAX_SECTORS. */
 export const SECTOR_COUNT = 6;
-const SECTOR_ANGLE = 360 / SECTOR_COUNT;
+export const MAX_SECTORS = 10;
+
+const sectorAngle = (count: number) => 360 / count;
 
 /** Point à `radius` du centre ; l'angle est en degrés, 0 en haut, sens horaire. */
 export function polar(radius: number, degrees: number): [number, number] {
@@ -18,13 +21,13 @@ export function polar(radius: number, degrees: number): [number, number] {
 }
 
 /** Part située sous un point de la fenêtre, ou `null` dans le cercle central et hors du disque. */
-export function sectorAt(x: number, y: number): number | null {
+export function sectorAt(x: number, y: number, count = SECTOR_COUNT): number | null {
   const dx = x - CENTER;
   const dy = y - CENTER;
   const distance = Math.hypot(dx, dy);
   if (distance < HUB_RADIUS || distance > DISK_RADIUS) return null;
   const degrees = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360;
-  return Math.round(degrees / SECTOR_ANGLE) % SECTOR_COUNT;
+  return Math.round(degrees / sectorAngle(count)) % count;
 }
 
 export function isInsideDisk(x: number, y: number): boolean {
@@ -35,20 +38,26 @@ export function isInsideHub(x: number, y: number): boolean {
   return Math.hypot(x - CENTER, y - CENTER) < HUB_RADIUS;
 }
 
+/** Angle du milieu de la part `index`, en degrés depuis le haut. */
+export function sectorCenterAngle(index: number, count = SECTOR_COUNT): number {
+  return index * sectorAngle(count);
+}
+
 /** Position du centre du bouton de la part `index`. */
-export function buttonCenter(index: number): [number, number] {
-  return polar(BUTTON_ORBIT, index * SECTOR_ANGLE);
+export function buttonCenter(index: number, count = SECTOR_COUNT): [number, number] {
+  return polar(BUTTON_ORBIT, sectorCenterAngle(index, count));
 }
 
 /** Angle des lignes de séparation, entre les parts. */
-export function separatorAngles(): number[] {
-  return Array.from({ length: SECTOR_COUNT }, (_, i) => i * SECTOR_ANGLE + SECTOR_ANGLE / 2);
+export function separatorAngles(count = SECTOR_COUNT): number[] {
+  const angle = sectorAngle(count);
+  return Array.from({ length: count }, (_, i) => i * angle + angle / 2);
 }
 
 /** Tracé SVG de la part `index`, en couronne autour du cercle central. */
-export function sectorPath(index: number): string {
-  const start = index * SECTOR_ANGLE - SECTOR_ANGLE / 2;
-  const end = start + SECTOR_ANGLE;
+export function sectorPath(index: number, count = SECTOR_COUNT): string {
+  const start = index * sectorAngle(count) - sectorAngle(count) / 2;
+  const end = start + sectorAngle(count);
   const outer = DISK_RADIUS - 1;
   const inner = HUB_RADIUS + 4;
   const [x1, y1] = polar(outer, start);

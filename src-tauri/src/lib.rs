@@ -61,6 +61,7 @@ pub fn run() {
             app::settings::open_permission_settings,
             app::apps::wheel_config,
             app::apps::pick_app,
+            app::apps::app_badges,
             app::apps::launch_app,
             app::apps::open_settings,
             app::share::share_choices,

@@ -9,6 +9,7 @@ import {
   WHEEL_FILES_EVENT,
   WHEEL_OPEN_EVENT,
   WHEEL_PROGRESS_EVENT,
+  appBadges,
   convertFiles,
   convertVideos,
   hideWheel,
@@ -40,7 +41,7 @@ import {
   formatsFor,
   shareItems,
 } from "./formats";
-import { isInsideHub } from "./geometry";
+import { WINDOW_SIZE, isInsideHub } from "./geometry";
 import {
   type HubText,
   type Point,
@@ -79,6 +80,7 @@ const SHARE_LABELS: Record<ShareTarget["kind"], Work["labels"]> = {
   service: OPEN_LABELS,
   folder: { working: "Copie…", done: "Copié" },
   app: { working: "Copie…", done: "Copié" },
+  system: { working: "Choisissez…", done: "Partagé" },
 };
 
 // Aperçu dans un navigateur : toutes les roues, et quelques apps et partages sans icône
@@ -101,8 +103,16 @@ const PREVIEW_CONFIG: WheelConfig = {
   ],
 };
 
-function itemsFor(mode: Mode, config: WheelConfig): readonly WheelItem[] {
-  if (mode === "apps") return appItems(config.apps);
+/** Pastilles relues tant que la roue des apps reste affichée. */
+const BADGE_REFRESH_MS = 3000;
+const PREVIEW_BADGES = [null, "3", null, null, null, "12"];
+
+function itemsFor(
+  mode: Mode,
+  config: WheelConfig,
+  badges: readonly (string | null)[] = [],
+): readonly WheelItem[] {
+  if (mode === "apps") return appItems(config.apps, badges);
   if (mode === "share") return shareItems(config.share);
   return colorize(formatsFor(mode), config.colors);
 }
@@ -134,7 +144,28 @@ function previewFiles(): FileInfo[] {
   return [{ path: name, name, format, video: (video?.id as FileInfo["video"]) ?? null }];
 }
 
+/** Échelle qui ramène la roue, dessinée pour WINDOW_SIZE pixels CSS, à la taille de sa
+ * fenêtre. WebKitGTK agrandit les pages selon la mise à l'échelle du texte du système
+ * (110 % sous Cinnamon, par exemple) : sans elle, la roue déborde et se fait couper. */
+function useWindowFit(): number {
+  const measure = () => {
+    const side = Math.min(window.innerWidth, window.innerHeight);
+    // Fenêtre pas encore dimensionnée, ou aperçu dans un navigateur : taille normale
+    if (!isTauri() || side <= 0) return 1;
+    const fit = side / WINDOW_SIZE;
+    return Math.abs(fit - 1) < 0.01 ? 1 : Math.min(Math.max(fit, 0.5), 2);
+  };
+  const [fit, setFit] = useState(measure);
+  useEffect(() => {
+    const update = () => setFit(measure());
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return fit;
+}
+
 export function WheelApp() {
+  const fit = useWindowFit();
   const [phase, setPhase] = useState<Phase>("closed");
   const [openCount, setOpenCount] = useState(0);
   // Roues actives dans l'ordre du clic au centre, et apps de la roue des apps
@@ -151,9 +182,11 @@ export function WheelApp() {
   const [work, setWork] = useState<Work | null>(null);
   // Demandé à la première entrée en mode Vidéo
   const [video, setVideo] = useState<VideoSupport | null>(null);
+  // Pastilles de notifications des apps, comme dans le Dock
+  const [badges, setBadges] = useState<(string | null)[]>(isTauri() ? [] : PREVIEW_BADGES);
 
   const videoMissing = mode === "video" && video?.available === false;
-  const items = itemsFor(mode, config);
+  const items = itemsFor(mode, config, badges);
   const next = nextMode(config.modes, mode);
   const shown = dragFiles ?? files;
   const disabled = useMemo(
@@ -569,6 +602,22 @@ export function WheelApp() {
     };
   }, [adoptMode, applyConfig, close, closeUnlessDragging, drop, watchDrop]);
 
+  // Relues à l'ouverture de la roue des apps, puis régulièrement tant qu'elle est affichée
+  useEffect(() => {
+    if (!isTauri() || phase !== "open" || mode !== "apps") return;
+    let active = true;
+    const refresh = () =>
+      void appBadges()
+        .then((list) => active && setBadges(list))
+        .catch(() => {});
+    refresh();
+    const timer = window.setInterval(refresh, BADGE_REFRESH_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [phase, mode, openCount]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
@@ -577,7 +626,7 @@ export function WheelApp() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [close]);
 
-  return (
+  const wheel = (
     <Wheel
       key={openCount}
       phase={phase}
@@ -594,7 +643,14 @@ export function WheelApp() {
       dwelling={dwelling}
       dwellMs={config.dwellMs}
       accent={config.highlight}
+      scale={fit}
       onToggleMode={() => next && chooseMode(next)}
     />
+  );
+  if (fit === 1) return wheel;
+  // Les positions d'un glisser arrivent en pixels de la fenêtre, déjà ceux de la roue mise à
+  // l'échelle : seuls les événements de la souris passent par `scale`
+  return (
+    <div style={{ transform: `scale(${fit})`, transformOrigin: "top left" }}>{wheel}</div>
   );
 }

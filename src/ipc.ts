@@ -161,6 +161,8 @@ export const WHEEL_CONFIG_EVENT = "wheel://config";
 export const wheelConfig = () => invoke<WheelConfig>("wheel_config");
 /** Sélecteur d'application ; `null` si l'utilisateur annule. */
 export const pickApp = () => invoke<AppSlot | null>("pick_app");
+/** Pastilles de notifications des apps de la roue (macOS), dans l'ordre des parts. */
+export const appBadges = () => invoke<(string | null)[]>("app_badges");
 /** Lance l'app de la part `slot`, en lui faisant ouvrir les fichiers s'il y en a. */
 export const launchApp = (slot: number, paths: string[]) =>
   invoke("launch_app", { slot, paths });
@@ -174,7 +176,9 @@ export type ShareTarget =
   /** Dossier où copier les fichiers : Google Drive, iCloud Drive… */
   | { kind: "folder"; path: string; name: string }
   /** Messagerie sans extension de partage : fichiers copiés, puis app ouverte. */
-  | { kind: "app"; path: string; name: string };
+  | { kind: "app"; path: string; name: string }
+  /** Menu de partage du système (macOS) : on y choisit l'app, puis le destinataire. */
+  | { kind: "system"; name: string };
 
 export type ShareView = ShareTarget & {
   /** PNG en data URL. */

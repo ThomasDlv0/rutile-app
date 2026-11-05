@@ -213,3 +213,27 @@ describe("roue de partage", () => {
     );
   });
 });
+
+describe("appItems", () => {
+  const app = (name: string) => ({ path: `/Applications/${name}.app`, name, icon: null });
+
+  it("garde six parts au moins, et une par emplacement au-delà", () => {
+    expect(appItems([app("Signal")])).toHaveLength(6);
+    expect(appItems(Array.from({ length: 9 }, (_, i) => app(`App ${i}`)))).toHaveLength(9);
+    expect(appItems(Array.from({ length: 14 }, (_, i) => app(`App ${i}`)))).toHaveLength(10);
+  });
+
+  it("pose la pastille de chaque app, et rien sur une part vide", () => {
+    const items = appItems([app("Signal"), null, app("Mail")], ["3", "1", null]);
+    expect(items[0].badge).toBe("3");
+    expect(items[1].empty).toBe(true);
+    expect(items[1].badge).toBeUndefined();
+    expect(items[2].badge).toBeUndefined();
+  });
+
+  it("annonce le menu de partage du système", () => {
+    const [item] = shareItems([{ kind: "system", name: "Partager…", icon: null }]);
+    expect(item.action).toBe("Partager avec…");
+    expect(item.icon).toMatch(/^data:image\/svg\+xml,/);
+  });
+});

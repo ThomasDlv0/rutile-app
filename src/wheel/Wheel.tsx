@@ -15,6 +15,7 @@ import {
   buttonCenter,
   isInsideDisk,
   polar,
+  sectorCenterAngle,
   sectorPath,
   separatorAngles,
 } from "./geometry";
@@ -74,11 +75,25 @@ function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
 /** Roues dont les parts portent un nom (app, destination) plutôt qu'un format. */
 const NAMED_MODES: ReadonlySet<Mode> = new Set(["apps", "share"]);
 
-/** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. */
+/** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. Une app
+ * garde sa pastille de notifications, comme dans le Dock. */
 function ItemContent({ item }: { item: WheelItem }) {
-  if (item.icon) return <img className="app-icon" src={item.icon} alt="" draggable={false} />;
+  const badge = item.badge && <span className="app-badge">{item.badge}</span>;
+  if (item.icon) {
+    return (
+      <>
+        <img className="app-icon" src={item.icon} alt="" draggable={false} />
+        {badge}
+      </>
+    );
+  }
   if (item.empty) return <span className="item-add">+</span>;
-  return <span className="item-label">{item.label}</span>;
+  return (
+    <>
+      <span className="item-label">{item.label}</span>
+      {badge}
+    </>
+  );
 }
 
 /** Anneau d'avancement d'une conversion vidéo. */
@@ -110,12 +125,12 @@ function localPoint(event: MouseEvent<HTMLElement>, scale: number): Point {
  * Angle de la part éclairée. Elle tourne vers la nouvelle part par le plus court chemin,
  * et apparaît directement en place quand rien n'était éclairé.
  */
-function useWedge(highlighted: number | null) {
+function useWedge(highlighted: number | null, count: number) {
   const angle = useRef(0);
   const wasVisible = useRef(false);
   const appearing = highlighted !== null && !wasVisible.current;
   if (highlighted !== null) {
-    const target = highlighted * 60;
+    const target = sectorCenterAngle(highlighted, count);
     const delta = ((((target - angle.current) % 360) + 540) % 360) - 180;
     angle.current += delta;
   }
@@ -198,7 +213,8 @@ export function Wheel({
   onOutsideClick,
   onToggleMode,
 }: WheelProps) {
-  const wedge = useWedge(highlighted);
+  const count = items.length;
+  const wedge = useWedge(highlighted, count);
   const busy = work !== null;
 
   // Un clic n'importe où dans une part vaut un clic sur son bouton
@@ -249,12 +265,12 @@ export function Wheel({
           <circle className="disk" cx={CENTER} cy={CENTER} r={DISK_RADIUS - 0.75} />
           <path
             className="wedge"
-            d={sectorPath(0)}
+            d={sectorPath(0, count)}
             data-visible={highlighted !== null}
             data-appearing={wedge.appearing}
             style={{ transform: `rotate(${wedge.angle}deg)` }}
           />
-          {separatorAngles().map((angle) => {
+          {separatorAngles(count).map((angle) => {
             const [x1, y1] = polar(SEPARATOR_START, angle);
             const [x2, y2] = polar(SEPARATOR_END, angle);
             return <line key={angle} className="separator" x1={x1} y1={y1} x2={x2} y2={y2} />;
@@ -262,7 +278,7 @@ export function Wheel({
         </svg>
 
         {items.map((format, index) => {
-          const [x, y] = buttonCenter(index);
+          const [x, y] = buttonCenter(index, count);
           const style = {
             left: x - BUTTON_RADIUS,
             top: y - BUTTON_RADIUS,
@@ -296,9 +312,10 @@ export function Wheel({
               aria-label={
                 isDisabled
                   ? `${format.label}, indisponible`
-                  : (format.action ?? `Convertir en ${format.label}`)
+                  : (format.action ?? `Convertir en ${format.label}`) +
+                    (format.badge ? `, ${format.badge} notification(s)` : "")
               }
-              onFocus={() => onPointer(buttonCenter(index))}
+              onFocus={() => onPointer(buttonCenter(index, count))}
               onBlur={() => onPointer(null)}
               onClick={() => onSelect(index)}
             >

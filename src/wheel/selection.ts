@@ -67,7 +67,7 @@ export function usableSector(
   disabled: Set<string>,
   items: readonly WheelItem[],
 ): number | null {
-  const index = sectorAt(x, y);
+  const index = sectorAt(x, y, items.length);
   return index === null || disabled.has(items[index].id) ? null : index;
 }
 
@@ -119,7 +119,7 @@ export function hubFor(
   dwellTarget: Mode | null = null,
 ): HubText | null {
   if (pointer) {
-    const index = sectorAt(...pointer);
+    const index = sectorAt(...pointer, items.length);
     if (index !== null) {
       const item = items[index];
       if (!disabled.has(item.id)) {

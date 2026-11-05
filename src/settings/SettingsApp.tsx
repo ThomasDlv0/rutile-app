@@ -30,11 +30,13 @@ import {
   VIDEO_FORMATS,
   type WheelItem,
   colorize,
+  shareIcon,
 } from "../wheel/formats";
-import { CENTER } from "../wheel/geometry";
+import { CENTER, MAX_SECTORS, SECTOR_COUNT } from "../wheel/geometry";
 import { type Point, usableSector } from "../wheel/selection";
 import { Wheel } from "../wheel/Wheel";
 import { recordShortcut } from "./accelerator";
+import { moved, type SortableRow, useSortable } from "./useSortable";
 import "./settings.css";
 
 type SectionId =
@@ -70,21 +72,29 @@ function ModeIcon({ mode }: { mode: Mode }) {
   return <GemIcon size={22} />;
 }
 
-/** Position des parts de la roue, dans le sens horaire depuis le haut. */
-const SLOT_POSITIONS = [
+const DIRECTIONS = [
   "En haut",
   "En haut à droite",
+  "À droite",
   "En bas à droite",
   "En bas",
   "En bas à gauche",
+  "À gauche",
   "En haut à gauche",
 ];
+
+/** Où se trouve la part `index` d'une roue de `count` parts, dans le sens horaire depuis le
+ * haut. */
+function slotPosition(index: number, count: number): string {
+  return DIRECTIONS[Math.round((index * 8) / count) % 8];
+}
 
 /** Ce que fait une destination, sous son nom. */
 const SHARE_KINDS: Record<ShareTarget["kind"], string> = {
   service: "Partage du système",
   folder: "Copie dans le dossier",
   app: "Copie et ouvre l'app",
+  system: "Menu de partage du système",
 };
 
 // Aperçu dans un navigateur, sans Tauri
@@ -107,6 +117,7 @@ const PREVIEW_CHOICES: ShareChoice[] = [
           ? "Dossiers synchronisés"
           : "Messageries",
   })),
+  { kind: "system", name: "Partager…", icon: null, group: "Partage du système" },
   { kind: "service", id: "notes", name: "Notes", icon: null, group: "Partage du système" },
 ];
 
@@ -163,6 +174,8 @@ function targetOf(view: ShareView): ShareTarget {
       return { kind: "folder", path: view.path, name: view.name };
     case "app":
       return { kind: "app", path: view.path, name: view.name };
+    case "system":
+      return { kind: "system", name: view.name };
   }
 }
 
@@ -437,38 +450,21 @@ function WheelsTab({
   change: Change;
 }) {
   const enabledCount = settings.modes.filter((entry) => entry.enabled).length;
-
-  const moveMode = (index: number, delta: number) => {
-    const modes = [...settings.modes];
-    [modes[index], modes[index + delta]] = [modes[index + delta], modes[index]];
-    change("wheels", { modes });
-  };
+  const sortable = useSortable(settings.modes.length, (from, to) =>
+    change("wheels", { modes: moved(settings.modes, from, to) }),
+  );
 
   return (
     <>
-      <Section title="Roues" error={error}>
+      <Section title="Roues" error={error} sorting={sortable.sorting}>
         {settings.modes.map((entry, index) => (
-          <Row key={entry.id} label={MODE_LABELS[entry.id]} icon={<ModeIcon mode={entry.id} />}>
-            <div className="order-buttons">
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Monter ${MODE_LABELS[entry.id]}`}
-                disabled={index === 0}
-                onClick={() => moveMode(index, -1)}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Descendre ${MODE_LABELS[entry.id]}`}
-                disabled={index === settings.modes.length - 1}
-                onClick={() => moveMode(index, 1)}
-              >
-                ↓
-              </button>
-            </div>
+          <Row
+            key={entry.id}
+            label={MODE_LABELS[entry.id]}
+            icon={<ModeIcon mode={entry.id} />}
+            sortable={sortable.row(index)}
+            handle={<DragHandle label={MODE_LABELS[entry.id]} {...sortable.handle(index)} />}
+          >
             <Toggle
               checked={entry.enabled}
               label={MODE_LABELS[entry.id]}
@@ -480,7 +476,10 @@ function WheelsTab({
             />
           </Row>
         ))}
-        <p className="section-note">Un clic au centre passe à la roue suivante, dans cet ordre.</p>
+        <p className="section-note">
+          Un clic au centre passe à la roue suivante, dans cet ordre. Glissez une ligne par sa
+          poignée pour la déplacer.
+        </p>
       </Section>
 
       <Section title="Comportement">
@@ -821,46 +820,65 @@ function WheelPreview({
 
 function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
+  const count = settings.apps.length;
+  const setApps = (apps: Settings["apps"]) => change("apps", { apps });
+  const sortable = useSortable(count, (from, to) => setApps(moved(settings.apps, from, to)));
 
-  const setApp = (slot: number, app: Settings["apps"][number]) => {
-    const apps = settings.apps.map((current, i) => (i === slot ? app : current));
-    change("apps", { apps });
-  };
-
+  // `slot` égal au nombre d'emplacements : ajoute une part à la roue
   const chooseApp = async (slot: number) => {
     const picked = isTauri() ? await pickApp() : null;
-    if (picked) setApp(slot, picked);
+    if (!picked) return;
+    const apps = [...settings.apps];
+    apps[slot] = picked;
+    setApps(apps);
   };
+
+  // Au-delà de six parts, retirer une app retire sa part ; sinon la part reste, vide
+  const remove = (slot: number) =>
+    setApps(
+      count > SECTOR_COUNT
+        ? settings.apps.filter((_, i) => i !== slot)
+        : settings.apps.map((app, i) => (i === slot ? null : app)),
+    );
 
   return (
     <>
       <Section title="Roue des apps" error={errors.wheels}>
         <WheelSwitch settings={settings} mode="apps" label="Afficher la roue des apps" change={change} />
       </Section>
-      <Section title="Applications" error={errors.apps}>
-        {SLOT_POSITIONS.map((position, slot) => {
+      <Section title="Applications" error={errors.apps} sorting={sortable.sorting}>
+        {settings.apps.map((_, slot) => {
           const app = view.apps[slot];
+          const position = slotPosition(slot, count);
           return (
             <Row
-              key={position}
+              key={slot}
               label={app ? app.name : "Aucune application"}
               hint={position}
               muted={!app}
               icon={<ItemIcon icon={app?.icon} name={app?.name} />}
+              sortable={sortable.row(slot)}
+              handle={<DragHandle label={app?.name ?? position} {...sortable.handle(slot)} />}
             >
               <button type="button" className="link-button" onClick={() => void chooseApp(slot)}>
                 {app ? "Changer…" : "Choisir…"}
               </button>
-              {app && (
-                <button type="button" className="link-button" onClick={() => setApp(slot, null)}>
+              {(app || count > SECTOR_COUNT) && (
+                <button type="button" className="link-button" onClick={() => remove(slot)}>
                   Retirer
                 </button>
               )}
             </Row>
           );
         })}
+        {count < MAX_SECTORS && (
+          <AddRow label="Ajouter une app" onClick={() => void chooseApp(count)} />
+        )}
         <p className="section-note">
           Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
+          La roue compte de {SECTOR_COUNT} à {MAX_SECTORS} parts.
+          {view.platform === "macos" &&
+            " Les pastilles de notifications du Dock s'affichent sur les icônes."}
         </p>
       </Section>
     </>
@@ -873,10 +891,24 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
   const [picking, setPicking] = useState<number | null>(null);
   const paste = view.platform === "macos" ? "⌘V" : "Ctrl+V";
 
-  const setTarget = (slot: number, target: ShareTarget | null) => {
-    const share = settings.share.map((current, i) => (i === slot ? target : current));
-    change("share", { share });
+  const count = settings.share.length;
+  const setShare = (share: Settings["share"]) => change("share", { share });
+  const sortable = useSortable(count, (from, to) => setShare(moved(settings.share, from, to)));
+
+  // `slot` égal au nombre d'emplacements : ajoute une part à la roue
+  const setTarget = (slot: number, target: ShareTarget) => {
+    const share = [...settings.share];
+    share[slot] = target;
+    setShare(share);
   };
+
+  // Au-delà de six parts, retirer une destination retire sa part ; sinon la part reste, vide
+  const remove = (slot: number) =>
+    setShare(
+      count > SECTOR_COUNT
+        ? settings.share.filter((_, i) => i !== slot)
+        : settings.share.map((target, i) => (i === slot ? null : target)),
+    );
 
   return (
     <>
@@ -888,30 +920,37 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
           change={change}
         />
       </Section>
-      <Section title="Destinations" error={errors.share}>
-        {SLOT_POSITIONS.map((position, slot) => {
+      <Section title="Destinations" error={errors.share} sorting={sortable.sorting}>
+        {settings.share.map((_, slot) => {
           const target = view.share[slot];
+          const position = slotPosition(slot, count);
           return (
             <Row
-              key={position}
+              key={slot}
               label={target ? target.name : "Aucune destination"}
               hint={target ? `${position} · ${SHARE_KINDS[target.kind]}` : position}
               muted={!target}
-              icon={<ItemIcon icon={target?.icon} name={target?.name} />}
+              icon={<ItemIcon icon={target && shareIcon(target)} name={target?.name} />}
+              sortable={sortable.row(slot)}
+              handle={<DragHandle label={target?.name ?? position} {...sortable.handle(slot)} />}
             >
               <button type="button" className="link-button" onClick={() => setPicking(slot)}>
                 {target ? "Changer…" : "Choisir…"}
               </button>
-              {target && (
-                <button type="button" className="link-button" onClick={() => setTarget(slot, null)}>
+              {(target || count > SECTOR_COUNT) && (
+                <button type="button" className="link-button" onClick={() => remove(slot)}>
                   Retirer
                 </button>
               )}
             </Row>
           );
         })}
+        {count < MAX_SECTORS && (
+          <AddRow label="Ajouter une destination" onClick={() => setPicking(count)} />
+        )}
         <p className="section-note">
-          {view.platform === "macos" && "AirDrop, Messages et Mail ouvrent leur fenêtre d'envoi. "}
+          {view.platform === "macos" &&
+            "« Partager… » ouvre le menu de partage de macOS : choisissez l'app, puis le destinataire. AirDrop, Messages et Mail ouvrent directement leur fenêtre d'envoi. "}
           Un dossier synchronisé (Google Drive, iCloud Drive…) reçoit une copie, que son app met
           en ligne. Pour Signal et les messageries sans partage, le fichier est copié puis l'app
           s'ouvre : collez-le avec {paste} dans la conversation.
@@ -919,7 +958,9 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
       </Section>
       {picking !== null && (
         <SharePicker
-          position={SLOT_POSITIONS[picking]}
+          position={
+            picking < count ? slotPosition(picking, count) : "Nouvelle part"
+          }
           onPick={(target) => {
             setTarget(picking, target);
             setPicking(null);
@@ -992,12 +1033,18 @@ function SharePicker({
               <h4>{group}</h4>
               {items.map((choice) => (
                 <button
-                  key={choice.kind === "service" ? choice.id : choice.path}
+                  key={
+                    choice.kind === "service"
+                      ? choice.id
+                      : choice.kind === "system"
+                        ? "system"
+                        : choice.path
+                  }
                   type="button"
                   className="sheet-item"
                   onClick={() => onPick(targetOf(choice))}
                 >
-                  <ItemIcon icon={choice.icon} name={choice.name} small />
+                  <ItemIcon icon={shareIcon(choice)} name={choice.name} small />
                   <span>{choice.name}</span>
                 </button>
               ))}
@@ -1049,11 +1096,24 @@ function ItemIcon({
   );
 }
 
-function Section({ title, error, children }: { title: string; error?: string; children: ReactNode }) {
+function Section({
+  title,
+  error,
+  sorting,
+  children,
+}: {
+  title: string;
+  error?: string;
+  /** Une ligne est en train d'être glissée : les autres s'écartent en douceur. */
+  sorting?: boolean;
+  children: ReactNode;
+}) {
   return (
     <section className="settings-section">
       <h2>{title}</h2>
-      <div className="settings-card">{children}</div>
+      <div className="settings-card" data-sorting={sorting || undefined}>
+        {children}
+      </div>
       {error && (
         <p className="section-error" role="alert">
           {error}
@@ -1068,16 +1128,28 @@ function Row({
   hint,
   icon,
   muted,
+  sortable,
+  handle,
   children,
 }: {
   label: string;
   hint?: string;
   icon?: ReactNode;
   muted?: boolean;
+  /** Ligne d'une liste qu'on réordonne en glissant, par sa poignée `handle`. */
+  sortable?: SortableRow;
+  handle?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="settings-row" data-muted={muted}>
+    <div
+      className="settings-row"
+      data-muted={muted}
+      data-dragging={sortable?.dragging || undefined}
+      ref={sortable?.ref}
+      style={sortable?.style}
+    >
+      {handle}
       {icon && <span className="row-icon">{icon}</span>}
       <div className="row-text">
         <span className="row-label">{label}</span>
@@ -1085,6 +1157,40 @@ function Row({
       </div>
       <div className="row-control">{children}</div>
     </div>
+  );
+}
+
+/** Poignée d'une ligne déplaçable : à glisser, ou flèches haut et bas au clavier. */
+function DragHandle({
+  label,
+  ...handle
+}: { label: string } & ReturnType<ReturnType<typeof useSortable>["handle"]>) {
+  return (
+    <button
+      type="button"
+      className="drag-handle"
+      aria-label={`Déplacer ${label}`}
+      title="Glisser pour déplacer"
+      {...handle}
+    >
+      <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
+        {[3, 8, 13].flatMap((y) =>
+          [2.5, 7.5].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.4" />),
+        )}
+      </svg>
+    </button>
+  );
+}
+
+/** Dernière ligne d'une liste : ajoute un élément. */
+function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="settings-row add-row" onClick={onClick}>
+      <span className="add-row-icon" aria-hidden="true">
+        +
+      </span>
+      <span className="row-label">{label}</span>
+    </button>
   );
 }
 

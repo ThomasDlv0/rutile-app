@@ -333,33 +333,81 @@ html.settings #root {
   font-weight: 600;
 }
 
-.order-buttons {
-  display: flex;
-  gap: 2px;
+/* Lignes déplaçables : poignée, ligne glissée au-dessus des autres, qui s'écartent */
+.drag-handle {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 16px;
+  height: 28px;
+  margin: 0 -6px 0 -8px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--hint);
+  cursor: grab;
+  touch-action: none;
 }
 
-.icon-button {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--card-border);
-  border-radius: 6px;
-  background: var(--control);
+.drag-handle svg {
+  fill: currentColor;
+}
+
+.drag-handle:hover {
   color: var(--label);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.settings-card[data-sorting="true"] .settings-row {
+  transition: transform 160ms ease-out;
+}
+
+.settings-card[data-sorting="true"] .settings-row[data-dragging="true"] {
+  position: relative;
+  z-index: 2;
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  transition: none;
+}
+
+.add-row {
+  justify-content: flex-start;
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--row-divider);
+  background: none;
+  color: var(--accent);
   font: inherit;
-  font-size: 12px;
+  text-align: left;
   cursor: pointer;
 }
 
-.icon-button:disabled,
+.add-row .row-label {
+  color: var(--accent);
+}
+
+.add-row-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  font-weight: 500;
+}
+
 .toggle:disabled {
   opacity: 0.35;
   cursor: default;
-}
-
-.icon-button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .settings-app-icon[data-small="true"] {

@@ -1,10 +1,17 @@
+use std::cell::{Cell, RefCell};
+use std::ffi::c_void;
 use std::path::PathBuf;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, NSObjectProtocol, ProtocolObject};
-use objc2::{MainThreadMarker, msg_send, sel};
-use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardWriting, NSSharingService};
-use objc2_foundation::{NSArray, NSString, NSURL};
+use objc2::{
+    AnyThread, DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel,
+};
+use objc2_app_kit::{
+    NSApplication, NSPasteboard, NSPasteboardWriting, NSSharingService, NSSharingServicePicker,
+    NSSharingServicePickerDelegate, NSView,
+};
+use objc2_foundation::{NSArray, NSObject, NSPoint, NSRect, NSRectEdge, NSSize, NSString, NSURL};
 
 use super::{CloudFolder, Service, home};
 use crate::macos_image;
@@ -105,6 +112,91 @@ pub fn share(id: &str, files: &[PathBuf]) -> Result<(), String> {
     NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
     // SAFETY : idem
     unsafe { service.performWithItems(&items) };
+    Ok(())
+}
+
+/// Fin du menu de partage : `true` si un service a été choisi, `false` s'il a été refermé.
+pub type PickerDone = Box<dyn FnOnce(bool)>;
+
+pub struct PickerState {
+    done: Cell<Option<PickerDone>>,
+}
+
+define_class!(
+    // SAFETY : NSObject n'impose rien à ses sous-classes, et celle-ci n'implémente pas Drop
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RutileSharePickerDelegate"]
+    #[ivars = PickerState]
+    pub struct PickerDelegate;
+
+    unsafe impl NSObjectProtocol for PickerDelegate {}
+
+    unsafe impl NSSharingServicePickerDelegate for PickerDelegate {
+        #[unsafe(method(sharingServicePicker:didChooseSharingService:))]
+        fn picker_did_choose(
+            &self,
+            _picker: &NSSharingServicePicker,
+            service: Option<&NSSharingService>,
+        ) {
+            if let Some(done) = self.ivars().done.take() {
+                done(service.is_some());
+            }
+            // Le service choisi poursuit seul : le menu et son délégué peuvent partir
+            OPEN_PICKER.with(|open| open.borrow_mut().take());
+        }
+    }
+);
+
+impl PickerDelegate {
+    fn new(mtm: MainThreadMarker, done: PickerDone) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(PickerState {
+            done: Cell::new(Some(done)),
+        });
+        // SAFETY : `init` de NSObject, sur une instance tout juste allouée
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
+thread_local! {
+    /// Menu affiché et son délégué, gardés en vie jusqu'à la fin du choix : le menu ne retient
+    /// pas son délégué.
+    static OPEN_PICKER: RefCell<Option<(Retained<NSSharingServicePicker>, Retained<PickerDelegate>)>> =
+        const { RefCell::new(None) };
+}
+
+/// Menu de partage de macOS, celui du bouton Partager du Finder, ouvert à droite du centre de
+/// `view`. Le service choisi (Messages, AirDrop, une extension comme WhatsApp…) ouvre ensuite
+/// sa fenêtre, où l'on choisit le destinataire.
+pub fn show_picker(view: *mut c_void, files: &[PathBuf], done: PickerDone) -> Result<(), String> {
+    let mtm = MainThreadMarker::new().ok_or("Le partage doit partir du thread principal.")?;
+    // SAFETY : pointeur de NSView fourni par la fenêtre, utilisé sur le thread principal
+    let view =
+        unsafe { view.cast::<NSView>().as_ref() }.ok_or("Fenêtre de la roue introuvable.")?;
+    let urls = file_urls(files)?;
+    // SAFETY : tableau d'URL de fichiers, comme l'attend AppKit
+    let picker = unsafe {
+        NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items(&urls))
+    };
+    let delegate = PickerDelegate::new(mtm, done);
+    picker.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+    // Un menu encore ouvert d'une fois précédente se referme d'abord
+    if let Some((previous, _)) = OPEN_PICKER.with(|open| open.borrow_mut().take()) {
+        previous.close();
+    }
+    OPEN_PICKER.with(|open| *open.borrow_mut() = Some((picker.clone(), delegate)));
+    #[allow(deprecated)]
+    NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+    let bounds = view.bounds();
+    let hub = 48.0;
+    let anchor = NSRect::new(
+        NSPoint::new(
+            bounds.size.width / 2.0 - hub,
+            bounds.size.height / 2.0 - hub,
+        ),
+        NSSize::new(hub * 2.0, hub * 2.0),
+    );
+    picker.showRelativeToRect_ofView_preferredEdge(anchor, view, NSRectEdge::MaxX);
     Ok(())
 }
 
