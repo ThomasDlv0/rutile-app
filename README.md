@@ -1,52 +1,129 @@
-# Rutile
+<p align="center">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="Icône de Rutile">
+</p>
 
-**Convertir, lancer et partager depuis une roue, sans quitter ce qu'on fait.**
+<h1 align="center">Rutile</h1>
 
-[![Dernière version](https://img.shields.io/github/v/release/ThomasDlv0/rutile-app?label=version)](https://github.com/ThomasDlv0/rutile-app/releases/latest)
-[![CI](https://github.com/ThomasDlv0/rutile-app/actions/workflows/ci.yml/badge.svg)](https://github.com/ThomasDlv0/rutile-app/actions/workflows/ci.yml)
-![Systèmes](https://img.shields.io/badge/syst%C3%A8mes-macOS%20%7C%20Windows%20%7C%20Linux-informational)
+<p align="center">
+  <strong>Une roue sous le curseur pour convertir, ouvrir et partager vos fichiers.</strong><br>
+  Un raccourci ou un fichier secoué, une part de la roue, et c'est fait.
+</p>
 
-Rutile tourne en arrière-plan. Un raccourci clavier, ou un fichier secoué pendant qu'on le
-glisse, ouvre une roue sous le curseur : chaque part est une action. On y convertit une image
-ou une vidéo dans un autre format, on lance une app, on envoie un fichier par AirDrop ou dans
-Google Drive. Pour qui jongle souvent avec des fichiers (graphistes, développeurs, créateurs
-de contenu) et en a assez d'ouvrir un logiciel ou un site pour passer un PNG en WebP.
+<p align="center">
+  <a href="#installation"><strong>Installation</strong></a> ·
+  <a href="#fonctionnalités"><strong>Fonctionnalités</strong></a> ·
+  <a href="#formats-pris-en-charge"><strong>Formats</strong></a> ·
+  <a href="#questions-fréquentes"><strong>FAQ</strong></a> ·
+  <a href="#développement"><strong>Développement</strong></a>
+</p>
 
-| Roue des images | Roue des vidéos |
-|---|---|
-| ![Roue de conversion des images, part WebP survolée](docs/screenshots/roue-images.jpg) | ![Roue de conversion des vidéos, part GIF survolée](docs/screenshots/roue-videos.jpg) |
-| **Roue de partage** | **Réglages des couleurs** |
-| ![Roue de partage : AirDrop, Messages, Signal, Google Drive, Mail](docs/screenshots/roue-partage.jpg) | ![Onglet Couleurs des réglages, avec l'aperçu de la roue](docs/screenshots/reglages-couleurs.jpg) |
+<p align="center">
+  <a href="https://github.com/ThomasDlv0/rutile-app/releases/latest"><img alt="Dernière version" src="https://img.shields.io/github/v/release/ThomasDlv0/rutile-app?style=flat-square&label=version"></a>
+  <a href="https://github.com/ThomasDlv0/rutile-app/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/ThomasDlv0/rutile-app/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <img alt="macOS, Windows et Linux" src="https://img.shields.io/badge/syst%C3%A8mes-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-6b7280?style=flat-square">
+</p>
 
-<!-- Geste complet (glisser, secouer, convertir) : enregistrer docs/screenshots/geste.gif puis
-     retirer ce commentaire autour de la ligne suivante.
-![Glisser un fichier, le secouer, le lâcher sur un format](docs/screenshots/geste.gif)
--->
+<p align="center">
+  <a href="https://github.com/ThomasDlv0/rutile-app/releases/latest"><img alt="Télécharger pour macOS" src="https://img.shields.io/badge/macOS-.dmg-1d1d1f?style=for-the-badge&logo=apple&logoColor=white"></a>
+  <a href="https://github.com/ThomasDlv0/rutile-app/releases/latest"><img alt="Télécharger pour Windows" src="https://img.shields.io/badge/Windows-.exe-0078d4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0zIDNoOC41djguNUgzek0xMi41IDNIMjF2OC41aC04LjV6TTMgMTIuNWg4LjVWMjFIM3pNMTIuNSAxMi41SDIxVjIxaC04LjV6Ii8+PC9zdmc+"></a>
+  <a href="https://github.com/ThomasDlv0/rutile-app/releases/latest"><img alt="Télécharger pour Linux" src="https://img.shields.io/badge/Linux-AppImage-f0b429?style=for-the-badge&logo=linux&logoColor=black"></a>
+</p>
 
-### Fonctionnalités
+<p align="center">
+  <img src="docs/screenshots/conversion.gif" width="880" alt="Dans le Finder, la roue s'ouvre sur affiche.png ; le curseur survole JPEG puis WebP, un clic, et affiche.webp apparaît à côté de l'original">
+</p>
 
-- **Quatre roues**, qu'on fait tourner d'un clic au centre : images, vidéos, apps et partage.
-  Chacune s'active ou se désactive, dans l'ordre de son choix.
-- **Conversion directe** : un fichier lâché sur une part est converti aussitôt, à côté de
-  l'original, sans jamais rien écraser (`photo-1.png` si `photo.png` existe).
-- **Roue intelligente** : une image ouvre la roue des images, une vidéo celle des vidéos. Un
-  fichier maintenu au centre passe à la roue de partage, puis revient au convertisseur.
-- **Fichiers sélectionnés** : si le Finder ou l'Explorateur est au premier plan, la roue
-  reprend sa sélection ; sinon, un clic sur une part ouvre le sélecteur de fichiers.
-- **Roue des apps** : une app par part ; un fichier glissé dessus s'ouvre avec elle.
-- **Roue de partage** : AirDrop, Messages, Mail, Notes… (macOS), dossiers synchronisés (Google
-  Drive, iCloud Drive, Dropbox, OneDrive) et messageries comme Signal (fichier copié, puis
-  collé dans la conversation).
-- **Couleurs** : une couleur par format et pour la part survolée, avec aperçu en direct ; le
-  texte passe en clair ou en foncé pour rester lisible.
-- **FFmpeg embarqué** : la conversion vidéo fonctionne sans rien installer d'autre.
+Rutile tourne en arrière-plan et ouvre, sous le curseur, une roue dont chaque part est une
+action : passer une image en WebP, une vidéo en MP4, ouvrir une app, envoyer un fichier par
+AirDrop. Pour qui jongle avec des fichiers toute la journée et n'a plus envie d'ouvrir un
+logiciel ou un site juste pour passer un PNG en JPEG.
 
-### Formats pris en charge
+Gratuit, sans compte, sans publicité et sans suivi. Les conversions se font **sur votre
+machine** : aucun fichier n'est envoyé sur internet pour être converti. FFmpeg est inclus,
+il n'y a rien d'autre à installer.
+
+## Fonctionnalités
+
+### Convertir sans ouvrir de logiciel
+
+Sélectionnez un fichier dans le Finder ou l'Explorateur et ouvrez la roue
+(<kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>Espace</kbd> sur macOS, <kbd>Ctrl</kbd> <kbd>Maj</kbd>
+<kbd>Espace</kbd> sous Windows et Linux) : un clic sur un format, et le fichier converti
+apparaît **à côté de l'original**, qui n'est jamais modifié ni écrasé (`photo-1.png` si
+`photo.png` existe déjà).
+
+Pendant un glisser, **secouez le fichier** de quelques allers-retours : la roue s'ouvre sous
+le curseur, il suffit de le lâcher sur un format. Les formats impossibles pour ce fichier
+(celui qu'il a déjà, par exemple) sont grisés.
+
+### Quatre roues, un clic au centre
+
+<p align="center">
+  <img src="docs/screenshots/roues.gif" width="880" alt="Un clic au centre fait passer de la roue des images à celle des vidéos, puis au partage et aux apps">
+</p>
+
+**Images**, **vidéos**, **apps** et **partage** : un clic au centre passe à la roue suivante.
+Chacune s'active ou se désactive, dans l'ordre de votre choix.
+
+La roue s'adapte au fichier : une image ouvre la roue des images, une vidéo celle des vidéos.
+Pendant un glisser, **restez au centre** : un anneau se remplit (1 s par défaut) et la roue
+passe au partage ; y revenir repasse au convertisseur.
+
+### Vidéos : changer de format, faire un GIF, garder le son
+
+<p align="center">
+  <img src="docs/screenshots/roue-videos.jpg" width="540" alt="Roue des vidéos : MP4, WebM, MOV, MKV, GIF et MP3, la part GIF survolée">
+</p>
+
+MP4, WebM, MOV, MKV, **GIF animé** et **MP3** (le son seul), grâce au FFmpeg embarqué. Une
+notification annonce la fin de la conversion et propose d'afficher le fichier.
+
+### Partager en un geste
+
+<p align="center">
+  <img src="docs/screenshots/roue-partage.jpg" width="540" alt="Roue de partage : AirDrop, Messages, Signal, iCloud Drive, Mail et Blip, la part Messages survolée">
+</p>
+
+- **AirDrop, Messages, Mail** et tous les services de partage de macOS, avec leurs icônes.
+- **Dossiers synchronisés** : Google Drive, iCloud Drive, Dropbox, OneDrive… Le fichier y est
+  copié ; un clic sans fichier ouvre le dossier.
+- **Messageries** comme Signal : le fichier est copié, l'app s'ouvre, il n'y a plus qu'à
+  coller dans la conversation.
+
+### Vos apps sous la main
+
+<p align="center">
+  <img src="docs/screenshots/roue-apps.jpg" width="540" alt="Roue des apps : Signal, Claude, Brave, iTerm, PhpStorm et Parallels Desktop, la part PhpStorm survolée">
+</p>
+
+Six apps de votre choix, une par part. Un fichier lâché sur une app s'ouvre avec elle.
+
+### À vos couleurs
+
+<img src="docs/screenshots/reglages.gif" align="right" width="300" alt="Fenêtre des réglages : onglets Général, Roues, Couleurs et Partage">
+
+Les réglages tiennent en six onglets :
+
+- **Général** : raccourci, secouage et sa sensibilité, lancement à l'ouverture de session.
+- **Roues** : ordre et activation des roues, temps au centre avant de basculer, retour sur
+  la dernière roue utilisée.
+- **Conversion** : qualité JPEG, WebP et AVIF.
+- **Couleurs** : une couleur par format et une pour la part survolée, avec un aperçu de la
+  roue en direct. Le texte passe en clair ou en foncé pour rester lisible.
+- **Apps** et **Partage** : le contenu de ces deux roues.
+
+<br clear="right">
+
+## Formats pris en charge
 
 | | Entrée | Sortie |
 |---|---|---|
-| Images | PNG, JPEG, WebP, AVIF, GIF (première image), BMP, TIFF, ICO, SVG | PNG, JPEG, WebP, AVIF, SVG, ICO |
-| Vidéos | tout ce que lit FFmpeg (MP4, MOV, WebM, MKV, AVI, WMV, FLV, MPEG-TS…), GIF animé | MP4, WebM, MOV, MKV, GIF animé, MP3 (son seul) |
+| **Images** | PNG, JPEG, WebP, AVIF, GIF (première image), BMP, TIFF, ICO, SVG | PNG, JPEG, WebP, AVIF, SVG, ICO |
+| **Vidéos** | tout ce que lit FFmpeg (MP4, MOV, WebM, MKV, AVI, WMV, FLV, MPEG-TS…), GIF animé | MP4, WebM, MOV, MKV, GIF animé, MP3 (son seul) |
+
+<details>
+<summary><strong>Détails des conversions</strong></summary>
+<br>
 
 - Le format d'un fichier est reconnu d'après son contenu, pas son extension.
 - **Seule la sortie SVG est vectorisée** : l'image est retracée en formes de couleur unie,
@@ -57,18 +134,28 @@ de contenu) et en a assez d'ouvrir un logiciel ou un site pour passer un PNG en 
 - Vidéo : MP4 et MOV en H.264 + AAC, WebM en VP9 + Opus, MKV sans réencodage (instantané),
   GIF à 12 images/s et 640 px de large au plus, MP3 refusé pour une vidéo muette.
 
+</details>
+
 ## Installation
 
-Télécharger le fichier de son système dans la
-[**dernière release**](https://github.com/ThomasDlv0/rutile-app/releases/latest). Rutile n'est
-signé ni par Apple ni par Microsoft : chaque système affiche donc un avertissement au premier
-lancement, expliqué ci-dessous.
+Téléchargez le fichier de votre système dans la
+[**dernière version**](https://github.com/ThomasDlv0/rutile-app/releases/latest). Rutile
+n'est signé ni par Apple ni par Microsoft : chaque système affiche donc un avertissement au
+premier lancement, expliqué ci-dessous.
 
-### macOS 11 ou plus récent (Apple Silicon et Intel)
+| Système | Fichier |
+|---|---|
+| macOS 11 ou plus récent (Apple Silicon et Intel) | `Rutile_x.y.z_macos_universal.dmg` |
+| Windows 10 et 11 (x64) | `Rutile_x.y.z_windows_x64_setup.exe` ou `.msi` |
+| Linux x64 | `Rutile_x.y.z_linux_x86_64.AppImage`, `.deb` ou `.rpm` |
 
-1. Ouvrir `Rutile_x.y.z_macos_universal.dmg` et glisser Rutile dans Applications.
-2. Premier lancement : si macOS dit que l'app est endommagée ou ne peut pas être vérifiée,
-   retirer la quarantaine, puis relancer :
+<details>
+<summary><strong>macOS</strong></summary>
+<br>
+
+1. Ouvrez le `.dmg` et glissez Rutile dans Applications.
+2. Au premier lancement, si macOS dit que l'app est endommagée ou ne peut pas être vérifiée,
+   retirez la quarantaine puis relancez :
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/Rutile.app
@@ -76,23 +163,31 @@ lancement, expliqué ci-dessous.
 
    Autre possibilité : Réglages Système → Confidentialité et sécurité → « Ouvrir quand même ».
 3. Rutile n'a pas d'icône dans le Dock : elle apparaît dans la barre des menus.
-4. Autorisations : Rutile ne demande **pas** l'accessibilité (le secouage relève l'état de la
+4. Autorisations : Rutile ne demande **pas** l'accessibilité (le secouage lit l'état de la
    souris sans intercepter d'événement). macOS demande seulement, à la première utilisation,
    l'**Automatisation → Finder** (lire les fichiers sélectionnés) et les **notifications**.
    Un refus se corrige dans Réglages Système → Confidentialité et sécurité → Automatisation.
 
-### Windows 10 et 11 (x64)
+</details>
 
-1. Lancer `Rutile_x.y.z_windows_x64_setup.exe` : installation pour l'utilisateur, sans droits
+<details>
+<summary><strong>Windows</strong></summary>
+<br>
+
+1. Lancez le `_setup.exe` : installation pour votre seul compte, sans droits
    d'administrateur. WebView2 est installé s'il manque. Le `.msi` installe pour toute la
    machine (droits d'administrateur).
 2. SmartScreen : « Informations complémentaires », puis « Exécuter quand même ».
 3. Les éditions N de Windows (sans Media Foundation) sont prises en charge : la vidéo passe
    uniquement par le FFmpeg embarqué.
 
-### Linux x64
+</details>
 
-- **AppImage** (recommandé, fonctionne partout, Bazzite compris) :
+<details>
+<summary><strong>Linux (et Bazzite)</strong></summary>
+<br>
+
+- **AppImage** (recommandée, fonctionne partout, Bazzite compris) :
 
   ```bash
   chmod +x Rutile_x.y.z_linux_x86_64.AppImage
@@ -102,12 +197,12 @@ lancement, expliqué ci-dessous.
   Si elle refuse de démarrer faute de FUSE : `./Rutile_*.AppImage --appimage-extract-and-run`.
 - **Debian, Ubuntu** : `sudo apt install ./Rutile_x.y.z_linux_amd64.deb`.
 - **Fedora, openSUSE** : `sudo dnf install ./Rutile_x.y.z_linux_x86_64.rpm`.
-- **Bazzite et distributions immuables** (Fedora Atomic, Silverblue…) : on n'y installe pas de
-  paquets, prendre l'AppImage. Gear Lever (déjà présent sur Bazzite) l'intègre au menu des
+- **Bazzite et distributions immuables** (Fedora Atomic, Silverblue…) : on n'y installe pas
+  de paquets, prenez l'AppImage. Gear Lever (déjà présent sur Bazzite) l'intègre au menu des
   applications.
-- **Secouage sous Wayland** : aucune app ne peut suivre la souris ailleurs que sur ses
-  fenêtres, Rutile lit donc les souris avec evdev, ce qui demande le groupe `input` (qui donne
-  aussi accès au clavier : le secouage reste désactivé par défaut). Sur Bazzite, le groupe doit
+- **Secouage sous Wayland** : aucune app ne peut suivre la souris hors de ses fenêtres,
+  Rutile lit donc les souris avec evdev, ce qui demande le groupe `input` (qui donne aussi
+  accès au clavier : le secouage reste désactivé par défaut). Sur Bazzite, le groupe doit
   d'abord être copié dans `/etc/group` :
 
   ```bash
@@ -115,33 +210,140 @@ lancement, expliqué ci-dessous.
   sudo usermod -aG input "$USER"
   ```
 
-  Puis fermer et rouvrir la session, et activer le secouage dans les réglages.
-- **Raccourci sous GNOME Wayland** : les apps ne peuvent pas y écouter le clavier. Paramètres →
-  Clavier → Raccourcis personnalisés → « + », avec la commande
-  `/chemin/vers/Rutile_x.y.z_linux_x86_64.AppImage --open` (ou `rutile --open` avec le `.deb`
-  ou le `.rpm`), sur la combinaison de son choix.
+  Fermez puis rouvrez la session, et activez le secouage dans les réglages.
+- **Raccourci sous GNOME Wayland** : les apps ne peuvent pas y écouter le clavier.
+  Paramètres → Clavier → Raccourcis personnalisés → « + », avec la commande
+  `/chemin/vers/Rutile_x.y.z_linux_x86_64.AppImage --open` (ou `rutile --open` avec le
+  `.deb` ou le `.rpm`), sur la combinaison de votre choix.
 - L'icône de la barre système demande, sous GNOME, l'extension « AppIndicator ».
+
+</details>
 
 ### Prise en main
 
-- **Ouvrir la roue** : `⌘⇧Espace` sur macOS, `Ctrl+Maj+Espace` sous Windows et Linux X11 (se
-  change dans Réglages → Général). Un nouvel appui la referme. Aussi depuis l'icône de la barre
-  système, ou avec `rutile --open [fichiers…]`.
-- **Secouer** : pendant qu'on glisse un fichier, quelques allers-retours rapides ouvrent la
-  roue sous le curseur ; lâcher le fichier sur une part.
-- **Centre de la roue** : un clic passe à la roue suivante. Pendant un glisser, rester au
-  centre (1 s par défaut, réglable) passe au partage ; y revenir repasse au convertisseur ;
-  relâcher au centre annule.
-- **Fermer** : `Échap` ou clic à l'extérieur. À la fin d'une conversion, une notification
-  propose d'afficher le fichier.
-- **Réglages** : icône de la barre système → « Réglages… », en six onglets (Général, Roues,
-  Conversion, Couleurs, Apps, Partage). Ils sont enregistrés dans `settings.json`, dans le
-  dossier de configuration (`~/Library/Application Support/fr.rutile.desktop`,
-  `%APPDATA%\fr.rutile.desktop` ou `~/.config/fr.rutile.desktop`).
+| | |
+|---|---|
+| **Ouvrir la roue** | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>Espace</kbd> (macOS) ou <kbd>Ctrl</kbd> <kbd>Maj</kbd> <kbd>Espace</kbd> (Windows, Linux X11), modifiable dans Réglages → Général ; ou l'icône de la barre système, ou `rutile --open [fichiers…]` |
+| **Secouer** | pendant un glisser, quelques allers-retours rapides ouvrent la roue sous le curseur |
+| **Changer de roue** | un clic au centre ; pendant un glisser, rester au centre bascule entre conversion et partage |
+| **Annuler** | relâcher au centre, <kbd>Échap</kbd> ou un clic à l'extérieur |
+| **Réglages** | icône de la barre système → « Réglages… » |
 
-## Mode développement
+Les réglages sont enregistrés dans `settings.json`, dans
+`~/Library/Application Support/fr.rutile.desktop`, `%APPDATA%\fr.rutile.desktop` ou
+`~/.config/fr.rutile.desktop`.
 
-### Prérequis
+## Questions fréquentes
+
+<details>
+<summary><strong>Mes fichiers partent-ils sur internet ?</strong></summary>
+<br>
+
+Non. Les images sont converties par le code de Rutile et les vidéos par le FFmpeg embarqué,
+sur votre machine. Seule la roue de partage envoie un fichier, quand vous le lui demandez
+(AirDrop, Messages, dossier synchronisé…).
+
+</details>
+
+<details>
+<summary><strong>L'original est-il modifié ?</strong></summary>
+<br>
+
+Jamais. Le fichier converti est écrit à côté, sous un nouveau nom s'il le faut
+(`photo-1.webp`, `photo-2.webp`…).
+
+</details>
+
+<details>
+<summary><strong>Les images converties sont-elles vectorisées ?</strong></summary>
+<br>
+
+Seulement vers SVG : l'image est retracée en formes de couleur unie, ce qui donne un vrai
+fichier vectoriel, très bon pour un logo ou une icône, approximatif pour une photo. Vers PNG,
+JPEG, WebP, AVIF et ICO, l'image reste en pixels.
+
+</details>
+
+<details>
+<summary><strong>Le raccourci clavier ne fait rien</strong></summary>
+<br>
+
+Une autre app l'utilise sûrement déjà : le système la sert en premier. Choisissez une autre
+combinaison dans Réglages → Général. Sous GNOME Wayland, passez par un raccourci du système
+(voir l'installation sous Linux).
+
+</details>
+
+<details>
+<summary><strong>macOS dit que Rutile est endommagée</strong></summary>
+<br>
+
+C'est l'avertissement des apps non signées par Apple, pas un vrai problème du fichier.
+Retirez la quarantaine : `xattr -dr com.apple.quarantine /Applications/Rutile.app`.
+
+</details>
+
+<details>
+<summary><strong>Sous Linux, la roue est blanche ou vide</strong></summary>
+<br>
+
+Rutile désactive déjà le rendu DMA-BUF de WebKitGTK (`WEBKIT_DISABLE_DMABUF_RENDERER=1`), en
+cause le plus souvent, surtout avec une carte NVIDIA. La transparence de la roue demande
+aussi un compositeur (GNOME, KDE). Si le problème persiste, ouvrez une
+[issue](https://github.com/ThomasDlv0/rutile-app/issues) avec votre distribution et votre
+carte graphique.
+
+</details>
+
+<details>
+<summary><strong>Pourquoi l'app pèse-t-elle si lourd ?</strong></summary>
+<br>
+
+FFmpeg est embarqué pour que la vidéo marche sans rien installer : de 75 Mo (Windows, Linux)
+à 118 Mo (macOS, qui contient les versions Apple Silicon et Intel) une fois installé.
+
+</details>
+
+<details>
+<summary><strong>Limites connues par système</strong></summary>
+<br>
+
+| | macOS | Windows | Linux X11 | Linux Wayland (GNOME) |
+|---|---|---|---|---|
+| Raccourci global | oui | oui | oui | non : `rutile --open` lié à un raccourci du système |
+| Sélection du gestionnaire de fichiers | Finder | Explorateur (onglets et bureau compris) | non : script Nautilus | non : script Nautilus |
+| Secouage | oui, pendant un glisser de fichiers | oui | oui | avec le groupe `input` |
+| Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
+| Roue des apps | `.app`, avec icône | `.exe` ou `.lnk`, sans icône (nom seul) | `.desktop`, avec icône | idem X11 |
+| Partage : services (AirDrop…) | oui | non | non | non |
+| Partage : dossiers synchronisés | oui | oui | oui | oui |
+| Partage : messageries (presse-papiers) | oui | oui | avec `xclip` | avec `wl-copy` |
+
+- **Linux, sélection des fichiers** : aucune interface commune ne donne la sélection des
+  gestionnaires de fichiers. Avec Nautilus, un script dans `~/.local/share/nautilus/scripts/`
+  (clic droit → Scripts) joue le même rôle :
+
+  ```sh
+  #!/bin/sh
+  exec /chemin/vers/Rutile.AppImage --open "$@"
+  ```
+
+- **Linux, affichage** : sous Wayland, la roue passe par XWayland (`GDK_BACKEND=x11`), seul
+  moyen sous GNOME de la garder au premier plan. Sa transparence n'a pas encore été vérifiée
+  sur une vraie machine Linux.
+- **Windows** : le suivi de la souris ne voit pas les fenêtres d'une app lancée en
+  administrateur ; les icônes des apps ne sont pas encore extraites.
+- **Paquets non signés** : macOS (Gatekeeper) et Windows (SmartScreen) préviennent au premier
+  lancement. Les signer demanderait un compte développeur Apple et un certificat de signature
+  de code Windows.
+
+</details>
+
+## Développement
+
+<details>
+<summary><strong>Prérequis</strong></summary>
+<br>
 
 | Système | À installer |
 |---|---|
@@ -153,7 +355,11 @@ lancement, expliqué ci-dessous.
 NASM sert au décodeur AVIF sur les processeurs x86_64 (Windows, Linux, Mac Intel). Le détail
 des dépendances de Tauri : [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/).
 
-### Lancer l'app
+</details>
+
+<details>
+<summary><strong>Lancer l'app</strong></summary>
+<br>
 
 ```bash
 git clone https://github.com/ThomasDlv0/rutile-app.git
@@ -170,7 +376,11 @@ Aperçu de l'interface dans un navigateur, sans Tauri : `npm run dev`, puis
 `http://localhost:1420/?file=photo.png` (ou `?file=clip.mov`) pour la roue et
 `http://localhost:1420/?view=settings` pour les réglages.
 
-### Tests, auto-test et build local
+</details>
+
+<details>
+<summary><strong>Tests, auto-test et build local</strong></summary>
+<br>
 
 ```bash
 npm run lint             # vérification des types de l'interface
@@ -194,7 +404,11 @@ cargo clippy -p rutile-platform --target x86_64-pc-windows-msvc
 cargo clippy -p rutile-platform --target x86_64-unknown-linux-gnu
 ```
 
-### Organisation
+</details>
+
+<details>
+<summary><strong>Organisation du code</strong></summary>
+<br>
 
 ```
 src/                    interface React + TypeScript
@@ -208,7 +422,11 @@ scripts/fetch-ffmpeg.sh FFmpeg statique embarqué, par système (empreintes vér
 .github/workflows/      ci.yml à chaque push, release.yml sur un tag v*
 ```
 
-### Publier une nouvelle version
+</details>
+
+<details>
+<summary><strong>Publier une nouvelle version</strong></summary>
+<br>
 
 1. Mettre le même numéro dans `package.json`, `src-tauri/Cargo.toml` et
    `src-tauri/tauri.conf.json`, et écrire `docs/release-notes/vX.Y.Z.md`.
@@ -221,42 +439,22 @@ scripts/fetch-ffmpeg.sh FFmpeg statique embarqué, par système (empreintes vér
 
 Le workflow `release.yml` vérifie que les versions concordent, construit les paquets des
 trois systèmes avec tauri-action, teste l'app installée sur chacun (`--self-test`, et
-lancement de 10 s sous Windows et Linux), puis publie la release seulement si tout passe.
+lancement de 10 s sous Windows et Linux), puis publie la version seulement si tout passe.
 
-## Limites connues par système
+</details>
 
-| | macOS | Windows | Linux X11 | Linux Wayland (GNOME) |
-|---|---|---|---|---|
-| Raccourci global | oui | oui | oui | non : `rutile --open` lié à un raccourci du système |
-| Sélection du gestionnaire de fichiers | Finder | Explorateur (onglets et bureau compris) | non : script Nautilus | non : script Nautilus |
-| Secouage | oui, pendant un glisser de fichiers | oui | oui | avec le groupe `input` |
-| Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
-| Roue des apps | `.app`, avec icône | `.exe` ou `.lnk`, sans icône (nom seul) | `.desktop`, avec icône | idem X11 |
-| Partage : services (AirDrop…) | oui | non | non | non |
-| Partage : dossiers synchronisés | oui | oui | oui | oui |
-| Partage : messageries (presse-papiers) | oui | oui | avec `xclip` | avec `wl-copy` |
+## Sous le capot
 
-- **Linux, sélection des fichiers** : aucune interface commune ne donne la sélection des
-  gestionnaires de fichiers. Avec Nautilus, un script dans `~/.local/share/nautilus/scripts/`
-  (clic droit → Scripts) joue le même rôle :
+Rutile est une app [Tauri 2](https://tauri.app) : le cœur en Rust, l'interface en React et
+TypeScript. Les conversions reposent sur des bibliothèques open source :
 
-  ```sh
-  #!/bin/sh
-  exec /chemin/vers/Rutile.AppImage --open "$@"
-  ```
-
-- **Linux, affichage** : sous Wayland, la roue passe par XWayland (`GDK_BACKEND=x11`), seul
-  moyen sous GNOME de la garder au premier plan. Le rendu DMA-BUF de WebKitGTK, qui peut
-  laisser une fenêtre blanche ou vide (cartes NVIDIA surtout), est désactivé
-  (`WEBKIT_DISABLE_DMABUF_RENDERER=1`). La transparence de la roue demande un compositeur
-  (GNOME, KDE) ; elle n'a pas encore été vérifiée sur une vraie machine Linux.
-- **Windows** : le suivi de la souris ne voit pas les fenêtres d'une app lancée en
-  administrateur ; les icônes des apps ne sont pas encore extraites.
-- **Paquets non signés** : macOS (Gatekeeper) et Windows (SmartScreen) préviennent au premier
-  lancement. Les signer demanderait un compte développeur Apple et un certificat de signature
-  de code Windows.
-- **Taille** : FFmpeg embarqué pèse de 75 Mo (Windows, Linux) à 118 Mo (macOS universel) une
-  fois installé.
+- [`image`](https://github.com/image-rs/image) pour PNG, JPEG, GIF, BMP, TIFF et ICO ;
+- [`webp`](https://github.com/jaredforth/webp) (libwebp) pour WebP ;
+- [`ravif`](https://github.com/kornelski/cavif-rs) (rav1e) pour écrire l'AVIF,
+  [`avif-decode`](https://github.com/kornelski/avif-decode) (rav1d) pour le lire ;
+- [`vtracer`](https://github.com/visioncortex/vtracer) pour vectoriser en SVG,
+  [`resvg`](https://github.com/linebender/resvg) pour lire le SVG ;
+- [FFmpeg](https://ffmpeg.org) 6.1 pour la vidéo.
 
 ## Licences
 
