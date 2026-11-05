@@ -5,20 +5,34 @@
 #   scripts/fetch-ffmpeg.sh                         # cible de la machine
 #   scripts/fetch-ffmpeg.sh universal-apple-darwin  # macOS Apple Silicon + Intel (lipo)
 #
-# Les binaires viennent de github.com/eugeneware/ffmpeg-static (FFmpeg 6.1, licence GPL v3,
-# compilés par evermeet.cx, osxexperts.net, johnvansickle.com et gyan.dev) ; leur empreinte
-# SHA-256 est vérifiée avant usage.
+# FFmpeg 9.0.2 (licence GPL v3), en builds statiques : macOS et Linux par Martin Riedl
+# (ffmpeg.martin-riedl.de), Windows par Gyan Doshi (gyan.dev, publiés sur
+# github.com/GyanD/codexffmpeg). L'empreinte SHA-256 de chaque archive est vérifiée avant usage.
 set -euo pipefail
 
-RELEASE="b6.1.1"
-BASE_URL="https://github.com/eugeneware/ffmpeg-static/releases/download/$RELEASE"
+VERSION="9.0.2"
 
-sha256_of() {
+# Adresse de l'archive, son empreinte, et le chemin de l'exécutable dans l'archive
+source_of() {
+  local riedl="https://ffmpeg.martin-riedl.de/download"
   case "$1" in
-    darwin-arm64) echo "8923876afa8db5585022d7860ec7e589af192f441c56793971276d450ed3bbfa" ;;
-    darwin-x64) echo "929b375c1182d956c51f7ac25e0b2b0411fb01f6f407aa15c9758efeb4242106" ;;
-    linux-x64) echo "bfe8a8fc511530457b528c48d77b5737527b504a3797a9bc4866aeca69c2dffa" ;;
-    win32-x64) echo "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77" ;;
+    darwin-arm64)
+      echo "$riedl/macos/arm64/1789931890_$VERSION/ffmpeg.zip" \
+        "c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924" ffmpeg
+      ;;
+    darwin-x64)
+      echo "$riedl/macos/amd64/1789931006_$VERSION/ffmpeg.zip" \
+        "7c6b4125b191cbf773832dc51f424cf2b6bb7da43007d1e066f95909e47cacd4" ffmpeg
+      ;;
+    linux-x64)
+      echo "$riedl/linux/amd64/1789931100_$VERSION/ffmpeg.zip" \
+        "fa8ecf4abbd290d98f7d188b8649cc6b391ae209a98452be955a15aab1909d7f" ffmpeg
+      ;;
+    win32-x64)
+      echo "https://github.com/GyanD/codexffmpeg/releases/download/$VERSION/ffmpeg-$VERSION-essentials_build.zip" \
+        "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba" \
+        "ffmpeg-$VERSION-essentials_build/bin/ffmpeg.exe"
+      ;;
     *) return 1 ;;
   esac
 }
@@ -34,20 +48,37 @@ checksum() {
   if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
-# Télécharge, vérifie et décompresse le binaire d'une plateforme ; affiche son chemin
+# Un fichier d'une archive zip, sur la sortie standard (unzip, ou 7-Zip sous Windows)
+unzip_member() {
+  if command -v unzip >/dev/null; then
+    unzip -p "$1" "$2"
+  elif command -v 7z >/dev/null; then
+    7z e -so "$1" "$2"
+  else
+    echo "Ni unzip ni 7z pour ouvrir l'archive de FFmpeg" >&2
+    return 1
+  fi
+}
+
+# Télécharge, vérifie et extrait le binaire d'une plateforme ; affiche son chemin
 fetch() {
-  local platform="$1" archive="$work/ffmpeg-$1.gz"
-  curl -fsSL --retry 3 -o "$archive" "$BASE_URL/ffmpeg-$platform.gz"
-  local expected actual
-  expected="$(sha256_of "$platform")"
+  local platform="$1" url expected member
+  read -r url expected member <<<"$(source_of "$platform")"
+  local archive="$work/ffmpeg-$platform.zip" binary="$work/ffmpeg-$platform"
+  curl -fsSL --retry 3 -o "$archive" "$url"
+  local actual
   actual="$(checksum "$archive")"
   if [ "$actual" != "$expected" ]; then
-    echo "Empreinte inattendue pour ffmpeg-$platform : $actual" >&2
+    echo "Empreinte inattendue pour FFmpeg ($platform) : $actual" >&2
     exit 1
   fi
-  gunzip -f "$archive"
-  chmod +x "$work/ffmpeg-$platform"
-  echo "$work/ffmpeg-$platform"
+  unzip_member "$archive" "$member" >"$binary"
+  if [ ! -s "$binary" ]; then
+    echo "FFmpeg absent de l'archive ($platform)" >&2
+    exit 1
+  fi
+  chmod +x "$binary"
+  echo "$binary"
 }
 
 # Les chemins passent par des variables : un échec dans fetch arrête alors le script
@@ -81,4 +112,4 @@ case "$target" in
     ;;
 esac
 
-echo "FFmpeg prêt pour $target dans $out_dir"
+echo "FFmpeg $VERSION prêt pour $target dans $out_dir"

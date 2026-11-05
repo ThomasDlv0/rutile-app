@@ -11,6 +11,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ConvertError, InputFormat, output};
 
+/// Ce que FFmpeg peut ouvrir pour lire une vidéo : des fichiers locaux, et seulement les
+/// conteneurs que la roue accepte (MP4 et MOV, MKV et WebM, AVI, WMV, FLV, MPEG-TS, MPEG,
+/// Ogg, GIF). Un fichier piégé, comme une liste de lecture HLS renommée en `.ts`, ne peut
+/// ainsi ni faire lire d'autres fichiers ou une adresse en ligne, ni passer par un des
+/// nombreux autres lecteurs de format de FFmpeg. Options d'entrée, avant `-i`.
+const INPUT_LIMITS: [&str; 4] = [
+    "-protocol_whitelist",
+    "file",
+    "-format_whitelist",
+    "mov,matroska,avi,asf,flv,mpegts,mpeg,mpegvideo,ogg,gif",
+];
+
 /// Formats proposés sur la roue en mode Vidéo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -160,6 +172,8 @@ pub enum VideoError {
     NoVideo,
     #[error("Votre FFmpeg ne sait pas encoder en {0}.")]
     MissingEncoder(VideoFormat),
+    #[error("Ce fichier n'est pas dans un format vidéo que Rutile accepte.")]
+    UnsupportedInput,
     #[error("Échec de FFmpeg ({0}).")]
     Failed(String),
     #[error(transparent)]
@@ -299,8 +313,18 @@ impl Ffmpeg {
     /// Durée en secondes et présence de pistes, lues par ffprobe s'il est là, sinon dans ce
     /// qu'affiche FFmpeg (le FFmpeg embarqué vient sans ffprobe).
     pub(crate) fn probe(&self, input: &Path) -> Probe {
+        self.probe_limited(input, &INPUT_LIMITS)
+    }
+
+    /// Comme `probe`, sans les limites des fichiers de l'utilisateur : pour relire un fichier
+    /// que Rutile vient de produire, un MP3 compris.
+    pub(crate) fn probe_own_output(&self, output: &Path) -> Probe {
+        self.probe_limited(output, &[])
+    }
+
+    fn probe_limited(&self, input: &Path, limits: &[&str]) -> Probe {
         let Some(ffprobe) = &self.ffprobe else {
-            return self.probe_with_ffmpeg(input);
+            return self.probe_with_ffmpeg(input, limits);
         };
         let output = command(ffprobe)
             .args([
@@ -311,6 +335,7 @@ impl Ffmpeg {
                 "-of",
                 "default=noprint_wrappers=1",
             ])
+            .args(limits)
             .arg(input)
             .output();
         let Ok(output) = output else {
@@ -330,9 +355,10 @@ impl Ffmpeg {
     }
 
     /// `ffmpeg -i` sans fichier de sortie décrit l'entrée sur stderr, puis s'arrête en erreur.
-    fn probe_with_ffmpeg(&self, input: &Path) -> Probe {
+    fn probe_with_ffmpeg(&self, input: &Path, limits: &[&str]) -> Probe {
         let output = command(&self.ffmpeg)
             .arg("-hide_banner")
+            .args(limits)
             .arg("-i")
             .arg(input)
             .output();
@@ -522,7 +548,9 @@ fn run(
             "error",
             "-nostats",
         ])
-        .args(["-progress", "pipe:1", "-i"])
+        .args(["-progress", "pipe:1"])
+        .args(INPUT_LIMITS)
+        .arg("-i")
         .arg(input)
         .args(arguments)
         .arg(output)
@@ -559,6 +587,9 @@ fn run(
     if status.success() {
         on_progress(1.0);
         return Ok(());
+    }
+    if errors.contains("not on whitelist") {
+        return Err(VideoError::UnsupportedInput);
     }
     let last_line = errors
         .lines()

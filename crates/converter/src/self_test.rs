@@ -118,7 +118,7 @@ fn validate_image(path: &Path, format: OutputFormat) -> Result<String, String> {
         return Err(format!("format lu : {found:?}"));
     }
     let bytes = fs::read(path).map_err(|err| err.to_string())?;
-    let image = decode::decode(&bytes, found, path).map_err(|err| err.to_string())?;
+    let image = decode::decode(&bytes, found).map_err(|err| err.to_string())?;
     if image.width() == 0 || image.height() == 0 {
         return Err("image vide".into());
     }
@@ -192,7 +192,7 @@ fn validate_video(
     if !decoded.status.success() || !errors.trim().is_empty() {
         return Err(format!("illisible : {}", errors.trim()));
     }
-    let probe = ffmpeg.probe(path);
+    let probe = ffmpeg.probe_own_output(path);
     let wanted = if format == VideoFormat::Mp3 {
         probe.has_audio
     } else {

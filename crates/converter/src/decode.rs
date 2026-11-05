@@ -1,5 +1,4 @@
 use std::io::Cursor;
-use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use image::{
@@ -15,14 +14,10 @@ const SVG_MIN_SIDE: f32 = 512.0;
 /// Évite d'allouer une image énorme pour un SVG aux dimensions déclarées démesurées.
 const SVG_MAX_SIDE: f32 = 8192.0;
 
-pub(crate) fn decode(
-    bytes: &[u8],
-    format: InputFormat,
-    path: &Path,
-) -> Result<DynamicImage, ConvertError> {
+pub(crate) fn decode(bytes: &[u8], format: InputFormat) -> Result<DynamicImage, ConvertError> {
     match format {
         InputFormat::Avif => decode_avif(bytes),
-        InputFormat::Svg => render_svg(bytes, path),
+        InputFormat::Svg => render_svg(bytes),
         raster => decode_raster(bytes, raster),
     }
 }
@@ -86,9 +81,17 @@ fn decode_avif(bytes: &[u8]) -> Result<DynamicImage, ConvertError> {
     image.ok_or_else(|| ConvertError::Decode("dimensions AVIF incohérentes".into()))
 }
 
-fn render_svg(bytes: &[u8], path: &Path) -> Result<DynamicImage, ConvertError> {
+/// Rendu d'un SVG avec ce qu'il contient seulement. Une image désignée par un chemin ou une
+/// adresse (`<image href="…/photo.jpg">`) n'est pas lue : un SVG piégé ferait sinon entrer
+/// dans le résultat, puis dans un partage, une autre image du compte de l'utilisateur. Les
+/// images intégrées au fichier (`data:`) restent rendues.
+fn render_svg(bytes: &[u8]) -> Result<DynamicImage, ConvertError> {
     let mut options = usvg::Options {
-        resources_dir: path.parent().map(Path::to_path_buf),
+        resources_dir: None,
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+            resolve_string: Box::new(|_, _| None),
+        },
         ..Default::default()
     };
     options.fontdb = system_fonts();

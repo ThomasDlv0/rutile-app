@@ -155,8 +155,46 @@ fn un_fichier_qui_n_est_pas_une_video_echoue_proprement() {
 
     let error = video::convert_video(&fake, VideoFormat::Webm, |_| {}).unwrap_err();
     assert!(
-        matches!(error, VideoError::Failed(_) | VideoError::NoVideo),
+        matches!(
+            error,
+            VideoError::Failed(_) | VideoError::NoVideo | VideoError::UnsupportedInput
+        ),
         "{error:?}"
     );
     assert!(!dir.path().join("faux.webm").exists());
+}
+
+#[test]
+fn un_autre_format_deguise_en_video_est_refuse() {
+    let dir = tempfile::tempdir().unwrap();
+    if video::ffmpeg().is_none() {
+        eprintln!("FFmpeg absent : test ignoré");
+        return;
+    }
+    // Sans limite, FFmpeg lirait cette image avec son lecteur de PNG, comme n'importe lequel
+    // de ses centaines de lecteurs de format : seuls les conteneurs vidéo passent
+    let disguised = dir.path().join("image.ts");
+    let status = Command::new(ffmpeg_path())
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
+        .args([
+            "-i",
+            "testsrc=size=64x48",
+            "-frames:v",
+            "1",
+            "-f",
+            "image2",
+            "-c:v",
+            "png",
+        ])
+        .arg(&disguised)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let error = video::convert_video(&disguised, VideoFormat::Mp4, |_| {}).unwrap_err();
+    assert!(
+        matches!(error, VideoError::UnsupportedInput | VideoError::Failed(_)),
+        "{error:?}"
+    );
+    assert!(!dir.path().join("image.mp4").exists());
 }

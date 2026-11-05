@@ -75,7 +75,7 @@ pub fn convert(
         return Err(ConvertError::SameFormat(target));
     }
 
-    let image = decode::decode(&bytes, source, input)?;
+    let image = decode::decode(&bytes, source)?;
     let encoded = encode::encode(&image, target, quality)?;
     let output = output::write_unique(input, target.extension(), &encoded)?;
 
@@ -90,7 +90,7 @@ pub fn convert(
 pub fn icon_png(data: &[u8], size: u32) -> Option<Vec<u8>> {
     let name = Path::new("icone");
     let format = InputFormat::detect(data, name)?;
-    let image = decode::decode(data, format, name).ok()?;
+    let image = decode::decode(data, format).ok()?;
     let icon = image.resize(size, size, image::imageops::FilterType::Lanczos3);
     encode::encode(&icon, OutputFormat::Png, &Quality::default()).ok()
 }

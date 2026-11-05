@@ -222,3 +222,75 @@ fn la_vectorisation_garde_les_dimensions_d_une_grande_image() {
     let tree = usvg::Tree::from_str(&svg, &usvg::Options::default()).unwrap();
     assert_eq!((tree.size().width(), tree.size().height()), (2000.0, 500.0));
 }
+
+/// Base64 standard, pour intégrer une image dans un SVG de test.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut text = String::new();
+    for chunk in bytes.chunks(3) {
+        let value = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |acc, (i, &byte)| acc | (byte as u32) << (16 - 8 * i));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                text.push(ALPHABET[(value >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                text.push('=');
+            }
+        }
+    }
+    text
+}
+
+fn solid_png(color: [u8; 4]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::from_pixel(10, 10, Rgba(color)))
+        .write_to(
+            &mut std::io::Cursor::new(&mut bytes),
+            image::ImageFormat::Png,
+        )
+        .unwrap();
+    bytes
+}
+
+#[test]
+fn un_svg_ne_lit_pas_les_autres_images_de_l_utilisateur() {
+    let dir = tempfile::tempdir().unwrap();
+    let secret = dir.path().join("secret.png");
+    fs::write(&secret, solid_png([255, 0, 0, 255])).unwrap();
+    let absolute = secret.to_string_lossy().replace('\\', "/");
+    let embedded = base64(&solid_png([0, 200, 0, 255]));
+    // Chemin relatif, chemin absolu et URL de fichier : rien ne doit être lu ; l'image
+    // intégrée au fichier, elle, est rendue
+    let svg = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="10" viewBox="0 0 40 10">
+  <image x="0" y="0" width="10" height="10" href="secret.png"/>
+  <image x="10" y="0" width="10" height="10" xlink:href="{absolute}"/>
+  <image x="20" y="0" width="10" height="10" href="file://{absolute}"/>
+  <image x="30" y="0" width="10" height="10" href="data:image/png;base64,{embedded}"/>
+</svg>"#
+    );
+    let source = dir.path().join("piege.svg");
+    fs::write(&source, svg).unwrap();
+
+    let output = convert_default(&source, OutputFormat::Png).output;
+
+    let image = image::open(output).unwrap().to_rgba8();
+    let (width, height) = image.dimensions();
+    let center = |part: u32| image.get_pixel(width * (2 * part + 1) / 8, height / 2).0;
+    for part in 0..3 {
+        assert_eq!(
+            center(part)[3],
+            0,
+            "image externe {part} lue : {:?}",
+            center(part)
+        );
+    }
+    let [red, green, _, alpha] = center(3);
+    assert!(
+        alpha == 255 && green > 150 && red < 50,
+        "image intégrée : {:?}",
+        center(3)
+    );
+}

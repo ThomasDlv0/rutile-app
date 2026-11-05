@@ -148,7 +148,7 @@ premier lancement, expliqué ci-dessous.
 
 | Système | Fichier |
 |---|---|
-| macOS 11 ou plus récent (Apple Silicon et Intel) | `Rutile_x.y.z_macos_universal.dmg` |
+| macOS 12 ou plus récent (Apple Silicon et Intel) | `Rutile_x.y.z_macos_universal.dmg` |
 | Windows 10 et 11 (x64) | `Rutile_x.y.z_windows_x64_setup.exe` ou `.msi` |
 | Linux x64 | `Rutile_x.y.z_linux_x86_64.AppImage`, `.deb` ou `.rpm` |
 
@@ -249,6 +249,24 @@ sur votre machine. Seule la roue de partage envoie un fichier, quand vous le lui
 </details>
 
 <details>
+<summary><strong>Et si on m'envoie un fichier piégé ?</strong></summary>
+<br>
+
+Rutile limite ce qu'un fichier peut lui faire faire :
+
+- **SVG** : une image désignée par un chemin ou une adresse (`<image href="…">`) n'est jamais
+  lue. Seules les images intégrées au fichier sont rendues : un SVG ne peut pas glisser une
+  autre de vos images dans le résultat.
+- **Vidéos** : le FFmpeg embarqué (9.0.2, à jour des failles connues de la 6.1) ne lit que des
+  fichiers locaux, et seulement les conteneurs vidéo que la roue accepte (MP4, MOV, MKV, WebM,
+  AVI, WMV, FLV, MPEG-TS, MPEG, Ogg, GIF). Un fichier d'un autre format déguisé en vidéo est
+  refusé.
+
+Une faille ? Signalez-la dans une [issue](https://github.com/ThomasDlv0/rutile-app/issues).
+
+</details>
+
+<details>
 <summary><strong>L'original est-il modifié ?</strong></summary>
 <br>
 
@@ -315,8 +333,8 @@ carte graphique.
 <summary><strong>Pourquoi l'app pèse-t-elle si lourd ?</strong></summary>
 <br>
 
-FFmpeg est embarqué pour que la vidéo marche sans rien installer : de 75 Mo (Windows, Linux)
-à 118 Mo (macOS, qui contient les versions Apple Silicon et Intel) une fois installé.
+FFmpeg est embarqué pour que la vidéo marche sans rien installer : 91 Mo sous Linux, 105 Mo
+sous Windows et 161 Mo sur macOS, qui contient les versions Apple Silicon et Intel.
 
 </details>
 
@@ -471,7 +489,8 @@ TypeScript. Les conversions reposent sur des bibliothèques open source :
   [`avif-decode`](https://github.com/kornelski/avif-decode) (rav1d) pour le lire ;
 - [`vtracer`](https://github.com/visioncortex/vtracer) pour vectoriser en SVG,
   [`resvg`](https://github.com/linebender/resvg) pour lire le SVG ;
-- [FFmpeg](https://ffmpeg.org) 6.1 pour la vidéo.
+- [FFmpeg](https://ffmpeg.org) 9.0.2 pour la vidéo, limité aux fichiers locaux et aux
+  conteneurs vidéo que la roue accepte.
 
 ## Licences
 
