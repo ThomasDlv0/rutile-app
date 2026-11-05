@@ -40,7 +40,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "macos")]
     let builder = builder.plugin(tauri_nspanel::init());
 
@@ -62,6 +63,8 @@ pub fn run() {
             app::apps::wheel_config,
             app::apps::pick_app,
             app::apps::app_badges,
+            app::updates::check_update,
+            app::updates::install_update,
             app::apps::launch_app,
             app::apps::open_settings,
             app::share::share_choices,
@@ -77,6 +80,7 @@ pub fn run() {
             app::notify::setup(app.handle())?;
             app::wheel::setup(app.handle())?;
             app::tray::setup(app.handle(), &settings.shortcut)?;
+            app::updates::setup(app.handle());
             app::shortcut::register(app.handle(), &settings.shortcut);
             app::permissions::check_at_startup(app.handle());
             if let Err(err) = app::shake::apply(app.handle(), settings.shake()) {

@@ -249,6 +249,24 @@ sur votre machine. Seule la roue de partage envoie un fichier, quand vous le lui
 </details>
 
 <details>
+<summary><strong>Comment Rutile se met-il à jour ?</strong></summary>
+<br>
+
+À partir de la 1.2.0, Rutile regarde la dernière version publiée ici peu après son lancement,
+puis toutes les six heures. S'il en trouve une plus récente, il propose de l'installer
+(« Mettre à jour » ou « Plus tard ») : il la télécharge, vérifie sa signature, l'installe et
+redémarre. Rien n'est installé sans votre accord.
+
+- On peut aussi chercher soi-même : icône de la barre système → « Rechercher les mises à
+  jour… », ou Réglages → Général → Mises à jour, où la recherche automatique se désactive.
+- Sous Linux, une AppImage se remplace d'elle-même ; un `.deb` ou un `.rpm` demande le mot de
+  passe administrateur.
+- La 1.1.0 et les versions d'avant n'ont pas ce système : installez une fois la nouvelle
+  version à la main.
+
+</details>
+
+<details>
 <summary><strong>Et si on m'envoie un fichier piégé ?</strong></summary>
 <br>
 

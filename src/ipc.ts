@@ -93,7 +93,19 @@ export interface Settings {
   apps: (AppSlot | null)[];
   /** Une destination (ou rien) par part de la roue de partage. */
   share: (ShareTarget | null)[];
+  /** Chercher les nouvelles versions au lancement puis régulièrement, et les proposer. */
+  autoUpdate: boolean;
 }
+
+/** Version installée, et version publiée plus récente s'il y en a une. */
+export interface UpdateStatus {
+  current: string;
+  available: string | null;
+  notes: string | null;
+}
+
+/** Avancement du téléchargement d'une mise à jour, de 0 à 1. */
+export const UPDATE_PROGRESS_EVENT = "updates://progress";
 
 export interface SettingsView {
   settings: Settings;
@@ -189,6 +201,10 @@ export type ShareView = ShareTarget & {
 export type ShareChoice = ShareView & { group: string };
 
 export const shareChoices = () => invoke<ShareChoice[]>("share_choices");
+/** Cherche la dernière version publiée. */
+export const checkUpdate = () => invoke<UpdateStatus>("check_update");
+/** Télécharge et installe la dernière version, puis relance Rutile. */
+export const installUpdate = () => invoke("install_update");
 /** Sélecteur de dossier ; `null` si l'utilisateur annule. */
 export const pickShareFolder = () => invoke<ShareView | null>("pick_share_folder");
 /** Partage les fichiers avec la destination de la part `slot`. */

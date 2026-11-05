@@ -75,6 +75,8 @@ pub struct Settings {
     /// Une destination (ou rien) par part. Vide tant que la roue de partage n'a jamais été
     /// réglée : elle reçoit alors les destinations trouvées sur la machine.
     pub share: Vec<Option<ShareTarget>>,
+    /// Chercher les nouvelles versions au lancement puis régulièrement, et les proposer.
+    pub auto_update: bool,
 }
 
 impl Default for Settings {
@@ -97,6 +99,7 @@ impl Default for Settings {
             highlight_color: None,
             apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
+            auto_update: true,
         }
     }
 }

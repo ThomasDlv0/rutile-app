@@ -46,8 +46,11 @@ jobs:
             os: macos-latest
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             ffmpeg: universal-apple-darwin
-            args: --target universal-apple-darwin --bundles dmg
-            bundles: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            args: --target universal-apple-darwin --bundles app,dmg
+            bundles: |
+              target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+              target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           - name: windows
             os: windows-latest
             rust-targets: ""
@@ -55,7 +58,9 @@ jobs:
             args: --bundles nsis,msi
             bundles: |
               target/release/bundle/nsis/*-setup.exe
+              target/release/bundle/nsis/*-setup.exe.sig
               target/release/bundle/msi/*.msi
+              target/release/bundle/msi/*.msi.sig
           # Ubuntu 22.04 : une glibc assez ancienne pour que l'AppImage tourne partout (Bazzite compris)
           - name: linux
             os: ubuntu-22.04
@@ -64,8 +69,11 @@ jobs:
             args: --bundles appimage,deb,rpm
             bundles: |
               target/release/bundle/appimage/*.AppImage
+              target/release/bundle/appimage/*.AppImage.sig
               target/release/bundle/deb/*.deb
+              target/release/bundle/deb/*.deb.sig
               target/release/bundle/rpm/*.rpm
+              target/release/bundle/rpm/*.rpm.sig
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -98,9 +106,16 @@ jobs:
         shell: bash
         run: bash scripts/fetch-ffmpeg.sh ${{ matrix.ffmpeg }}
 
+      # Les fichiers de mise à jour sont signés avec la clé privée des secrets du dépôt ; l'app
+      # n'installe que ceux dont la signature correspond à la clé publique de tauri.conf.json
       - uses: tauri-apps/tauri-action@v1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+          args: >-
+            ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+            --config src-tauri/tauri.updater.conf.json
 
       - uses: actions/upload-artifact@v7
         with:
@@ -286,6 +301,12 @@ jobs:
           cp "$(pick '*.AppImage')" "release/Rutile_${VERSION}_linux_x86_64.AppImage"
           cp "$(pick '*.deb')" "release/Rutile_${VERSION}_linux_amd64.deb"
           cp "$(pick '*.rpm')" "release/Rutile_${VERSION}_linux_x86_64.rpm"
+          cp "$(pick '*.app.tar.gz')" "release/Rutile_${VERSION}_macos_universal.app.tar.gz"
+          # Ce que lit le module de mise à jour des versions installées
+          bash scripts/updater-manifest.sh bundles "$VERSION" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" \
+            "docs/release-notes/v${VERSION}.md" > release/latest.json
+          cat release/latest.json
           (cd release && sha256sum -- * > SHA256SUMS.txt)
           ls -la release
 

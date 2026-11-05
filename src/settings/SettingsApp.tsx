@@ -7,7 +7,10 @@ import { GemIcon } from "../GemIcon";
 import { ShareIcon } from "../ShareIcon";
 import {
   SETTINGS_TAB_EVENT,
+  UPDATE_PROGRESS_EVENT,
+  checkUpdate,
   getSettings,
+  installUpdate,
   openPermissionSettings,
   pickApp,
   pickShareFolder,
@@ -21,6 +24,7 @@ import {
   type ShareChoice,
   type ShareTarget,
   type ShareView,
+  type UpdateStatus,
   type VideoSupport,
 } from "../ipc";
 import { DEFAULT_ACCENT } from "../wheel/color";
@@ -47,7 +51,8 @@ type SectionId =
   | "shortcut"
   | "shake"
   | "quality"
-  | "startup";
+  | "startup"
+  | "updates";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "Général" },
@@ -141,6 +146,7 @@ const PREVIEW: SettingsView = {
     highlightColor: null,
     apps: [{ path: "/Applications/Finder.app", name: "Finder" }, null, null, null, null, null],
     share: PREVIEW_SHARE.map((view) => view && targetOf(view)),
+    autoUpdate: true,
   },
   shortcutLabel: "⌘⇧Espace",
   defaultShortcut: "CommandOrControl+Shift+Space",
@@ -149,7 +155,7 @@ const PREVIEW: SettingsView = {
   launchAtLogin: false,
   finderPermission: "granted",
   platform: "macos",
-  version: "0.1.0",
+  version: "1.1.0",
   apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
   share: PREVIEW_SHARE,
   tab: null,
@@ -414,6 +420,8 @@ function GeneralTab({
           />
         </Row>
       </Section>
+
+      <UpdatesSection view={view} error={errors.updates} change={change} />
 
       {view.finderPermission && (
         <Section title="Autorisations">
@@ -1157,6 +1165,109 @@ function Row({
       </div>
       <div className="row-control">{children}</div>
     </div>
+  );
+}
+
+/** Où en est la recherche ou l'installation d'une mise à jour. */
+type UpdateState =
+  | { step: "idle" }
+  | { step: "checking" }
+  | { step: "done"; status: UpdateStatus }
+  | { step: "installing"; progress: number | null }
+  | { step: "failed"; message: string };
+
+/** Version installée, recherche et installation d'une mise à jour, recherche automatique. */
+function UpdatesSection({
+  view,
+  error,
+  change,
+}: {
+  view: SettingsView;
+  error?: string;
+  change: Change;
+}) {
+  const [state, setState] = useState<UpdateState>({ step: "idle" });
+
+  // L'avancement arrive pendant le téléchargement ; Rutile redémarre ensuite
+  useEffect(() => {
+    if (!isTauri()) return;
+    const unlisten = listen<number>(UPDATE_PROGRESS_EVENT, ({ payload }) =>
+      setState({ step: "installing", progress: payload }),
+    );
+    return () => void unlisten.then((stop) => stop());
+  }, []);
+
+  const check = async () => {
+    setState({ step: "checking" });
+    try {
+      const status = isTauri()
+        ? await checkUpdate()
+        : { current: view.version, available: "9.9.0", notes: null };
+      setState({ step: "done", status });
+    } catch (err) {
+      setState({ step: "failed", message: String(err) });
+    }
+  };
+
+  const install = async () => {
+    setState({ step: "installing", progress: null });
+    try {
+      if (isTauri()) await installUpdate();
+    } catch (err) {
+      setState({ step: "failed", message: String(err) });
+    }
+  };
+
+  const available = state.step === "done" ? state.status.available : null;
+  const hint =
+    state.step === "checking"
+      ? "Recherche…"
+      : state.step === "installing"
+        ? state.progress === null
+          ? "Téléchargement…"
+          : `Téléchargement… ${Math.round(state.progress * 100)} %`
+        : state.step === "failed"
+          ? state.message
+          : state.step === "done"
+            ? available
+              ? `Rutile ${available} est disponible.`
+              : "Rutile est à jour."
+            : undefined;
+
+  return (
+    <Section title="Mises à jour" error={error}>
+      <Row label={`Rutile ${view.version}`} hint={hint}>
+        {available ? (
+          <button
+            type="button"
+            className="link-button"
+            disabled={state.step !== "done"}
+            onClick={() => void install()}
+          >
+            Installer {available}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="link-button"
+            disabled={state.step === "checking" || state.step === "installing"}
+            onClick={() => void check()}
+          >
+            Rechercher
+          </button>
+        )}
+      </Row>
+      <Row
+        label="Rechercher automatiquement"
+        hint="Au lancement, puis toutes les six heures ; Rutile demande avant d'installer."
+      >
+        <Toggle
+          checked={view.settings.autoUpdate}
+          label="Rechercher automatiquement les mises à jour"
+          onChange={(autoUpdate) => change("updates", { autoUpdate })}
+        />
+      </Row>
+    </Section>
   );
 }
 

@@ -15,3 +15,13 @@ pub fn is_wayland_session() -> bool {
         && (std::env::var_os("WAYLAND_DISPLAY").is_some()
             || std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "wayland"))
 }
+
+/// Passe Rutile au premier plan, pour qu'une fenêtre du système (une alerte) ne s'ouvre pas
+/// derrière l'app active. Sur macOS, depuis le thread principal ; ailleurs, rien à faire.
+pub fn activate() {
+    #[cfg(target_os = "macos")]
+    if let Some(mtm) = objc2::MainThreadMarker::new() {
+        #[allow(deprecated)]
+        objc2_app_kit::NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+    }
+}

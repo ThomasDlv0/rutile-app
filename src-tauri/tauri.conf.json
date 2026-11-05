@@ -75,5 +75,16 @@
         "bundleMediaFramework": false
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2QzcxMDEwMDlDMjUyQjQKUldTMFVzSUpFQkRIRnE4TWIyTytZWnFHV2R5Y1VabXN2eXEwVGxQZUJXVUs3dFoyNWlpdld5d3QK",
+      "endpoints": [
+        "https://github.com/ThomasDlv0/rutile-app/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
