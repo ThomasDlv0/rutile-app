@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/conversion.gif" width="880" alt="Dans le Finder, la roue s'ouvre sur affiche.png ; le curseur survole JPEG puis WebP, un clic, et affiche.webp apparaît à côté de l'original">
+  <img src="docs/screenshots/conversion.gif" width="880" alt="Dans le Finder, la roue s’ouvre sur paysage.jpg ; le curseur survole PNG, JPEG (déjà le format de la photo) puis WebP, un clic, et paysage.webp apparaît à côté de l’original">
 </p>
 
 Rutile tourne en arrière-plan et ouvre, sous le curseur, une roue dont chaque part est une
@@ -81,36 +81,39 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 ### Partager en un geste
 
 <p align="center">
-  <img src="docs/screenshots/roue-partage.jpg" width="540" alt="Roue de partage : AirDrop, Messages, Signal, iCloud Drive, Mail et Blip, la part Messages survolée">
+  <img src="docs/screenshots/roue-partage.jpg" width="540" alt="Roue de partage à sept parts : AirDrop, Messages, Signal, iCloud Drive, Mail, Blip et Partager…, survolé">
 </p>
 
-- **AirDrop, Messages, Mail** et tous les services de partage de macOS, avec leurs icônes.
+- **« Partager… »** ouvre le menu de partage de macOS, celui du bouton Partager du Finder :
+  choisissez l'app (Messages, AirDrop, Mail, WhatsApp, Telegram…), puis le destinataire.
+- **AirDrop, Messages, Mail** et tous les services de partage de macOS, en accès direct.
 - **Dossiers synchronisés** : Google Drive, iCloud Drive, Dropbox, OneDrive… Le fichier y est
   copié ; un clic sans fichier ouvre le dossier.
-- **Messageries** comme Signal : le fichier est copié, l'app s'ouvre, il n'y a plus qu'à
-  coller dans la conversation.
+- **Messageries** comme Signal, qui n'acceptent pas de fichier venant d'une autre app : le
+  fichier est copié, l'app s'ouvre, il n'y a plus qu'à le coller dans la conversation.
 
 ### Vos apps sous la main
 
 <p align="center">
-  <img src="docs/screenshots/roue-apps.jpg" width="540" alt="Roue des apps : Signal, Claude, Brave, iTerm, PhpStorm et Parallels Desktop, la part PhpStorm survolée">
+  <img src="docs/screenshots/roue-apps.jpg" width="540" alt="Roue des apps avec des pastilles de notifications sur Messages et PhpStorm, la part Messages survolée">
 </p>
 
-Six apps de votre choix, une par part. Un fichier lâché sur une app s'ouvre avec elle.
+Jusqu'à dix apps, une par part, avec leurs **pastilles de notifications** comme dans le Dock
+(macOS). Un fichier lâché sur une app s'ouvre avec elle.
 
 ### À vos couleurs
 
-<img src="docs/screenshots/reglages.gif" align="right" width="300" alt="Fenêtre des réglages : onglets Général, Roues, Couleurs et Partage">
+<img src="docs/screenshots/reglages.gif" align="right" width="300" alt="Fenêtre des réglages : onglets Général, Roues, Couleurs, Apps et Partage">
 
 Les réglages tiennent en six onglets :
 
 - **Général** : raccourci, secouage et sa sensibilité, lancement à l'ouverture de session.
-- **Roues** : ordre et activation des roues, temps au centre avant de basculer, retour sur
-  la dernière roue utilisée.
+- **Roues** : ordre des roues (en les glissant) et activation, temps au centre avant de
+  basculer, retour sur la dernière roue utilisée.
 - **Conversion** : qualité JPEG, WebP et AVIF.
 - **Couleurs** : une couleur par format et une pour la part survolée, avec un aperçu de la
   roue en direct. Le texte passe en clair ou en foncé pour rester lisible.
-- **Apps** et **Partage** : le contenu de ces deux roues.
+- **Apps** et **Partage** : de six à dix parts chacune, à réordonner en les glissant.
 
 <br clear="right">
 
@@ -265,6 +268,18 @@ JPEG, WebP, AVIF et ICO, l'image reste en pixels.
 </details>
 
 <details>
+<summary><strong>Pourquoi Signal reçoit-il le fichier par copier-coller ?</strong></summary>
+<br>
+
+Sur ordinateur, Signal n'accepte pas de fichier envoyé par une autre app : il n'a pas
+d'extension de partage, ni sur macOS, ni sous Windows, ni sous Linux. Rutile copie donc le
+fichier et ouvre Signal : choisissez la conversation, puis collez (<kbd>⌘</kbd> <kbd>V</kbd>
+ou <kbd>Ctrl</kbd> <kbd>V</kbd>). Sur macOS, « Partager… » propose aussi toutes les apps qui
+acceptent les fichiers, avec le choix du destinataire.
+
+</details>
+
+<details>
 <summary><strong>Le raccourci clavier ne fait rien</strong></summary>
 <br>
 
@@ -288,7 +303,8 @@ Retirez la quarantaine : `xattr -dr com.apple.quarantine /Applications/Rutile.ap
 <br>
 
 Rutile désactive déjà le rendu DMA-BUF de WebKitGTK (`WEBKIT_DISABLE_DMABUF_RENDERER=1`), en
-cause le plus souvent, surtout avec une carte NVIDIA. La transparence de la roue demande
+cause le plus souvent, surtout avec une carte NVIDIA. La roue suit aussi la mise à l'échelle
+du texte du système (Cinnamon, GNOME) sans déborder de sa fenêtre. La transparence de la roue demande
 aussi un compositeur (GNOME, KDE). Si le problème persiste, ouvrez une
 [issue](https://github.com/ThomasDlv0/rutile-app/issues) avec votre distribution et votre
 carte graphique.
@@ -315,7 +331,8 @@ FFmpeg est embarqué pour que la vidéo marche sans rien installer : de 75 Mo (W
 | Secouage | oui, pendant un glisser de fichiers | oui | oui | avec le groupe `input` |
 | Roue sous le curseur | oui | oui | oui | non : centre de l'écran |
 | Roue des apps | `.app`, avec icône | `.exe` ou `.lnk`, sans icône (nom seul) | `.desktop`, avec icône | idem X11 |
-| Partage : services (AirDrop…) | oui | non | non | non |
+| Pastilles de notifications | oui | non | non | non |
+| Partage : menu du système, services (AirDrop…) | oui | non | non | non |
 | Partage : dossiers synchronisés | oui | oui | oui | oui |
 | Partage : messageries (presse-papiers) | oui | oui | avec `xclip` | avec `wl-copy` |
 
