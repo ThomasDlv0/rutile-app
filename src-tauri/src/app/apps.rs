@@ -216,8 +216,9 @@ pub async fn launch_app<R: Runtime>(
         .map_err(|err| err.to_string())?
 }
 
-/// Une part vide de la roue ouvre les réglages sur l'onglet où la remplir.
+/// Une part vide de la roue ouvre les réglages sur l'onglet où la remplir. Asynchrone : sous
+/// Windows, une fenêtre créée depuis une commande synchrone reste blanche et bloque l'app.
 #[tauri::command]
-pub fn open_settings<R: Runtime>(app: AppHandle<R>, tab: Option<String>) {
+pub async fn open_settings<R: Runtime>(app: AppHandle<R>, tab: Option<String>) {
     settings::open_window(&app, tab.as_deref());
 }

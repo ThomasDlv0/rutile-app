@@ -90,6 +90,16 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> tauri::Result<()
 
     builder.build(app)?;
     app.manage(OpenItem(open));
+    // Windows note l'icône dans le registre peu après sa création
+    #[cfg(windows)]
+    std::thread::spawn(|| {
+        for _ in 0..10 {
+            if platform::tray::keep_visible() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    });
     show_shortcut(app, shortcut);
     Ok(())
 }

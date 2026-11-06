@@ -8,3 +8,5 @@ pub mod mouse;
 pub mod selection;
 pub mod session;
 pub mod share;
+#[cfg(windows)]
+pub mod tray;
