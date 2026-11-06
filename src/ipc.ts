@@ -10,6 +10,14 @@ export const WHEEL_FILES_EVENT = "wheel://files";
 export const WHEEL_DRAG_EVENT = "wheel://drag";
 /** Avancement d'une conversion vidéo, de 0 à 1. */
 export const WHEEL_PROGRESS_EVENT = "wheel://progress";
+/** Résultat d'une action, affiché à côté du curseur. */
+export const WHEEL_TOAST_EVENT = "wheel://toast";
+
+export interface Toast {
+  title: string;
+  body: string;
+  ok: boolean;
+}
 
 export interface WheelOpened {
   id: number;
@@ -51,11 +59,16 @@ export interface Outcome {
 
 export const wheelReady = () => invoke("wheel_ready");
 export const hideWheel = () => invoke("hide_wheel");
+/** Montre la fenêtre pour une annonce, sans prendre le clavier ni la souris. */
+export const showToastWindow = () => invoke("show_toast");
+export const hideToastWindow = () => invoke("hide_toast");
+/** La roue joue son animation de fermeture : le verre natif la suit. */
+export const wheelClosing = () => invoke("wheel_closing");
 /** `null` quand le système ne permet pas de le savoir. */
 export const primaryButtonPressed = () => invoke<boolean | null>("primary_button_pressed");
 export const inspectFiles = (paths: string[]) => invoke<FileInfo[]>("inspect_files", { paths });
 /** Sélecteur de fichiers du système, filtré selon la roue ; liste vide si l'utilisateur annule. */
-export const pickFiles = (kind: "images" | "videos" | "any") =>
+export const pickFiles = (kind: "images" | "videos" | "pdfs" | "files" | "any") =>
   invoke<FileInfo[]>("pick_files", { kind });
 /** Se termine quand la conversion est finie ; Rust envoie la notification. */
 export const convertFiles = (paths: string[], format: OutputFormat) =>
@@ -63,6 +76,30 @@ export const convertFiles = (paths: string[], format: OutputFormat) =>
 /** Conversion par FFmpeg ; l'avancement arrive par `wheel://progress`. */
 export const convertVideos = (paths: string[], format: VideoFormat) =>
   invoke<Outcome>("convert_videos", { paths, format });
+
+/** Ce qu'une part de la roue Actions demande de faire. */
+export type ActionRequest =
+  | { kind: "capture"; target: "zone" | "window" | "screen"; delay: number }
+  | { kind: "text" }
+  | { kind: "color"; format: "hex" | "rgb" | "hsl" }
+  | { kind: "zip" }
+  | { kind: "imagesToPdf" }
+  | { kind: "mergePdfs" }
+  | { kind: "rename"; style: "number" | "date" | "lowercase" | "clean" }
+  | { kind: "retouch"; retouch: "half" | "fullHd" | "compress" | "stripMetadata" }
+  | {
+      kind: "video";
+      rework: { kind: "compress" } | { kind: "fit"; megabytes: number } | { kind: "mute" };
+    }
+  | {
+      kind: "place";
+      layout: "left" | "right" | "top" | "bottom" | "maximize" | "center";
+    }
+  | { kind: "custom"; wheel: number; action: number };
+
+/** Se termine quand l'action est finie ; Rust envoie la notification. */
+export const runAction = (request: ActionRequest, paths: string[]) =>
+  invoke("run_action", { request, paths });
 
 export interface VideoSupport {
   available: boolean;
@@ -93,6 +130,12 @@ export interface Settings {
   /** Couleur de la part survolée ; `null` pour le bleu d'origine. */
   highlightColor: string | null;
   wheelBorder: WheelBorder;
+  /** Liquid Glass sur le disque de la roue. */
+  wheelGlass: boolean;
+  /** Une capture rouvre la roue sur l'image, pour la convertir ou la partager. */
+  captureReopen: boolean;
+  /** Roues faites par l'utilisateur, dans la part « Mes roues » de la roue Actions. */
+  customWheels: CustomWheel[];
   /** Une app (ou rien) par part, dans le sens horaire depuis le haut. */
   apps: (AppSlot | null)[];
   /** Une destination (ou rien) par part de la roue de partage. */
@@ -121,8 +164,10 @@ export interface SettingsView {
   launchAtLogin: boolean;
   /** macOS seulement : autorisation de lire la sélection du Finder. */
   finderPermission: "granted" | "denied" | "notAsked" | "unknown" | null;
-  /** macOS seulement : autorisation Accessibilité, pour les pastilles des apps fermées. */
+  /** macOS seulement : autorisation Accessibilité, pour les pastilles et les fenêtres. */
   dockAccess: boolean | null;
+  /** Le vrai Liquid Glass existe sur ce système (macOS 26 ou plus récent). */
+  nativeGlass: boolean;
   platform: "macos" | "windows" | "linux" | string;
   version: string;
   /** Apps des parts, avec leurs icônes. */
@@ -133,7 +178,14 @@ export interface SettingsView {
   tab: SettingsTab | null;
 }
 
-export type SettingsTab = "general" | "wheels" | "conversion" | "colors" | "apps" | "share";
+export type SettingsTab =
+  | "general"
+  | "wheels"
+  | "conversion"
+  | "colors"
+  | "actions"
+  | "apps"
+  | "share";
 
 /** Onglet demandé alors que la fenêtre de réglages est déjà ouverte. */
 export const SETTINGS_TAB_EVENT = "settings://tab";
@@ -145,13 +197,18 @@ export const updateSettings = (settings: Settings) =>
 export const setLaunchAtLogin = (enabled: boolean) =>
   invoke<boolean>("set_launch_at_login", { enabled });
 /** Volet des Réglages Système (macOS) où se donne l'autorisation : lire le Finder, ou le Dock. */
-export const openPermissionSettings = (pane: "automation" | "accessibility") =>
+export const openPermissionSettings = (pane: "automation" | "accessibility" | "screen") =>
   invoke("open_permission_settings", { pane });
+
+/** Ce qu'une part de la roue des apps ouvre : `path` est alors une app, un dossier ou une
+ * adresse. */
+export type AppKind = "app" | "folder" | "url";
 
 /** App d'une part de la roue des apps. */
 export interface AppView {
   path: string;
   name: string;
+  kind: AppKind;
   /** PNG en data URL, absent quand le système ne fournit pas d'icône. */
   icon: string | null;
 }
@@ -159,7 +216,27 @@ export interface AppView {
 export interface AppSlot {
   path: string;
   name: string;
+  kind: AppKind;
 }
+
+/** Ce que lance une action personnalisée : `value` est le nom du Raccourci (macOS), la commande
+ * ou l'adresse. */
+export interface CustomAction {
+  name: string;
+  kind: "shortcut" | "command" | "url";
+  value: string;
+}
+
+export interface CustomWheel {
+  name: string;
+  actions: CustomAction[];
+}
+
+/** Roue personnalisée vue par la roue : le nom et le type des actions suffisent. */
+export type CustomWheelView = {
+  name: string;
+  actions: { name: string; kind: CustomAction["kind"] }[];
+};
 
 /** Roues actives dans l'ordre du clic au centre, apps et destinations de partage des parts. */
 export interface WheelConfig {
@@ -172,6 +249,11 @@ export interface WheelConfig {
   colors: Record<string, string>;
   highlight: string | null;
   border: WheelBorder;
+  /** Matière du disque : le vrai Liquid Glass, son imitation, ou le disque sombre d'origine. */
+  glass: "native" | "css" | "off";
+  /** Les fenêtres se rangent sur ce système (pas sous Wayland). */
+  windowLayout: boolean;
+  custom: CustomWheelView[];
   apps: (AppView | null)[];
   share: (ShareView | null)[];
 }
@@ -182,6 +264,8 @@ export const WHEEL_CONFIG_EVENT = "wheel://config";
 export const wheelConfig = () => invoke<WheelConfig>("wheel_config");
 /** Sélecteur d'application ; `null` si l'utilisateur annule. */
 export const pickApp = () => invoke<AppSlot | null>("pick_app");
+/** Sélecteur de dossier pour une part de la roue des apps. */
+export const pickAppFolder = () => invoke<AppSlot | null>("pick_app_folder");
 /** Pastilles de notifications des apps de la roue (macOS), dans l'ordre des parts. */
 export const appBadges = () => invoke<(string | null)[]>("app_badges");
 /** macOS : Rutile peut-il lire les pastilles du Dock, celles des apps fermées comprises ? */

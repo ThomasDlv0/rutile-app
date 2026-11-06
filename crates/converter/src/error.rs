@@ -32,6 +32,27 @@ pub enum ConvertError {
 
     #[error("Impossible d'écrire dans « {} » : {}", .dir.display(), io_reason(.source))]
     Write { dir: PathBuf, source: io::Error },
+
+    #[error("Cette action ne s'applique pas aux images SVG et ICO.")]
+    NotRaster,
+
+    #[error("Cette image est déjà assez petite.")]
+    AlreadySmall,
+
+    #[error("Impossible de compresser davantage cette image.")]
+    NotSmaller,
+
+    #[error("Aucun fichier à traiter.")]
+    NoFiles,
+
+    #[error("PDF illisible ou endommagé ({0}).")]
+    Pdf(String),
+
+    #[error("Ce PDF est protégé par un mot de passe.")]
+    ProtectedPdf,
+
+    #[error("Échec de la création de l'archive ({0}).")]
+    Archive(String),
 }
 
 impl ConvertError {

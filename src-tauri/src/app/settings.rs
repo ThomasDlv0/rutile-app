@@ -17,9 +17,31 @@ use super::{shortcut, tray};
 
 pub const SETTINGS_LABEL: &str = "settings";
 /// Formats de sortie des roues de conversion, auxquels on peut donner une couleur.
-const COLORED_FORMATS: [&str; 12] = [
-    "png", "jpeg", "webp", "avif", "svg", "ico", "mp4", "webm", "mov", "mkv", "gif", "mp3",
+const COLORED_FORMATS: [&str; 21] = [
+    "png",
+    "jpeg",
+    "webp",
+    "avif",
+    "svg",
+    "ico",
+    "mp4",
+    "webm",
+    "mov",
+    "mkv",
+    "gif",
+    "mp3",
+    "action-capture",
+    "action-text",
+    "action-color",
+    "action-files",
+    "action-image",
+    "action-video",
+    "action-windows",
+    "action-apps",
+    "action-custom",
 ];
+/// Roues personnalisées, et actions par roue : une part chacune.
+const MAX_CUSTOM: usize = 10;
 /// Temps à passer au centre, un fichier glissé, avant de basculer entre conversion et partage.
 const DEFAULT_DWELL_MS: u32 = 1000;
 const DWELL_RANGE_MS: (u32, u32) = (400, 2500);
@@ -34,14 +56,16 @@ pub enum WheelMode {
     Video,
     Apps,
     Share,
+    Actions,
 }
 
 impl WheelMode {
-    const ALL: [WheelMode; 4] = [
+    const ALL: [WheelMode; 5] = [
         WheelMode::Image,
         WheelMode::Video,
         WheelMode::Apps,
         WheelMode::Share,
+        WheelMode::Actions,
     ];
 }
 
@@ -57,6 +81,38 @@ pub enum WheelBorder {
     #[default]
     #[serde(other)]
     Light,
+}
+
+/// Ce que lance une action personnalisée.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CustomKind {
+    /// Raccourci de l'app Raccourcis (macOS), par son nom.
+    Shortcut,
+    /// Commande du système ; les fichiers de la roue lui sont passés en arguments.
+    Command,
+    /// Adresse d'un site.
+    Url,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomAction {
+    pub name: String,
+    pub kind: CustomKind,
+    pub value: String,
+}
+
+/// Roue faite par l'utilisateur, dans la part « Mes roues » de la roue Actions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CustomWheel {
+    pub name: String,
+    pub actions: Vec<CustomAction>,
+}
+
+/// Seules les adresses web s'ouvrent : pas de `file:` ni de `javascript:` depuis la roue.
+pub fn web_address(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("https://") || value.starts_with("http://")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +141,12 @@ pub struct Settings {
     /// Couleur de la part survolée ; absente, le bleu d'origine.
     pub highlight_color: Option<String>,
     pub wheel_border: WheelBorder,
+    /// Liquid Glass sur le disque de la roue.
+    pub wheel_glass: bool,
+    /// Une capture rouvre la roue sur l'image, pour la convertir ou la partager.
+    pub capture_reopen: bool,
+    /// Roues faites par l'utilisateur.
+    pub custom_wheels: Vec<CustomWheel>,
     /// Une app (ou rien) par part, dans le sens horaire depuis le haut.
     pub apps: Vec<Option<AppSlot>>,
     /// Une destination (ou rien) par part. Vide tant que la roue de partage n'a jamais été
@@ -113,6 +175,9 @@ impl Default for Settings {
             format_colors: BTreeMap::new(),
             highlight_color: None,
             wheel_border: WheelBorder::Light,
+            wheel_glass: true,
+            capture_reopen: true,
+            custom_wheels: Vec::new(),
             apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
             auto_update: true,
@@ -150,7 +215,22 @@ impl Settings {
             modes[0].enabled = true;
         }
         self.modes = modes;
+        for slot in &mut self.apps {
+            if slot.as_ref().is_some_and(|slot| !slot.opens_safely()) {
+                *slot = None;
+            }
+        }
         apps::fit_slots(&mut self.apps);
+        self.custom_wheels.truncate(MAX_CUSTOM);
+        for wheel in &mut self.custom_wheels {
+            wheel.name = wheel.name.trim().to_string();
+            wheel.actions.truncate(MAX_CUSTOM);
+            wheel.actions.retain(|action| {
+                !action.name.trim().is_empty()
+                    && !action.value.trim().is_empty()
+                    && (action.kind != CustomKind::Url || web_address(&action.value))
+            });
+        }
         // Vide : les suggestions du premier lancement le rempliront
         if !self.share.is_empty() {
             apps::fit_slots(&mut self.share);
@@ -247,8 +327,10 @@ pub struct SettingsView {
     launch_at_login: bool,
     /// macOS : autorisation de lire la sélection du Finder.
     finder_permission: Option<&'static str>,
-    /// macOS : autorisation Accessibilité, pour les pastilles des apps fermées.
+    /// macOS : autorisation Accessibilité, pour les pastilles et les fenêtres.
     dock_access: Option<bool>,
+    /// Le vrai Liquid Glass existe sur ce système.
+    native_glass: bool,
     platform: &'static str,
     version: String,
     /// Apps des parts, avec leurs icônes.
@@ -273,6 +355,7 @@ fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
         launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
         finder_permission: finder_permission(),
         dock_access: apps::dock_access(),
+        native_glass: super::glass::available(),
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
     }
@@ -331,12 +414,17 @@ pub fn update_settings<R: Runtime>(
 
     *app.state::<SettingsState>().0.lock().unwrap() = applied.clone();
     save(&app, &applied)?;
+    if applied.wheel_glass != previous.wheel_glass {
+        super::glass::apply(&app, applied.wheel_glass);
+    }
     if applied.modes != previous.modes
         || applied.remember_wheel != previous.remember_wheel
         || applied.dwell_ms != previous.dwell_ms
         || applied.format_colors != previous.format_colors
         || applied.highlight_color != previous.highlight_color
         || applied.wheel_border != previous.wheel_border
+        || applied.wheel_glass != previous.wheel_glass
+        || applied.custom_wheels != previous.custom_wheels
         || applied.apps != previous.apps
         || applied.share != previous.share
     {
@@ -366,8 +454,10 @@ pub fn set_launch_at_login<R: Runtime>(app: AppHandle<R>, enabled: bool) -> Resu
 pub enum PermissionPane {
     /// Lire la sélection du Finder.
     Automation,
-    /// Lire les pastilles du Dock.
+    /// Lire les pastilles du Dock et ranger les fenêtres.
     Accessibility,
+    /// Capturer tout l'écran.
+    Screen,
 }
 
 /// macOS : ouvre le volet des Réglages Système où se donne l'autorisation `pane`.
@@ -382,6 +472,7 @@ pub fn open_permission_settings<R: Runtime>(
         let url = match pane {
             PermissionPane::Automation => platform::selection::AUTOMATION_SETTINGS_URL,
             PermissionPane::Accessibility => platform::apps::ACCESSIBILITY_SETTINGS_URL,
+            PermissionPane::Screen => platform::capture::SCREEN_SETTINGS_URL,
         };
         app.opener()
             .open_url(url, None::<&str>)
@@ -445,6 +536,61 @@ mod tests {
     }
 
     #[test]
+    fn la_roue_actions_arrive_active_chez_ceux_qui_ne_l_ont_pas_encore() {
+        let settings: Settings =
+            serde_json::from_str(r#"{ "modes": [{ "id": "image", "enabled": true }] }"#).unwrap();
+        assert!(
+            settings
+                .sanitized()
+                .enabled_modes()
+                .contains(&WheelMode::Actions)
+        );
+    }
+
+    #[test]
+    fn une_part_ou_une_action_ne_peut_ouvrir_qu_une_adresse_web() {
+        let url = |path: &str| AppSlot {
+            path: path.into(),
+            name: "Site".into(),
+            kind: apps::AppKind::Url,
+        };
+        let settings = Settings {
+            apps: vec![
+                Some(url("https://exemple.fr")),
+                Some(url("file:///etc/passwd")),
+            ],
+            custom_wheels: vec![CustomWheel {
+                name: "Test".into(),
+                actions: vec![
+                    CustomAction {
+                        name: "Bon".into(),
+                        kind: CustomKind::Url,
+                        value: "https://exemple.fr".into(),
+                    },
+                    CustomAction {
+                        name: "Piégé".into(),
+                        kind: CustomKind::Url,
+                        value: "javascript:alert(1)".into(),
+                    },
+                ],
+            }],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert!(settings.apps[0].is_some());
+        assert!(settings.apps[1].is_none());
+        assert_eq!(settings.custom_wheels[0].actions.len(), 1);
+    }
+
+    #[test]
+    fn une_ancienne_part_reste_une_app() {
+        let slot: AppSlot =
+            serde_json::from_str(r#"{ "path": "/Applications/Mail.app", "name": "Mail" }"#)
+                .unwrap();
+        assert_eq!(slot.kind, apps::AppKind::App);
+    }
+
+    #[test]
     fn chaque_roue_une_fois_et_au_moins_une_active() {
         let settings = Settings {
             modes: vec![
@@ -473,12 +619,13 @@ mod tests {
                 WheelMode::Apps,
                 WheelMode::Image,
                 WheelMode::Video,
-                WheelMode::Share
+                WheelMode::Share,
+                WheelMode::Actions
             ]
         );
         assert_eq!(
             settings.enabled_modes(),
-            [WheelMode::Video, WheelMode::Share]
+            [WheelMode::Video, WheelMode::Share, WheelMode::Actions]
         );
         assert_eq!(settings.apps.len(), MIN_SLOTS);
         assert_eq!(settings.share.len(), apps::MAX_SLOTS);

@@ -11,8 +11,10 @@ use platform::apps::Icon;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
-use super::settings::{self, WheelBorder, WheelMode};
+use super::glass;
+use super::settings::{self, CustomKind, WheelBorder, WheelMode};
 use super::share::{self, ShareView};
 use super::wheel::WHEEL_LABEL;
 
@@ -24,11 +26,34 @@ pub const MAX_SLOTS: usize = 10;
 const CONFIG_EVENT: &str = "wheel://config";
 const ICON_SIZE: u32 = 128;
 
-/// App choisie pour une part, telle qu'enregistrée dans les réglages.
+/// Ce qu'une part de la roue des apps ouvre.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppKind {
+    Folder,
+    /// Site web : `path` en est l'adresse.
+    Url,
+    /// Serde veut cette variante en dernier ; les réglages d'avant les dossiers et les sites
+    /// n'ont pas ce champ.
+    #[default]
+    #[serde(other)]
+    App,
+}
+
+/// App, dossier ou site choisi pour une part, tel qu'enregistré dans les réglages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppSlot {
     pub path: PathBuf,
     pub name: String,
+    #[serde(default)]
+    pub kind: AppKind,
+}
+
+impl AppSlot {
+    /// Une adresse doit rester une adresse web : les réglages sont un fichier modifiable.
+    pub fn opens_safely(&self) -> bool {
+        self.kind != AppKind::Url || self.path.to_str().is_some_and(settings::web_address)
+    }
 }
 
 /// App telle que l'interface l'affiche, avec son icône.
@@ -36,6 +61,7 @@ pub struct AppSlot {
 pub struct AppView {
     path: PathBuf,
     name: String,
+    kind: AppKind,
     /// PNG en data URL, absent quand le système ne fournit pas d'icône.
     icon: Option<String>,
 }
@@ -91,9 +117,12 @@ pub fn views<R: Runtime>(app: &AppHandle<R>, slots: &[Option<AppSlot>]) -> Vec<O
         .iter()
         .map(|slot| {
             slot.as_ref().map(|slot| AppView {
-                icon: file_icon(app, &slot.path),
+                icon: (slot.kind != AppKind::Url)
+                    .then(|| file_icon(app, &slot.path))
+                    .flatten(),
                 path: slot.path.clone(),
                 name: slot.name.clone(),
+                kind: slot.kind,
             })
         })
         .collect()
@@ -113,8 +142,27 @@ pub struct WheelConfig {
     colors: BTreeMap<String, String>,
     highlight: Option<String>,
     border: WheelBorder,
+    /// Matière du disque : le vrai Liquid Glass, son imitation, ou le disque d'origine.
+    glass: &'static str,
+    /// Les fenêtres se rangent sur ce système.
+    window_layout: bool,
+    custom: Vec<CustomWheelView>,
     apps: Vec<Option<AppView>>,
     share: Vec<Option<ShareView>>,
+}
+
+/// Roue personnalisée vue par la roue : ni commande, ni adresse, seulement ce qu'il faut pour
+/// afficher ses parts.
+#[derive(Debug, Clone, Serialize)]
+struct CustomWheelView {
+    name: String,
+    actions: Vec<CustomActionView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CustomActionView {
+    name: String,
+    kind: CustomKind,
 }
 
 #[tauri::command]
@@ -127,6 +175,27 @@ pub fn wheel_config<R: Runtime>(app: AppHandle<R>) -> WheelConfig {
         colors: settings.format_colors.clone(),
         highlight: settings.highlight_color.clone(),
         border: settings.wheel_border,
+        glass: match (settings.wheel_glass, glass::available()) {
+            (false, _) => "off",
+            (true, true) => "native",
+            (true, false) => "css",
+        },
+        window_layout: platform::placement::supported(),
+        custom: settings
+            .custom_wheels
+            .iter()
+            .map(|wheel| CustomWheelView {
+                name: wheel.name.clone(),
+                actions: wheel
+                    .actions
+                    .iter()
+                    .map(|action| CustomActionView {
+                        name: action.name.clone(),
+                        kind: action.kind,
+                    })
+                    .collect(),
+            })
+            .collect(),
         apps: views(&app, &settings.apps),
         share: share::views(&app, &settings.share),
     }
@@ -152,7 +221,29 @@ pub async fn pick_app<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
         }
         let path = picker.blocking_pick_file()?.into_path().ok()?;
         let name = platform::apps::describe(&path)?.name;
-        Some(AppSlot { path, name })
+        Some(AppSlot {
+            path,
+            name,
+            kind: AppKind::App,
+        })
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Sélecteur de dossier pour une part de la roue des apps.
+#[tauri::command]
+pub async fn pick_app_folder<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let picker = app.dialog().file().set_title("Choisir un dossier");
+        let path = picker.blocking_pick_folder()?.into_path().ok()?;
+        let name = path.file_name()?.to_string_lossy().into_owned();
+        Some(AppSlot {
+            path,
+            name,
+            kind: AppKind::Folder,
+        })
     })
     .await
     .ok()
@@ -211,9 +302,22 @@ pub async fn launch_app<R: Runtime>(
     let Some(Some(chosen)) = settings::current(&app).apps.get(slot).cloned() else {
         return Err("Aucune application n'est associée à cette part.".into());
     };
-    tauri::async_runtime::spawn_blocking(move || platform::apps::launch(&chosen.path, &paths))
+    match chosen.kind {
+        AppKind::App => tauri::async_runtime::spawn_blocking(move || {
+            platform::apps::launch(&chosen.path, &paths)
+        })
         .await
-        .map_err(|err| err.to_string())?
+        .map_err(|err| err.to_string())?,
+        AppKind::Folder => app
+            .opener()
+            .open_path(chosen.path.to_string_lossy(), None::<&str>)
+            .map_err(|err| err.to_string()),
+        AppKind::Url if chosen.opens_safely() => app
+            .opener()
+            .open_url(chosen.path.to_string_lossy(), None::<&str>)
+            .map_err(|err| err.to_string()),
+        AppKind::Url => Err("Seules les adresses web s'ouvrent.".into()),
+    }
 }
 
 /// Une part vide de la roue ouvre les réglages sur l'onglet où la remplir. Asynchrone : sous

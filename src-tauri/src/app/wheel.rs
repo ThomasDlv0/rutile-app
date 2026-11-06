@@ -20,7 +20,12 @@ const FILES_EVENT: &str = "wheel://files";
 const DRAG_EVENT: &str = "wheel://drag";
 
 /// Taille logique de la fenêtre, identique à `tauri.conf.json`.
-const WHEEL_SIZE: f64 = 360.0;
+pub const WHEEL_SIZE: f64 = 360.0;
+/// Distance entre le centre de la roue et le bouton de la part du haut, comme `BUTTON_ORBIT`
+/// dans `src/wheel/geometry.ts`.
+const TOP_PART_OFFSET: f64 = 123.0;
+/// Rayon du cercle central, comme `HUB_RADIUS`.
+const HUB_RADIUS: f64 = 48.0;
 
 /// Extensions proposées par le sélecteur de fichiers.
 const IMAGE_EXTENSIONS: [&str; 12] = [
@@ -30,6 +35,8 @@ const VIDEO_EXTENSIONS: [&str; 16] = [
     "mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "mts", "m2ts",
     "3gp", "ogv", "gif",
 ];
+
+const PDF_EXTENSIONS: [&str; 1] = ["pdf"];
 
 /// D'où viennent les fichiers proposés à l'ouverture de la roue.
 #[derive(Debug, PartialEq, Eq)]
@@ -103,6 +110,8 @@ fn open_on_main_thread<R: Runtime>(app: &AppHandle<R>, source: Source) {
         inner.last_open
     };
 
+    // Repéré avant d'afficher la roue, qui prend le focus sous Windows et sous Linux
+    platform::placement::remember();
     // Repéré avant d'afficher la roue, tant que le gestionnaire de fichiers est au premier plan
     let lookup = match source {
         Source::Files(paths) => Some(Lookup::Paths(paths)),
@@ -191,12 +200,20 @@ fn present<R: Runtime>(app: &AppHandle<R>, opened: Opened) -> tauri::Result<()> 
     let Some(window) = app.get_webview_window(WHEEL_LABEL) else {
         return Ok(());
     };
-    place(&window)?;
+    // Une annonce a pu laisser la fenêtre traversée par la souris
+    window.set_ignore_cursor_events(false)?;
+    // Un fichier secoué arrive sur la part du haut : au centre, y rester enverrait au partage
+    let anchor = match opened.mode {
+        Mode::Focus => Anchor::Center,
+        Mode::Drop => Anchor::TopPart,
+    };
+    place(&window, anchor)?;
     // On affiche avant d'émettre : l'interface est invisible tant qu'elle n'a pas reçu l'ordre
     match opened.mode {
         Mode::Focus => focus(app, &window)?,
         Mode::Drop => show_without_focus(app, &window)?,
     }
+    super::glass::fade(app, true);
     app.emit_to(WHEEL_LABEL, OPEN_EVENT, opened)
 }
 
@@ -249,9 +266,36 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Centre la fenêtre sur le curseur, sans déborder de la zone utile de l'écran. Sous Wayland,
+/// Ce que la roue met sous le curseur à son ouverture.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Anchor {
+    Center,
+    TopPart,
+}
+
+/// Haut de la fenêtre pour que `anchor` tombe sous le curseur, sans déborder de l'écran. Tout
+/// en bas de l'écran, la part du haut ne peut pas y arriver : c'est alors celle du bas.
+fn window_top(anchor: Anchor, cursor: f64, start: i32, length: u32, size: i32, scale: f64) -> i32 {
+    let clamp = |center: f64| {
+        let max = start + length as i32 - size;
+        (center.round() as i32 - size / 2).clamp(start, max.max(start))
+    };
+    if anchor == Anchor::Center {
+        return clamp(cursor);
+    }
+    let offset = TOP_PART_OFFSET * scale;
+    let top = clamp(cursor + offset);
+    let center = f64::from(top) + f64::from(size) / 2.0;
+    if (center - cursor).abs() > HUB_RADIUS * scale {
+        top
+    } else {
+        clamp(cursor - offset)
+    }
+}
+
+/// Place la fenêtre à côté du curseur, sans déborder de la zone utile de l'écran. Sous Wayland,
 /// la position du curseur est inconnue : la roue s'ouvre au centre de l'écran principal.
-fn place<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
+fn place<R: Runtime>(window: &WebviewWindow<R>, anchor: Anchor) -> tauri::Result<()> {
     if platform::session::is_wayland_session() {
         return window.center();
     }
@@ -264,17 +308,31 @@ fn place<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Result<()> {
         },
     };
 
-    let size = (WHEEL_SIZE * monitor.scale_factor()).round() as i32;
+    let scale = monitor.scale_factor();
+    let size = (WHEEL_SIZE * scale).round() as i32;
     let area = monitor.work_area();
-    let clamp = |center: f64, start: i32, length: u32| {
-        let max = start + length as i32 - size;
-        (center.round() as i32 - size / 2).clamp(start, max.max(start))
-    };
-
+    let (x, width) = (area.position.x, area.size.width);
+    let (y, height) = (area.position.y, area.size.height);
     window.set_position(PhysicalPosition::new(
-        clamp(cursor.x, area.position.x, area.size.width),
-        clamp(cursor.y, area.position.y, area.size.height),
+        window_top(Anchor::Center, cursor.x, x, width, size, scale),
+        window_top(anchor, cursor.y, y, height, size, scale),
     ))
+}
+
+/// Affiche la fenêtre pour une annonce : à côté du curseur, sans prendre le clavier ni la
+/// souris, pour ne pas gêner ce que l'utilisateur fait déjà.
+#[tauri::command]
+pub fn show_toast<R: Runtime>(app: AppHandle<R>, window: WebviewWindow<R>) -> tauri::Result<()> {
+    window.set_ignore_cursor_events(true)?;
+    place(&window, Anchor::Center)?;
+    show_without_focus(&app, &window)
+}
+
+/// L'annonce est finie.
+#[tauri::command]
+pub fn hide_toast<R: Runtime>(window: WebviewWindow<R>) -> tauri::Result<()> {
+    window.set_ignore_cursor_events(false)?;
+    window.hide()
 }
 
 /// Glisser-déposer relayé à l'interface, avec une position en pixels CSS.
@@ -351,6 +409,9 @@ pub fn primary_button_pressed() -> Option<bool> {
 pub enum PickKind {
     Images,
     Videos,
+    Pdfs,
+    /// Roue Actions : tous les fichiers.
+    Files,
     /// Roue de partage : tous les fichiers.
     Any,
 }
@@ -368,6 +429,8 @@ pub async fn pick_files<R: Runtime>(app: AppHandle<R>, kind: PickKind) -> Vec<Fi
             "Choisir les vidéos à convertir",
             Some(("Vidéos", &VIDEO_EXTENSIONS)),
         ),
+        PickKind::Pdfs => ("Choisir les PDF", Some(("PDF", &PDF_EXTENSIONS))),
+        PickKind::Files => ("Choisir les fichiers", None),
         PickKind::Any => ("Choisir les fichiers à partager", None),
     };
     let dialog = app.clone();
@@ -398,4 +461,46 @@ pub async fn pick_files<R: Runtime>(app: AppHandle<R>, kind: PickKind) -> Vec<Fi
     tauri::async_runtime::spawn_blocking(move || convert::inspect(paths))
         .await
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AREA: i32 = 1000;
+    const SIZE: i32 = 360;
+
+    fn top(anchor: Anchor, cursor: f64) -> i32 {
+        window_top(anchor, cursor, 0, AREA as u32, SIZE, 1.0)
+    }
+
+    #[test]
+    fn la_roue_se_centre_sur_le_curseur() {
+        assert_eq!(top(Anchor::Center, 500.0), 320);
+    }
+
+    #[test]
+    fn un_fichier_secoue_arrive_sur_la_part_du_haut() {
+        // Le centre de la roue passe 123 pixels sous le curseur
+        assert_eq!(top(Anchor::TopPart, 300.0), 243);
+    }
+
+    #[test]
+    fn la_position_tient_compte_de_l_echelle_de_l_ecran() {
+        let top = window_top(Anchor::TopPart, 600.0, 0, 2000, 720, 2.0);
+        assert_eq!(top, 600 + 246 - 360);
+    }
+
+    #[test]
+    fn en_haut_de_l_ecran_la_roue_ne_deborde_pas() {
+        assert_eq!(top(Anchor::TopPart, 10.0), 0);
+    }
+
+    #[test]
+    fn tout_en_bas_de_l_ecran_le_curseur_ne_tombe_jamais_au_centre() {
+        // La roue touche le bas : son centre est à 820, là où un curseur à 800 serait au centre
+        let window = top(Anchor::TopPart, 800.0);
+        let center = f64::from(window + SIZE / 2);
+        assert!((center - 800.0).abs() > HUB_RADIUS);
+    }
 }

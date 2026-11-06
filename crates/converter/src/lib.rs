@@ -5,8 +5,10 @@
 mod decode;
 mod encode;
 mod error;
+pub mod files;
 mod format;
 mod output;
+pub mod retouch;
 pub mod self_test;
 pub mod video;
 

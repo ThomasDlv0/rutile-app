@@ -52,22 +52,44 @@ Sélectionnez un fichier dans le Finder ou l'Explorateur et ouvrez la roue
 apparaît **à côté de l'original**, qui n'est jamais modifié ni écrasé (`photo-1.png` si
 `photo.png` existe déjà).
 
-Pendant un glisser, **secouez le fichier** de quelques allers-retours : la roue s'ouvre sous
-le curseur, il suffit de le lâcher sur un format. Les formats impossibles pour ce fichier
-(celui qu'il a déjà, par exemple) sont grisés.
+Pendant un glisser, **secouez le fichier** de quelques allers-retours : la roue s'ouvre avec sa
+part du haut sous le curseur, il suffit de le lâcher sur un format. Les formats impossibles
+pour ce fichier (celui qu'il a déjà, par exemple) sont grisés.
 
-### Quatre roues, un clic au centre
+### Cinq roues, un clic au centre
 
 <p align="center">
   <img src="docs/screenshots/roues.gif" width="880" alt="Un clic au centre fait passer de la roue des images à celle des vidéos, puis au partage et aux apps">
 </p>
 
-**Images**, **vidéos**, **apps** et **partage** : un clic au centre passe à la roue suivante.
-Chacune s'active ou se désactive, dans l'ordre de votre choix.
+**Images**, **vidéos**, **apps**, **partage** et **actions** : un clic au centre passe à la
+roue suivante. Chacune s'active ou se désactive, dans l'ordre de votre choix.
 
 La roue s'adapte au fichier : une image ouvre la roue des images, une vidéo celle des vidéos.
 Pendant un glisser, **restez au centre** : un anneau se remplit (1 s par défaut) et la roue
 passe au partage ; y revenir repasse au convertisseur.
+
+### La roue Actions
+
+**Restez une seconde sur une part** : ses options s'ouvrent dans une nouvelle roue. Le centre
+ramène à la roue d'avant, comme <kbd>Échap</kbd>.
+
+| Part | Un clic | En restant dessus |
+|---|---|---|
+| **Capture** | capture une zone, copiée dans le presse-papiers et enregistrée dans Images/Rutile | zone, fenêtre, écran, dans 3 secondes |
+| **Texte** | tracez une zone : son texte est copié, sans rien envoyer sur internet | |
+| **Couleur** | copie la couleur prise à l'écran | en HEX, RGB ou HSL |
+| **Fichiers** | | ZIP, images en PDF, fusion de PDF, renommage en lot (numéros, date, minuscules, sans accents) |
+| **Image** | | moitié de la taille, 1920 pixels, alléger, retirer les métadonnées |
+| **Vidéo** | | alléger, tenir dans 10 ou 25 Mo, GIF, MP3, retirer le son |
+| **Fenêtres** | | moitié gauche, droite, haute ou basse, agrandir, centrer |
+| **Apps** | passe à la roue des apps | |
+| **Mes roues** | | vos propres actions : un Raccourci macOS, une commande ou un site |
+
+Un fichier déposé sur une action la lance sur ce fichier, et les actions se lancent aussi sur
+la sélection du Finder ou de l'Explorateur. Rien n'est écrasé : le résultat s'écrit à côté de
+l'original. Une bulle à côté du curseur dit ce qui s'est passé, même si les notifications sont
+coupées.
 
 ### Vidéos : changer de format, faire un GIF, garder le son
 
@@ -101,21 +123,22 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 Jusqu'à dix apps, une par part, avec leurs **pastilles de notifications** comme dans le Dock
 (macOS), y compris celles que le Dock garde pour une app fermée, comme Messages, si vous
 donnez à Rutile l'autorisation Accessibilité (Réglages → Apps). Un fichier lâché sur une app
-s'ouvre avec elle.
+s'ouvre avec elle. Une part peut aussi ouvrir un dossier ou un site web.
 
 ### À vos couleurs
 
 <img src="docs/screenshots/reglages.gif" align="right" width="300" alt="Fenêtre des réglages : onglets Général, Roues, Couleurs, Apps et Partage">
 
-Les réglages tiennent en six onglets :
+Les réglages tiennent en sept onglets :
 
 - **Général** : raccourci, secouage et sa sensibilité, lancement à l'ouverture de session.
-- **Roues** : ordre des roues (en les glissant) et activation, temps au centre avant de
-  basculer, retour sur la dernière roue utilisée.
+- **Roues** : ordre des roues (en les glissant) et activation, temps de maintien, retour sur
+  la dernière roue utilisée.
 - **Conversion** : qualité JPEG, WebP et AVIF.
-- **Couleurs** : une couleur par format et une pour la part survolée (le centre la prend
-  aussi), le contour de la roue (clair, noir ou aucun), avec un aperçu de la roue en direct.
-  Le texte passe en clair ou en foncé pour rester lisible.
+- **Couleurs** : cliquez sur une part de l'aperçu pour changer sa couleur, sur le centre pour
+  celle de la surbrillance. Liquid Glass et contour de la roue (clair, noir ou aucun). Le
+  texte passe en clair ou en foncé pour rester lisible.
+- **Actions** : vos roues personnalisées, et ce qui suit une capture.
 - **Apps** et **Partage** : de six à dix parts chacune, à réordonner en les glissant.
 
 <br clear="right">
@@ -232,8 +255,9 @@ premier lancement, expliqué ci-dessous.
 | | |
 |---|---|
 | **Ouvrir la roue** | <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>Espace</kbd> (macOS) ou <kbd>Ctrl</kbd> <kbd>Maj</kbd> <kbd>Espace</kbd> (Windows, Linux X11), modifiable dans Réglages → Général ; ou l'icône de la barre système, ou `rutile --open [fichiers…]` |
-| **Secouer** | pendant un glisser, quelques allers-retours rapides ouvrent la roue sous le curseur |
+| **Secouer** | pendant un glisser, quelques allers-retours rapides ouvrent la roue, sa part du haut sous le curseur |
 | **Changer de roue** | un clic au centre ou <kbd>↑</kbd> <kbd>↓</kbd> ; pendant un glisser, rester au centre bascule entre conversion et partage |
+| **Options d'une action** | rester sur la part ; le centre, <kbd>Échap</kbd> ou <kbd>⌫</kbd> reviennent en arrière |
 | **Au clavier** | <kbd>←</kbd> <kbd>→</kbd> passent d'une part à l'autre, <kbd>Entrée</kbd> lance la part choisie ; <kbd>1</kbd> à <kbd>9</kbd> (<kbd>0</kbd> pour la dixième) la lancent directement, en partant du haut dans le sens horaire |
 | **Annuler** | relâcher au centre, <kbd>Échap</kbd> ou un clic à l'extérieur |
 | **Réglages** | icône de la barre système → « Réglages… » |
@@ -243,6 +267,41 @@ Les réglages sont enregistrés dans `settings.json`, dans
 `~/.config/fr.rutile.desktop`.
 
 ## Questions fréquentes
+
+<details>
+<summary><strong>Le Liquid Glass est-il le vrai ?</strong></summary>
+<br>
+
+Sur macOS 26 et plus récent, oui : le disque et le centre sont de vraies vues
+`NSGlassEffectView`, le verre du système. Sur les versions plus anciennes, sous Windows et sous
+Linux, ce verre n'existe pas : la roue en dessine une imitation, sans le flou ni la réfraction
+de ce qu'il y a derrière. Il se désactive dans Réglages → Couleurs.
+
+</details>
+
+<details>
+<summary><strong>Quelles autorisations pour la roue Actions (macOS) ?</strong></summary>
+<br>
+
+- **Capture et texte** : Enregistrement de l'écran, y compris pour une zone choisie à la main.
+- **Couleur** : la loupe du système, sans autorisation.
+- **Fenêtres** : Accessibilité.
+
+Rutile n'étant pas signé par Apple, macOS peut oublier ces autorisations après une mise à
+jour : retirez Rutile de la liste avec « − », puis autorisez-le de nouveau.
+
+</details>
+
+<details>
+<summary><strong>Que faut-il sous Linux pour la roue Actions ?</strong></summary>
+<br>
+
+- **Capture et pipette** : le portail du bureau (`xdg-desktop-portal`), présent sous GNOME et KDE.
+- **Texte** : Tesseract, à installer (`tesseract-ocr`, avec sa langue française).
+- **Fenêtres** : sous X11 seulement. Wayland ne laisse pas une app déplacer les fenêtres : la
+  part n'apparaît pas.
+
+</details>
 
 <details>
 <summary><strong>Mes fichiers partent-ils sur internet ?</strong></summary>
@@ -527,7 +586,10 @@ TypeScript. Les conversions reposent sur des bibliothèques open source :
 - [`vtracer`](https://github.com/visioncortex/vtracer) pour vectoriser en SVG,
   [`resvg`](https://github.com/linebender/resvg) pour lire le SVG ;
 - [FFmpeg](https://ffmpeg.org) 9.0.2 pour la vidéo, limité aux fichiers locaux et aux
-  conteneurs vidéo que la roue accepte.
+  conteneurs vidéo que la roue accepte ;
+- [`lopdf`](https://github.com/J-F-Liu/lopdf) pour les PDF,
+  [`zip`](https://github.com/zip-rs/zip2) pour les archives ;
+- Vision (macOS), `Windows.Media.Ocr` et Tesseract (Linux) pour lire le texte.
 
 ## Licences
 

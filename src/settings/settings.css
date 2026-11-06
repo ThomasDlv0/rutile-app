@@ -722,3 +722,65 @@ html.settings #root {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Sélecteur du système ouvert par un clic sur l'aperçu de la roue */
+.color-picker-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wheel-preview .format-button,
+.wheel-preview .hub-toggle {
+  cursor: pointer;
+}
+
+.text-input {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--card-border);
+  border-radius: 7px;
+  background: var(--page);
+  color: var(--label);
+  font: inherit;
+  font-size: 13px;
+}
+
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.custom-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.custom-form .custom-form-value {
+  grid-column: 1;
+}
+
+.custom-wheel + .custom-wheel,
+.custom-wheel + .add-row {
+  border-top: 1px solid var(--row-divider);
+}
+
+.custom-wheel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 4px;
+}
+
+.custom-wheel-head .text-input {
+  flex: 1;
+  font-weight: 600;
+}

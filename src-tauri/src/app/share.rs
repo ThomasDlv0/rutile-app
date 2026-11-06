@@ -264,13 +264,14 @@ pub async fn share_files<R: Runtime>(
     };
     let result = share_with(&app, target, paths).await;
     if let Err(err) = &result {
-        notify::show(
+        notify::announce(
             &app,
             Message {
                 title: "Partage impossible".into(),
                 body: err.clone(),
                 action: None,
             },
+            false,
         );
     }
     result
@@ -304,7 +305,7 @@ async fn share_with<R: Runtime>(
                 .reveal_items_in_dir(&report.copied)
                 .map_err(|err| err.to_string())?;
             if !report.errors.is_empty() {
-                notify::show(app, report.message(&name));
+                notify::announce(app, report.message(&name), false);
             }
             Ok(())
         }
@@ -314,13 +315,14 @@ async fn share_with<R: Runtime>(
             tauri::async_runtime::spawn_blocking(move || platform::apps::launch(&path, &[]))
                 .await
                 .map_err(|err| err.to_string())??;
-            notify::show(
+            notify::announce(
                 app,
                 Message {
                     title: format!("Prêt à coller dans {name}"),
                     body: format!("Ouvrez la conversation puis collez avec {PASTE}."),
                     action: None,
                 },
+                true,
             );
             Ok(())
         }

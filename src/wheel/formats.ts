@@ -1,4 +1,5 @@
 import type { AppView, ShareView } from "../ipc";
+import type { GlyphName } from "./ActionGlyph";
 import { readableInk } from "./color";
 import { MAX_SECTORS, SECTOR_COUNT } from "./geometry";
 
@@ -34,9 +35,9 @@ export type OutputFormat = (typeof OUTPUT_FORMATS)[number]["id"];
 export type VideoFormat = (typeof VIDEO_FORMATS)[number]["id"];
 
 /** Les roues entre lesquelles le clic au centre fait passer. */
-export type Mode = "image" | "video" | "apps" | "share";
+export type Mode = "image" | "video" | "apps" | "share" | "actions";
 
-export const ALL_MODES: readonly Mode[] = ["image", "video", "apps", "share"];
+export const ALL_MODES: readonly Mode[] = ["image", "video", "apps", "share", "actions"];
 
 /** Contenu d'une part de la roue : un format, ou une app. */
 export interface WheelItem {
@@ -44,6 +45,10 @@ export interface WheelItem {
   label: string;
   /** Texte du centre au survol, « Convertir en … » par défaut. */
   action?: string;
+  /** Seconde ligne du centre au survol. */
+  hint?: string;
+  /** Pictogramme d'une part de la roue Actions. */
+  glyph?: GlyphName;
   /** Icône d'app, en data URL. */
   icon?: string;
   /** Couleur du bouton d'un format, et de son texte, choisi pour rester lisible. */
@@ -75,6 +80,20 @@ function slotCount(slots: readonly unknown[]): number {
   return Math.min(Math.max(slots.length, SECTOR_COUNT), MAX_SECTORS);
 }
 
+/** Icône d'un site : un globe sur une tuile bleue. */
+const WEB_ICON = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#1f6fe5"/>
+    </linearGradient></defs>
+    <rect x="4" y="4" width="56" height="56" rx="13" fill="url(#g)"/>
+    <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round">
+      <circle cx="32" cy="32" r="17"/>
+      <path d="M15 32h34M32 15c-11 11-11 23 0 34M32 15c11 11 11 23 0 34"/>
+    </g>
+  </svg>`,
+)}`;
+
 /** Parts de la roue des apps, à partir des apps choisies dans les réglages. `badges` : pastille
  * de notifications de chaque app (macOS), dans le même ordre. */
 export function appItems(
@@ -88,7 +107,7 @@ export function appItems(
       id: `app-${index}`,
       label: app.name,
       action: `Ouvrir ${app.name}`,
-      icon: app.icon ?? undefined,
+      icon: app.icon ?? (app.kind === "url" ? WEB_ICON : undefined),
       badge: badges[index] ?? undefined,
     };
   });

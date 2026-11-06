@@ -101,6 +101,63 @@ body,
   --disk-border: transparent;
 }
 
+/* Liquid Glass. `native` : le verre de macOS est posé derrière la page, qui le laisse voir.
+   `css` : son imitation, sur les systèmes qui ne l'ont pas */
+.wheel-root[data-glass="native"] {
+  --separator: rgba(255, 255, 255, 0.16);
+  --text: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.78);
+}
+
+.wheel-root[data-glass="native"] .wheel-disk {
+  filter: none;
+}
+
+.wheel-root[data-glass="native"] .disk {
+  fill: transparent;
+}
+
+.wheel-root[data-glass="native"][data-border="light"] {
+  --disk-border: rgba(255, 255, 255, 0.22);
+}
+
+.wheel-root[data-glass="native"] .hub {
+  background: transparent;
+  border-color: transparent;
+}
+
+.wheel-root[data-glass="native"] .hub-label,
+.wheel-root[data-glass="native"] .hub-hint {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.wheel-root[data-glass="css"] {
+  --disk: rgba(38, 40, 46, 0.62);
+  --hub: rgba(52, 54, 60, 0.72);
+  --separator: rgba(255, 255, 255, 0.13);
+}
+
+.wheel-root[data-glass="css"][data-border="light"] {
+  --disk-border: url(#glass-rim);
+}
+
+.wheel-root[data-glass="css"] .hub {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.25),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.wheel-root[data-glass="css"] .disk-sheen {
+  display: block;
+}
+
+.disk-sheen {
+  display: none;
+  fill: url(#glass-sheen);
+  pointer-events: none;
+}
+
 .separator {
   stroke: var(--separator);
   stroke-width: 1;
@@ -263,6 +320,37 @@ body,
 
 .format-button[data-kind="name"] .item-label {
   font-size: 10.5px;
+}
+
+.item-glyph {
+  pointer-events: none;
+}
+
+/* Rester sur une part : l'anneau se remplit pendant le délai réglé (--dwell-ms), puis sa
+   sous-roue s'ouvre. Il attend un instant, pour ne pas clignoter au simple passage */
+.part-dwell {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.part-dwell circle {
+  fill: none;
+  stroke: var(--text-strong);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 195;
+  stroke-dashoffset: 195;
+  animation: part-dwell var(--dwell-ms, 1000ms) linear forwards;
+}
+
+@keyframes part-dwell {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .item-add {
@@ -540,4 +628,81 @@ body,
   .spinner {
     animation-duration: 2s;
   }
+}
+
+/* Résultat d'une action : la roue est fermée, seule cette bulle reste à côté du curseur */
+.toast {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 336px;
+  padding: 10px 16px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24px;
+  background: rgba(28, 28, 31, 0.94);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  color: var(--text-strong);
+  transform: translate(-50%, -50%);
+  animation: toast-in 180ms var(--spring) both;
+  pointer-events: none;
+}
+
+.toast[data-leaving="true"] {
+  animation: toast-out 180ms ease-in forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.86);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+}
+
+.toast-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #30a14e;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.toast[data-ok="false"] .toast-icon {
+  background: var(--danger);
+}
+
+.toast-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.toast-body {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }

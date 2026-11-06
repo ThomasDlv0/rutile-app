@@ -37,6 +37,18 @@ pub(crate) fn reserve(input: &Path, extension: &str) -> Result<(PathBuf, File), 
     ))
 }
 
+/// Chemin à donner à [`reserve`] pour un fichier nommé `stem`, à côté de `input`.
+pub(crate) fn sibling(input: &Path, stem: &str) -> PathBuf {
+    // L'extension factice protège un nom qui contient un point : `reserve` la retire
+    input.with_file_name(format!("{stem}.x"))
+}
+
+/// Nom d'un fichier sans son extension, suivi de `suffix`.
+pub(crate) fn suffixed(input: &Path, suffix: &str) -> String {
+    let stem = input.file_stem().unwrap_or(input.as_os_str());
+    format!("{}{suffix}", stem.to_string_lossy())
+}
+
 /// Écrit le contenu sous un nom réservé par [`reserve`].
 pub(crate) fn write_unique(
     input: &Path,

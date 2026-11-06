@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { ActionsIcon } from "../ActionsIcon";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
@@ -15,11 +16,16 @@ import {
   installUpdate,
   openPermissionSettings,
   pickApp,
+  pickAppFolder,
   pickShareFolder,
   setLaunchAtLogin,
   shareChoices,
   updateSettings,
   videoSupport,
+  type AppKind,
+  type AppSlot,
+  type CustomAction,
+  type CustomWheel,
   type Settings,
   type SettingsTab,
   type SettingsView,
@@ -30,6 +36,7 @@ import {
   type VideoSupport,
   type WheelBorder,
 } from "../ipc";
+import { actionTree } from "../wheel/actions";
 import { DEFAULT_ACCENT } from "../wheel/color";
 import {
   type Mode,
@@ -39,7 +46,7 @@ import {
   colorize,
   shareIcon,
 } from "../wheel/formats";
-import { CENTER, MAX_SECTORS, SECTOR_COUNT } from "../wheel/geometry";
+import { CENTER, MAX_SECTORS, SECTOR_COUNT, isInsideHub } from "../wheel/geometry";
 import { type Point, usableSector } from "../wheel/selection";
 import { Wheel } from "../wheel/Wheel";
 import { recordShortcut } from "./accelerator";
@@ -49,6 +56,7 @@ import "./settings.css";
 type SectionId =
   | "wheels"
   | "colors"
+  | "actions"
   | "apps"
   | "share"
   | "shortcut"
@@ -62,6 +70,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "wheels", label: "Roues" },
   { id: "conversion", label: "Conversion" },
   { id: "colors", label: "Couleurs" },
+  { id: "actions", label: "Actions" },
   { id: "apps", label: "Apps" },
   { id: "share", label: "Partage" },
 ];
@@ -71,12 +80,14 @@ const MODE_LABELS: Record<Mode, string> = {
   video: "Convertisseur de vidéos",
   apps: "Applications",
   share: "Partage",
+  actions: "Actions",
 };
 
 function ModeIcon({ mode }: { mode: Mode }) {
   if (mode === "video") return <FilmIcon size={22} />;
   if (mode === "apps") return <AppsIcon size={22} />;
   if (mode === "share") return <ShareIcon size={22} />;
+  if (mode === "actions") return <ActionsIcon size={22} />;
   return <GemIcon size={22} />;
 }
 
@@ -142,13 +153,24 @@ const PREVIEW: SettingsView = {
       { id: "video", enabled: true },
       { id: "apps", enabled: true },
       { id: "share", enabled: true },
+      { id: "actions", enabled: true },
     ],
     rememberWheel: false,
     dwellMs: 1000,
     formatColors: {},
     highlightColor: null,
     wheelBorder: "light",
-    apps: [{ path: "/Applications/Finder.app", name: "Finder" }, null, null, null, null, null],
+    wheelGlass: true,
+    captureReopen: true,
+    customWheels: [],
+    apps: [
+      { path: "/Applications/Finder.app", name: "Finder", kind: "app" },
+      null,
+      null,
+      null,
+      null,
+      null,
+    ],
     share: PREVIEW_SHARE.map((view) => view && targetOf(view)),
     autoUpdate: true,
   },
@@ -159,9 +181,17 @@ const PREVIEW: SettingsView = {
   launchAtLogin: false,
   finderPermission: "granted",
   dockAccess: false,
+  nativeGlass: true,
   platform: "macos",
   version: "1.2.0",
-  apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
+  apps: [
+    { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
+    null,
+    null,
+    null,
+    null,
+    null,
+  ],
   share: PREVIEW_SHARE,
   tab: null,
 };
@@ -261,7 +291,15 @@ export function SettingsApp() {
           <ConversionTab settings={settings} error={errors.quality} change={change} />
         )}
         {tab === "apps" && <AppsTab view={view} errors={errors} change={change} />}
-        {tab === "colors" && <ColorsTab settings={settings} error={errors.colors} change={change} />}
+        {tab === "colors" && (
+          <ColorsTab
+            settings={settings}
+            nativeGlass={view.nativeGlass}
+            error={errors.colors}
+            change={change}
+          />
+        )}
+        {tab === "actions" && <ActionsTab view={view} errors={errors} change={change} />}
         {tab === "share" && <ShareTab view={view} errors={errors} change={change} />}
       </div>
     </main>
@@ -309,6 +347,7 @@ function TabIcon({ tab }: { tab: SettingsTab }) {
         <circle cx="13" cy="7" r="1.1" className="tab-icon-dot" />
       </>
     ),
+    actions: <path d="M11.4 2.6 4.3 11a.6.6 0 0 0 .5 1H9l-1 5.4 7-8.5a.6.6 0 0 0-.5-1h-4.1Z" />,
     apps: (
       <>
         <rect x="3.2" y="3.2" width="5.6" height="5.6" rx="1.6" />
@@ -501,11 +540,11 @@ function WheelsTab({
 
       <Section title="Comportement">
         <Row
-          label="Temps au centre avant de basculer"
-          hint="Pendant un glisser, entre conversion et partage."
+          label="Temps de maintien"
+          hint="Au centre pendant un glisser pour basculer entre conversion et partage, ou sur une part de la roue Actions pour ouvrir ses options."
         >
           <Slider
-            label="Temps au centre avant de basculer"
+            label="Temps de maintien"
             value={settings.dwellMs}
             min={400}
             max={2500}
@@ -644,10 +683,16 @@ function ConversionTab({
   );
 }
 
-/** Formats d'une roue de conversion, avec leur couleur par défaut. */
-const COLOR_GROUPS: { mode: "image" | "video"; title: string; formats: readonly WheelItem[] }[] = [
-  { mode: "image", title: "Images", formats: OUTPUT_FORMATS },
-  { mode: "video", title: "Vidéos", formats: VIDEO_FORMATS },
+/** Parts de la roue Actions, pour lui choisir ses couleurs. */
+const ACTION_PARTS: readonly WheelItem[] = actionTree({ custom: [], windowLayout: true });
+
+type PreviewMode = "image" | "video" | "actions";
+
+/** Roues dont on règle les couleurs, avec les couleurs par défaut de leurs parts. */
+const COLOR_GROUPS: { mode: PreviewMode; title: string; parts: readonly WheelItem[] }[] = [
+  { mode: "image", title: "Images", parts: OUTPUT_FORMATS },
+  { mode: "video", title: "Vidéos", parts: VIDEO_FORMATS },
+  { mode: "actions", title: "Actions", parts: ACTION_PARTS },
 ];
 
 /** Échelle de l'aperçu de la roue dans les réglages. */
@@ -667,10 +712,12 @@ const BORDERS: { id: WheelBorder; label: string }[] = [
 
 function ColorsTab({
   settings,
+  nativeGlass,
   error,
   change,
 }: {
   settings: Settings;
+  nativeGlass: boolean;
   error?: string;
   change: Change;
 }) {
@@ -686,7 +733,8 @@ function ColorsTab({
     () => setDraft({ colors: formatColors, highlight: highlightColor, border: wheelBorder }),
     [formatColors, highlightColor, wheelBorder],
   );
-  const [previewMode, setPreviewMode] = useState<"image" | "video">("image");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("image");
+  const group = COLOR_GROUPS.find(({ mode }) => mode === previewMode) ?? COLOR_GROUPS[0];
 
   const update = (next: ColorDraft) => {
     setDraft(next);
@@ -702,13 +750,29 @@ function ColorsTab({
     );
   };
 
-  const setFormatColor = (format: WheelItem, color: string) => {
+  const setPartColor = (part: WheelItem, color: string) => {
     const colors = { ...draft.colors };
     // Revenir à la couleur d'origine retire le choix, plutôt que de l'enregistrer
-    if (color === format.color) delete colors[format.id];
-    else colors[format.id] = color;
+    if (color === part.color) delete colors[part.id];
+    else colors[part.id] = color;
     update({ ...draft, colors });
   };
+
+  // Le sélecteur du système s'ouvre sur la part cliquée, ou le centre pour la surbrillance
+  const picker = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState<WheelItem | "highlight" | null>(null);
+  const editedColor = (target: WheelItem | "highlight") =>
+    target === "highlight"
+      ? (draft.highlight ?? DEFAULT_ACCENT)
+      : (draft.colors[target.id] ?? target.color ?? DEFAULT_ACCENT);
+  const edit = (target: WheelItem | "highlight") => {
+    setEditing(target);
+    if (!picker.current) return;
+    picker.current.value = editedColor(target);
+    picker.current.click();
+  };
+  const setHighlight = (color: string) =>
+    update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color });
 
   const customized =
     Object.keys(draft.colors).length > 0 || draft.highlight !== null || draft.border !== "light";
@@ -732,15 +796,47 @@ function ColorsTab({
           </div>
           <WheelPreview
             mode={previewMode}
+            parts={group.parts}
             colors={draft.colors}
             highlight={draft.highlight}
             border={draft.border}
+            glass={settings.wheelGlass}
+            onPart={edit}
+            onHub={() => edit("highlight")}
           />
-          <p className="row-hint">Survolez la roue pour voir la surbrillance.</p>
+          <input
+            ref={picker}
+            className="color-picker-input"
+            type="color"
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => {
+              const color = event.target.value.toLowerCase();
+              if (editing === "highlight") setHighlight(color);
+              else if (editing) setPartColor(editing, color);
+            }}
+          />
+          <p className="row-hint">
+            Cliquez sur une part pour changer sa couleur, sur le centre pour la surbrillance.
+          </p>
         </div>
       </Section>
 
-      <Section title="Contour">
+      <Section title="Matière">
+        <Row
+          label="Liquid Glass"
+          hint={
+            nativeGlass
+              ? "Le verre de macOS : il réfracte et reflète ce qu'il y a derrière la roue."
+              : "Une imitation : le vrai verre n'existe que sur macOS 26 ou plus récent."
+          }
+        >
+          <Toggle
+            checked={settings.wheelGlass}
+            label="Liquid Glass"
+            onChange={(wheelGlass) => change("colors", { wheelGlass })}
+          />
+        </Row>
         <Row label="Contour de la roue" hint="Le trait qui entoure le disque.">
           <div className="segmented" role="radiogroup" aria-label="Contour de la roue">
             {BORDERS.map(({ id, label }) => (
@@ -758,30 +854,13 @@ function ColorsTab({
         </Row>
       </Section>
 
-      {COLOR_GROUPS.map(({ mode, title, formats }) => (
-        <Section key={mode} title={title}>
-          <div className="color-grid">
-            {formats.map((format) => (
-              <ColorField
-                key={format.id}
-                label={format.label}
-                value={draft.colors[format.id] ?? format.color ?? DEFAULT_ACCENT}
-                onChange={(color) => setFormatColor(format, color)}
-              />
-            ))}
-          </div>
-        </Section>
-      ))}
-
       <Section title="Surbrillance" error={error}>
         <Row label="Part survolée" hint="Secteur éclairé et anneau autour du bouton visé.">
           <ColorField
             label="Part survolée"
             value={draft.highlight ?? DEFAULT_ACCENT}
             hideLabel
-            onChange={(color) =>
-              update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color })
-            }
+            onChange={setHighlight}
           />
         </Row>
         <Row label="Couleurs d'origine" hint="Le texte des boutons reste lisible : blanc ou foncé selon la couleur.">
@@ -825,22 +904,32 @@ function ColorField({
   );
 }
 
-/** Roue réduite, aux couleurs en cours de réglage ; le survol y fonctionne comme sur la vraie. */
+/** Roue réduite, aux couleurs en cours de réglage. Le survol y fonctionne comme sur la vraie,
+ * et un clic choisit la couleur de ce qu'il touche. */
 function WheelPreview({
   mode,
+  parts,
   colors,
   highlight,
   border,
+  glass,
+  onPart,
+  onHub,
 }: {
-  mode: "image" | "video";
+  mode: PreviewMode;
+  parts: readonly WheelItem[];
   colors: Record<string, string>;
   highlight: string | null;
   border: WheelBorder;
+  glass: boolean;
+  onPart: (part: WheelItem) => void;
+  onHub: () => void;
 }) {
   const [pointer, setPointer] = useState<Point | null>(null);
-  const items = colorize(mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS, colors);
+  const items = colorize(parts, colors);
   const highlighted = pointer && usableSector(...pointer, new Set(), items);
   const hovered = highlighted === null ? null : items[highlighted];
+  const overHub = pointer !== null && isInsideHub(...pointer);
   return (
     <div
       className="wheel-preview"
@@ -850,30 +939,241 @@ function WheelPreview({
         <Wheel
           phase="open"
           mode={mode}
-          next={null}
+          next={mode}
           items={items}
           disabled={new Set()}
           highlighted={highlighted}
           hub={
             hovered
-              ? { label: hovered.action ?? `Convertir en ${hovered.label}`, tone: "action" }
-              : null
+              ? { label: `Couleur : ${hovered.label}`, tone: "action" }
+              : overHub
+                ? { label: "Couleur de surbrillance", tone: "action" }
+                : null
           }
           work={null}
           dwelling={false}
           dwellMs={1000}
           accent={highlight}
           border={border}
+          glass={glass ? "css" : "off"}
           scale={PREVIEW_SCALE}
           onPointer={setPointer}
-          onSelect={() => {}}
+          onSelect={(index) => onPart(parts[index])}
           onOutsideClick={() => {}}
-          onToggleMode={() => {}}
+          onToggleMode={onHub}
         />
       </div>
     </div>
   );
 }
+
+const CUSTOM_KINDS: { id: CustomAction["kind"]; label: string; placeholder: string }[] = [
+  { id: "shortcut", label: "Raccourci", placeholder: "Nom dans l'app Raccourcis" },
+  { id: "command", label: "Commande", placeholder: "Commande (fichiers : $1, $2…)" },
+  { id: "url", label: "Site web", placeholder: "https://…" },
+];
+
+/** Ajout d'une action à une roue personnalisée. */
+function CustomActionForm({
+  platform,
+  onAdd,
+}: {
+  platform: string;
+  onAdd: (action: CustomAction) => void;
+}) {
+  const kinds = CUSTOM_KINDS.filter(({ id }) => id !== "shortcut" || platform === "macos");
+  const [kind, setKind] = useState(kinds[0].id);
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const url = kind === "url" ? webAddress(value) : null;
+  const ready = name.trim() !== "" && value.trim() !== "" && (kind !== "url" || url !== null);
+  return (
+    <form
+      className="custom-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!ready) return;
+        onAdd({ name: name.trim(), kind, value: url ?? value.trim() });
+        setName("");
+        setValue("");
+      }}
+    >
+      <input
+        className="text-input"
+        aria-label="Nom de l'action"
+        placeholder="Nom de l'action"
+        maxLength={40}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+      />
+      <select
+        className="text-input"
+        aria-label="Type d'action"
+        value={kind}
+        onChange={(event) => setKind(event.target.value as CustomAction["kind"])}
+      >
+        {kinds.map(({ id, label }) => (
+          <option key={id} value={id}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <input
+        className="text-input custom-form-value"
+        aria-label="Ce que lance l'action"
+        placeholder={CUSTOM_KINDS.find(({ id }) => id === kind)?.placeholder}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <button type="submit" className="shortcut-button" disabled={!ready}>
+        Ajouter
+      </button>
+    </form>
+  );
+}
+
+function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
+  const { settings } = view;
+  const wheels = settings.customWheels;
+  const setWheels = (customWheels: CustomWheel[]) => change("actions", { customWheels });
+  const replace = (index: number, wheel: CustomWheel) =>
+    setWheels(wheels.map((known, i) => (i === index ? wheel : known)));
+
+  return (
+    <>
+      <Section title="Roue Actions" error={errors.wheels}>
+        <WheelSwitch settings={settings} mode="actions" label="Afficher la roue Actions" change={change} />
+        <p className="section-note">
+          Restez une seconde sur une part pour ouvrir ses options dans une nouvelle roue ; le
+          centre ramène à la roue d'avant, comme Échap. Le temps se règle dans l'onglet Roues.
+        </p>
+      </Section>
+
+      <Section title="Capture" error={errors.actions}>
+        <Row
+          label="Rouvrir la roue après une capture"
+          hint="Pour convertir ou partager l'image tout de suite."
+        >
+          <Toggle
+            checked={settings.captureReopen}
+            label="Rouvrir la roue après une capture"
+            onChange={(captureReopen) => change("actions", { captureReopen })}
+          />
+        </Row>
+        {view.platform === "macos" && (
+          <Row
+            label="Capture et lecture du texte"
+            hint="macOS demande l'autorisation Enregistrement de l'écran, à redonner après une mise à jour."
+          >
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => void openPermissionSettings("screen")}
+            >
+              Ouvrir les réglages
+            </button>
+          </Row>
+        )}
+        {view.dockAccess !== null && (
+          <DockBadgesRow
+            allowed={view.dockAccess}
+            label="Ranger les fenêtres"
+            hint="Déplacer la fenêtre d'une autre app demande l'autorisation Accessibilité."
+          />
+        )}
+      </Section>
+
+      <Section title="Mes roues" sorting={false}>
+        {wheels.map((wheel, index) => (
+          <div className="custom-wheel" key={index}>
+            <div className="custom-wheel-head">
+              <input
+                className="text-input"
+                aria-label="Nom de la roue"
+                maxLength={30}
+                defaultValue={wheel.name}
+                onBlur={(event) => {
+                  const name = event.target.value.trim();
+                  if (name && name !== wheel.name) replace(index, { ...wheel, name });
+                }}
+              />
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setWheels(wheels.filter((_, i) => i !== index))}
+              >
+                Supprimer
+              </button>
+            </div>
+            {wheel.actions.map((action, slot) => (
+              <Row
+                key={`${slot}-${action.name}`}
+                label={action.name}
+                hint={`${CUSTOM_KINDS.find(({ id }) => id === action.kind)?.label} : ${action.value}`}
+              >
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() =>
+                    replace(index, {
+                      ...wheel,
+                      actions: wheel.actions.filter((_, i) => i !== slot),
+                    })
+                  }
+                >
+                  Retirer
+                </button>
+              </Row>
+            ))}
+            {wheel.actions.length < MAX_SECTORS && (
+              <CustomActionForm
+                platform={view.platform}
+                onAdd={(action) =>
+                  replace(index, { ...wheel, actions: [...wheel.actions, action] })
+                }
+              />
+            )}
+          </div>
+        ))}
+        {wheels.length < MAX_SECTORS && (
+          <AddRow
+            label="Créer une roue"
+            onClick={() =>
+              setWheels([...wheels, { name: `Roue ${wheels.length + 1}`, actions: [] }])
+            }
+          />
+        )}
+        <p className="section-note">
+          Vos roues s'ouvrent depuis la part « Mes roues » de la roue Actions. Une commande reçoit
+          les fichiers de la roue en arguments.
+        </p>
+      </Section>
+    </>
+  );
+}
+
+/** Adresse web complète, `https://` ajouté au besoin ; `null` si ce n'en est pas une. */
+function webAddress(text: string): string | null {
+  const value = text.trim();
+  const address = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(address);
+    return url.hostname.includes(".") ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Nom court d'un site, tiré de son adresse. */
+function siteName(address: string): string {
+  return new URL(address).hostname.replace(/^www\./, "");
+}
+
+/** Ce que devient une part qui n'ouvre pas une app. */
+const SLOT_KINDS: Record<Exclude<AppKind, "app">, string> = {
+  folder: "Dossier",
+  url: "Site web",
+};
 
 function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
@@ -889,6 +1189,20 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
     apps[slot] = picked;
     setApps(apps);
   };
+
+  // Dans la première part libre, ou une part de plus
+  const place = (picked: AppSlot) => {
+    const free = settings.apps.indexOf(null);
+    const apps = [...settings.apps];
+    apps[free >= 0 ? free : count] = picked;
+    setApps(apps);
+  };
+  const chooseFolder = async () => {
+    const picked = isTauri() ? await pickAppFolder() : null;
+    if (picked) place(picked);
+  };
+  const [site, setSite] = useState<string | null>(null);
+  const siteAddress = site === null ? null : webAddress(site);
 
   // Au-delà de six parts, retirer une app retire sa part ; sinon la part reste, vide
   const remove = (slot: number) =>
@@ -911,7 +1225,7 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
             <Row
               key={slot}
               label={app ? app.name : "Aucune application"}
-              hint={position}
+              hint={app && app.kind !== "app" ? `${SLOT_KINDS[app.kind]} · ${position}` : position}
               muted={!app}
               icon={<ItemIcon icon={app?.icon} name={app?.name} />}
               sortable={sortable.row(slot)}
@@ -929,7 +1243,35 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
           );
         })}
         {count < MAX_SECTORS && (
-          <AddRow label="Ajouter une app" onClick={() => void chooseApp(count)} />
+          <>
+            <AddRow label="Ajouter une app" onClick={() => void chooseApp(count)} />
+            <AddRow label="Ajouter un dossier" onClick={() => void chooseFolder()} />
+            {site === null ? (
+              <AddRow label="Ajouter un site web" onClick={() => setSite("")} />
+            ) : (
+              <form
+                className="custom-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!siteAddress) return;
+                  place({ path: siteAddress, name: siteName(siteAddress), kind: "url" });
+                  setSite(null);
+                }}
+              >
+                <input
+                  className="text-input custom-form-value"
+                  aria-label="Adresse du site"
+                  placeholder="exemple.fr"
+                  autoFocus
+                  value={site}
+                  onChange={(event) => setSite(event.target.value)}
+                />
+                <button type="submit" className="shortcut-button" disabled={!siteAddress}>
+                  Ajouter
+                </button>
+              </form>
+            )}
+          </>
         )}
         <p className="section-note">
           Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
@@ -949,7 +1291,15 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
 
 /** macOS : les pastilles des apps ouvertes se lisent sans autorisation ; celles que le Dock
  * garde pour les apps fermées demandent l'autorisation Accessibilité. */
-function DockBadgesRow({ allowed: initial }: { allowed: boolean }) {
+function DockBadgesRow({
+  allowed: initial,
+  label = "Pastilles des apps fermées",
+  hint = "Messages ou Mail gardent la leur dans le Dock une fois fermés ; Rutile l'y lit avec l'autorisation Accessibilité.",
+}: {
+  allowed: boolean;
+  label?: string;
+  hint?: string;
+}) {
   const [allowed, setAllowed] = useState(initial);
   // Demandée une fois : si macOS ne la propose plus, il reste les Réglages Système
   const [asked, setAsked] = useState(false);
@@ -968,10 +1318,7 @@ function DockBadgesRow({ allowed: initial }: { allowed: boolean }) {
   };
 
   return (
-    <Row
-      label="Pastilles des apps fermées"
-      hint="Messages ou Mail gardent la leur dans le Dock une fois fermés ; Rutile l'y lit avec l'autorisation Accessibilité."
-    >
+    <Row label={label} hint={hint}>
       {allowed ? (
         <span className="status" data-state="granted">
           Autorisée

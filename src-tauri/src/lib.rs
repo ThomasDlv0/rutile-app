@@ -50,8 +50,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app::wheel::wheel_ready,
             app::wheel::hide_wheel,
+            app::wheel::show_toast,
+            app::wheel::hide_toast,
             app::wheel::primary_button_pressed,
             app::wheel::pick_files,
+            app::actions::run_action,
+            app::glass::wheel_closing,
             app::convert::inspect_files,
             app::convert::convert_files,
             app::convert::convert_videos,
@@ -62,6 +66,7 @@ pub fn run() {
             app::settings::open_permission_settings,
             app::apps::wheel_config,
             app::apps::pick_app,
+            app::apps::pick_app_folder,
             app::apps::app_badges,
             app::apps::dock_badges_allowed,
             app::apps::allow_dock_badges,
@@ -81,6 +86,7 @@ pub fn run() {
             let settings = app::settings::load(app.handle());
             app::notify::setup(app.handle())?;
             app::wheel::setup(app.handle())?;
+            app::glass::apply(app.handle(), settings.wheel_glass);
             app::tray::setup(app.handle(), &settings.shortcut)?;
             app::updates::setup(app.handle());
             app::shortcut::register(app.handle(), &settings.shortcut);

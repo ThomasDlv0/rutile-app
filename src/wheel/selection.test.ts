@@ -25,7 +25,7 @@ const animation = file("chat.gif", "gif");
 const images = formatsFor("image");
 const videos = formatsFor("video");
 const apps = appItems([
-  { path: "/Applications/Signal.app", name: "Signal", icon: null },
+  { path: "/Applications/Signal.app", name: "Signal", kind: "app", icon: null },
   null,
   null,
   null,
@@ -222,7 +222,12 @@ describe("roue de partage", () => {
 });
 
 describe("appItems", () => {
-  const app = (name: string) => ({ path: `/Applications/${name}.app`, name, icon: null });
+  const app = (name: string) => ({
+    path: `/Applications/${name}.app`,
+    name,
+    kind: "app" as const,
+    icon: null,
+  });
 
   it("garde six parts au moins, et une par emplacement au-delà", () => {
     expect(appItems([app("Signal")])).toHaveLength(6);

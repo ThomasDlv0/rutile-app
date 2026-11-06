@@ -66,7 +66,7 @@ fn to_8_bits(image: &DynamicImage) -> DynamicImage {
 }
 
 /// Le JPEG n'a pas de transparence : on la remplace par un fond blanc.
-fn flatten_on_white(image: &DynamicImage) -> DynamicImage {
+pub(crate) fn flatten_on_white(image: &DynamicImage) -> DynamicImage {
     if !image.color().has_alpha() {
         return DynamicImage::ImageRgb8(image.to_rgb8());
     }

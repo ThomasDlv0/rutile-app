@@ -536,6 +536,133 @@ pub fn convert_video(
     result.map(|()| VideoConversion { output, format })
 }
 
+/// Travail sur une vidéo qui garde ses images : réduire son poids, ou retirer son son.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum VideoRework {
+    /// Même définition, qualité un peu moindre.
+    Compress,
+    /// Tient dans `megabytes` Mo, pour un envoi limité en taille.
+    Fit { megabytes: u32 },
+    /// Les images sont recopiées telles quelles.
+    Mute,
+}
+
+/// Son gardé dans une vidéo ajustée à une taille : assez pour une voix, sans trop en prendre.
+const FIT_AUDIO_KBPS: f64 = 96.0;
+/// Marge sous la taille visée, car un encodage en une passe la dépasse parfois un peu.
+const FIT_MARGIN: f64 = 0.92;
+/// Sous ce débit, une vidéo en 1080p ne ressemble plus à rien : on réduit sa définition.
+const FIT_SD_KBPS: f64 = 1500.0;
+
+/// Débit vidéo en kbit/s pour tenir dans `megabytes` Mo.
+pub fn fit_video_kbps(megabytes: u32, seconds: f64) -> f64 {
+    let total = f64::from(megabytes) * 8.0 * 1000.0 * FIT_MARGIN / seconds;
+    (total - FIT_AUDIO_KBPS).max(50.0)
+}
+
+/// Applique `rework` à `input` et écrit le résultat à côté, sans toucher à l'original.
+pub fn rework_video(
+    input: &Path,
+    rework: VideoRework,
+    mut on_progress: impl FnMut(f64),
+) -> Result<PathBuf, VideoError> {
+    let ffmpeg = ffmpeg().ok_or(VideoError::FfmpegMissing)?;
+    let probe = ffmpeg.probe(input);
+    if probe.known && !probe.has_video {
+        return Err(VideoError::NoVideo);
+    }
+    let h264 = || {
+        ffmpeg
+            .first_encoder(&["libx264", "h264_videotoolbox", "libopenh264"])
+            .ok_or(VideoError::MissingEncoder(VideoFormat::Mp4))
+    };
+    let even = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+    let (arguments, suffix, extension): (Vec<String>, String, String) = match rework {
+        VideoRework::Compress => {
+            let encoder = h264()?;
+            let quality: &[&str] = match encoder {
+                "libx264" => &["-preset", "medium", "-crf", "28"],
+                "h264_videotoolbox" => &["-q:v", "45"],
+                _ => &["-b:v", "3M"],
+            };
+            let mut args = vec![
+                "-map", "0:v:0", "-map", "0:a:0?", "-vf", even, "-c:v", encoder,
+            ];
+            args.extend_from_slice(quality);
+            args.extend_from_slice(&["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k"]);
+            args.extend_from_slice(&["-movflags", "+faststart"]);
+            (
+                args.into_iter().map(String::from).collect(),
+                "-compressee".into(),
+                "mp4".into(),
+            )
+        }
+        VideoRework::Fit { megabytes } => {
+            let encoder = h264()?;
+            let seconds = probe
+                .duration
+                .ok_or_else(|| VideoError::Failed("durée de la vidéo inconnue".into()))?;
+            let kbps = fit_video_kbps(megabytes, seconds);
+            let filter = if kbps < FIT_SD_KBPS {
+                "scale='min(854,trunc(iw/2)*2)':-2"
+            } else {
+                "scale='min(1920,trunc(iw/2)*2)':-2"
+            };
+            let bitrate = format!("{}k", kbps.round());
+            let buffer = format!("{}k", (kbps * 2.0).round());
+            let mut args: Vec<String> = [
+                "-map", "0:v:0", "-map", "0:a:0?", "-vf", filter, "-c:v", encoder, "-b:v",
+            ]
+            .map(String::from)
+            .to_vec();
+            args.push(bitrate.clone());
+            args.extend(["-maxrate".to_string(), bitrate]);
+            args.extend(["-bufsize".to_string(), buffer]);
+            args.extend(
+                [
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "96k",
+                    "-movflags",
+                    "+faststart",
+                ]
+                .map(String::from),
+            );
+            (args, format!("-{megabytes}mo"), "mp4".into())
+        }
+        VideoRework::Mute => (
+            ["-map", "0:v:0", "-c", "copy", "-an"]
+                .map(String::from)
+                .to_vec(),
+            "-sans-son".into(),
+            input
+                .extension()
+                .map(|ext| ext.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "mp4".into()),
+        ),
+    };
+
+    let target = output::sibling(input, &output::suffixed(input, &suffix));
+    let (output, reserved) = output::reserve(&target, &extension)?;
+    drop(reserved);
+    let result = run(
+        ffmpeg,
+        input,
+        &arguments,
+        &output,
+        probe.duration,
+        &mut on_progress,
+    );
+    if result.is_err() {
+        let _ = fs::remove_file(&output);
+    }
+    result.map(|()| output)
+}
+
 fn run(
     ffmpeg: &Ffmpeg,
     input: &Path,

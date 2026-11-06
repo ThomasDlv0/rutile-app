@@ -9,27 +9,44 @@ import {
   WHEEL_FILES_EVENT,
   WHEEL_OPEN_EVENT,
   WHEEL_PROGRESS_EVENT,
+  WHEEL_TOAST_EVENT,
   appBadges,
   convertFiles,
   convertVideos,
+  hideToastWindow,
   hideWheel,
   inspectFiles,
   launchApp,
   openSettings,
   pickFiles,
   primaryButtonPressed,
+  runAction,
   shareFiles,
+  showToastWindow,
   videoSupport,
+  wheelClosing,
   wheelConfig,
   wheelReady,
+  type ActionRequest,
   type FileInfo,
   type ShareTarget,
+  type Toast,
   type WheelConfig,
   type VideoSupport,
   type WheelDrag,
   type WheelFiles,
   type WheelOpened,
 } from "../ipc";
+import {
+  type ActionNode,
+  actionParent,
+  actionTree,
+  actionsAt,
+  colorizeActions,
+  disabledActions,
+  filesFor,
+  opensOnDwell,
+} from "./actions";
 import {
   ALL_MODES,
   type Mode,
@@ -63,6 +80,11 @@ const DROP_WAIT_MS = 3000;
 /** Durées identiques aux animations de styles.css. */
 const CLOSE_ANIMATION_MS = 120;
 const RESULT_VISIBLE_MS = 450;
+/** Durée d'une annonce à l'écran, puis de sa disparition, comme dans styles.css. */
+const TOAST_VISIBLE_MS = 2600;
+const TOAST_LEAVE_MS = 180;
+/** Mouvement qui réarme l'ouverture d'une sous-roue au maintien. */
+const DWELL_MOVE_PX = 14;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -72,7 +94,10 @@ const DROP_HINTS: Record<Mode, HubText | null> = {
   video: { label: "Déposez sur un format", tone: "muted" },
   apps: null,
   share: { label: "Déposez sur un partage", tone: "muted" },
+  actions: { label: "Déposez sur une action", tone: "muted" },
 };
+
+const ACTION_LABELS = { working: "En cours…", done: "Terminé" };
 
 const OPEN_LABELS = { working: "Ouverture…", done: "Ouvert" };
 /** Un service ouvre sa fenêtre (choix de l'appareil, du destinataire) ; le reste copie. */
@@ -91,8 +116,11 @@ const PREVIEW_CONFIG: WheelConfig = {
   colors: {},
   highlight: null,
   border: "light",
+  glass: "css",
+  windowLayout: true,
+  custom: [],
   apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
-    name ? { path: name, name, icon: null } : null,
+    name ? { path: name, name, kind: "app", icon: null } : null,
   ),
   share: [
     { kind: "service", id: "airdrop", name: "AirDrop", icon: null },
@@ -115,6 +143,7 @@ function itemsFor(
 ): readonly WheelItem[] {
   if (mode === "apps") return appItems(config.apps, badges);
   if (mode === "share") return shareItems(config.share);
+  if (mode === "actions") return [];
   return colorize(formatsFor(mode), config.colors);
 }
 
@@ -186,18 +215,48 @@ export function WheelApp() {
   // Pastilles de notifications des apps, comme dans le Dock
   const [badges, setBadges] = useState<(string | null)[]>(isTauri() ? [] : PREVIEW_BADGES);
 
-  const videoMissing = mode === "video" && video?.available === false;
-  const items = itemsFor(mode, config, badges);
-  const next = nextMode(config.modes, mode);
-  const shown = dragFiles ?? files;
-  const disabled = useMemo(
-    () =>
-      videoMissing
-        ? new Set<string>(formatsFor("video").map((format) => format.id))
-        : disabledFormats(shown, mode),
-    [shown, mode, videoMissing],
+  // Sous-roues ouvertes dans la roue Actions : un index par niveau
+  const [actionPath, setActionPath] = useState<number[]>([]);
+  const actionsTree = useMemo(
+    () => colorizeActions(actionTree(config), config.colors),
+    [config],
   );
+  const inActions = mode === "actions";
+  const videoMissing = mode === "video" && video?.available === false;
+  const items = inActions
+    ? actionsAt(actionsTree, actionPath)
+    : itemsFor(mode, config, badges);
+  const parent = inActions ? actionParent(actionsTree, actionPath) : null;
+  const next = parent ? null : nextMode(config.modes, mode);
+  const shown = dragFiles ?? files;
+  const disabled = useMemo(() => {
+    if (inActions) return disabledActions(items as readonly ActionNode[], shown);
+    return videoMissing
+      ? new Set<string>(formatsFor("video").map((format) => format.id))
+      : disabledFormats(shown, mode);
+  }, [shown, mode, videoMissing, inActions, items]);
   const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, items);
+  // Rester sur une part ouvre sa sous-roue. Après ouverture, il faut bouger un peu pour
+  // recommencer : sinon une sous-roue en ouvrirait une autre, sous le pointeur resté immobile
+  const dwellFrom = useRef<Point | null>(null);
+  if (
+    dwellFrom.current &&
+    pointer &&
+    Math.hypot(pointer[0] - dwellFrom.current[0], pointer[1] - dwellFrom.current[1]) >
+      DWELL_MOVE_PX
+  ) {
+    dwellFrom.current = null;
+  }
+  const keyboardPointer = useRef(false);
+  const dwellPart =
+    inActions &&
+    work === null &&
+    highlighted !== null &&
+    dwellFrom.current === null &&
+    !keyboardPointer.current &&
+    opensOnDwell(items[highlighted] as ActionNode)
+      ? highlighted
+      : null;
   // Fichier glissé maintenu au centre : bascule entre conversion et partage. Après une bascule,
   // il faut quitter le centre puis y revenir pour rebasculer
   const [dwellArmed, setDwellArmed] = useState(true);
@@ -213,8 +272,19 @@ export function WheelApp() {
       ? { label: "FFmpeg introuvable", tone: "muted", hint: video.installHint }
       : null;
   const hub =
-    hubFor(pointer, disabled, shown, dragFiles !== null, mode, items, next, dwellTarget) ??
+    hubFor(
+      pointer,
+      disabled,
+      shown,
+      dragFiles !== null,
+      mode,
+      items,
+      next,
+      dwellTarget,
+      parent !== null,
+    ) ??
     missingHint ??
+    (parent ? { label: parent.label, tone: "muted", hint: "Retour au centre" } : null) ??
     (openMode === "drop" ? DROP_HINTS[mode] : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
@@ -224,6 +294,10 @@ export function WheelApp() {
   modeRef.current = mode;
   const configRef = useRef(config);
   configRef.current = config;
+  const pointerRef = useRef(pointer);
+  pointerRef.current = pointer;
+  const actionNodesRef = useRef<readonly ActionNode[]>([]);
+  actionNodesRef.current = inActions ? (items as readonly ActionNode[]) : actionsTree;
   const busyRef = useRef(false);
   const dragOverRef = useRef(false);
   const focusedRef = useRef(false);
@@ -254,7 +328,26 @@ export function WheelApp() {
     chosenRef.current = true;
     modeRef.current = chosen;
     setMode(chosen);
+    setActionPath([]);
   }, []);
+
+  /** Ouvre la sous-roue de la part `index`. */
+  const openChildren = useCallback((index: number) => {
+    chosenRef.current = true;
+    dwellFrom.current = pointerRef.current;
+    setActionPath((path) => [...path, index]);
+  }, []);
+
+  const goBack = useCallback(() => {
+    dwellFrom.current = pointerRef.current;
+    setActionPath((path) => path.slice(0, -1));
+  }, []);
+
+  useEffect(() => {
+    if (dwellPart === null) return;
+    const timer = window.setTimeout(() => openChildren(dwellPart), config.dwellMs);
+    return () => window.clearTimeout(timer);
+  }, [dwellPart, config.dwellMs, openChildren]);
 
   useEffect(() => {
     if (!inHub) setDwellArmed(true);
@@ -281,10 +374,41 @@ export function WheelApp() {
     if (mode === "video" && video === null && isTauri()) void videoSupport().then(setVideo);
   }, [mode, video]);
 
+  // Résultat d'une action, affiché une fois la roue fermée
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [toastLeaving, setToastLeaving] = useState(false);
+  const toastTimers = useRef<number[]>([]);
+  const pendingToast = useRef<Toast | null>(null);
+
+  const clearToast = useCallback(() => {
+    toastTimers.current.forEach((timer) => window.clearTimeout(timer));
+    toastTimers.current = [];
+    pendingToast.current = null;
+    setToast(null);
+    setToastLeaving(false);
+  }, []);
+
+  const showToast = useCallback(
+    (next: Toast) => {
+      clearToast();
+      setToast(next);
+      void showToastWindow();
+      toastTimers.current = [
+        window.setTimeout(() => setToastLeaving(true), TOAST_VISIBLE_MS),
+        window.setTimeout(() => {
+          clearToast();
+          void hideToastWindow();
+        }, TOAST_VISIBLE_MS + TOAST_LEAVE_MS),
+      ];
+    },
+    [clearToast],
+  );
+
   const close = useCallback(() => {
     if (phaseRef.current !== "open") return;
     phaseRef.current = "closing";
     setPhase("closing");
+    if (isTauri()) void wheelClosing();
     closeTimer.current = window.setTimeout(() => {
       setPhase("closed");
       setPointer(null);
@@ -292,7 +416,9 @@ export function WheelApp() {
       setWork(null);
       if (isTauri()) {
         setFiles([]);
-        void hideWheel();
+        const waiting = pendingToast.current;
+        pendingToast.current = null;
+        void hideWheel().then(() => waiting && showToast(waiting));
       } else {
         // Aperçu navigateur : la roue se rouvre pour continuer à la régler
         window.setTimeout(() => {
@@ -302,7 +428,7 @@ export function WheelApp() {
         }, 400);
       }
     }, CLOSE_ANIMATION_MS);
-  }, []);
+  }, [showToast]);
 
   const convert = useCallback(
     async (targets: FileInfo[], index: number, targetMode: Mode) => {
@@ -336,11 +462,16 @@ export function WheelApp() {
   /** Action rapide depuis la part `index` (ouvrir une app, partager) : son issue s'affiche
    * brièvement au centre, puis la roue se ferme. */
   const perform = useCallback(
-    async (index: number, labels: Work["labels"], action: () => Promise<unknown>) => {
+    async (
+      index: number,
+      labels: Work["labels"],
+      action: () => Promise<unknown>,
+      progress?: number,
+    ) => {
       if (busyRef.current) return;
       const id = openId.current;
       busyRef.current = true;
-      setWork({ index, state: "working", labels });
+      setWork({ index, state: "working", labels, progress });
       let state: Work["state"] = "failed";
       try {
         await action();
@@ -388,6 +519,55 @@ export function WheelApp() {
     [close, perform],
   );
 
+  /** Clic ou dépôt sur une part de la roue Actions. */
+  const runNode = useCallback(
+    async (node: ActionNode, index: number, known: FileInfo[]) => {
+      if (busyRef.current) return;
+      if (node.goesTo) {
+        chooseMode(node.goesTo);
+        return;
+      }
+      if (node.setup) {
+        void openSettings("actions");
+        close();
+        return;
+      }
+      const { run, convert: conversion } = node;
+      if (!run && !conversion) {
+        if (node.children) openChildren(index);
+        return;
+      }
+      if (node.hides && run) {
+        // Rien de la roue ne doit rester à l'écran : elle serait capturée, ou gênerait
+        close();
+        await sleep(CLOSE_ANIMATION_MS + 60);
+        const paths = filesFor(node, known).map((file) => file.path);
+        await runAction(run, paths).catch((error) => console.error("rutile : action", error));
+        return;
+      }
+      let targets = filesFor(node, known);
+      if (node.needs && targets.length === 0) {
+        if (pickingRef.current) return;
+        pickingRef.current = true;
+        try {
+          targets = filesFor(node, await pickFiles(node.needs));
+        } finally {
+          pickingRef.current = false;
+        }
+        if (targets.length === 0) return;
+      }
+      const paths = targets.map((file) => file.path);
+      const isVideo = node.needs === "videos";
+      await perform(
+        index,
+        ACTION_LABELS,
+        () => (conversion ? convertVideos(paths, conversion) : runAction(run as ActionRequest, paths)),
+        isVideo ? 0 : undefined,
+      );
+    },
+    [chooseMode, close, openChildren, perform],
+  );
+
   const drop = useCallback(
     async (paths: string[], x: number, y: number) => {
       dropCount.current++;
@@ -398,6 +578,13 @@ export function WheelApp() {
       setDragFiles(null);
       setPointer(null);
       const dropMode = adoptMode(dropped);
+      if (dropMode === "actions") {
+        const nodes = actionNodesRef.current;
+        const index = usableSector(x, y, disabledActions(nodes, dropped), nodes);
+        if (index === null) close();
+        else await runNode(nodes[index], index, dropped);
+        return;
+      }
       if (dropMode === "apps" || dropMode === "share") {
         const config = configRef.current;
         const index = usableSector(x, y, new Set(), itemsFor(dropMode, config));
@@ -414,15 +601,21 @@ export function WheelApp() {
       if (index === null) close();
       else await convert(dropped, index, dropMode);
     },
-    [adoptMode, close, convert, openApp, shareTo],
+    [adoptMode, close, convert, openApp, runNode, shareTo],
   );
 
   /** Clic sur une part : lance l'app, convertit ou partage les fichiers connus, ou les fait
    * choisir d'abord. */
   const select = useCallback(
     async (index: number) => {
+      // En pleine fermeture, les fichiers sont déjà oubliés : le clic ouvrirait le sélecteur
+      if (phaseRef.current !== "open") return;
       if (mode === "apps") {
         await openApp(index, []);
+        return;
+      }
+      if (mode === "actions") {
+        await runNode(actionNodesRef.current[index], index, files);
         return;
       }
       const sharing = mode === "share";
@@ -455,7 +648,7 @@ export function WheelApp() {
         pickingRef.current = false;
       }
     },
-    [convert, files, mode, openApp, shareTo],
+    [convert, files, mode, openApp, runNode, shareTo],
   );
 
   // Ouverte par un secouage : la roue attend le fichier, et se ferme s'il est lâché ailleurs
@@ -521,6 +714,7 @@ export function WheelApp() {
       keep(
         await listen<WheelOpened>(WHEEL_OPEN_EVENT, ({ payload }) => {
           window.clearTimeout(closeTimer.current);
+          clearToast();
           openId.current = payload.id;
           // Une conversion encore en cours appartient à l'ouverture précédente
           busyRef.current = false;
@@ -534,6 +728,8 @@ export function WheelApp() {
           setOpenMode(payload.mode);
           setFiles([]);
           setPointer(null);
+          setActionPath([]);
+          dwellFrom.current = null;
           setWork(null);
           setOpenCount((count) => count + 1);
           phaseRef.current = "open";
@@ -542,6 +738,13 @@ export function WheelApp() {
         }),
       );
       keep(await listen(WHEEL_CLOSE_EVENT, close));
+      keep(
+        await listen<Toast>(WHEEL_TOAST_EVENT, ({ payload }) => {
+          // Roue encore ouverte (résultat au centre, puis fermeture) : l'annonce suit
+          if (phaseRef.current === "closed") showToast(payload);
+          else pendingToast.current = payload;
+        }),
+      );
       keep(await listen<WheelConfig>(WHEEL_CONFIG_EVENT, ({ payload }) => applyConfig(payload)));
       applyConfig(await wheelConfig());
       keep(
@@ -601,7 +804,7 @@ export function WheelApp() {
       cancelled = true;
       cleanups.forEach((cleanup) => cleanup());
     };
-  }, [adoptMode, applyConfig, close, closeUnlessDragging, drop, watchDrop]);
+  }, [adoptMode, applyConfig, clearToast, close, closeUnlessDragging, drop, showToast, watchDrop]);
 
   // Relues à l'ouverture de la roue des apps, puis régulièrement tant qu'elle est affichée
   useEffect(() => {
@@ -619,16 +822,20 @@ export function WheelApp() {
     };
   }, [phase, mode, openCount]);
 
-  // Échap ferme ; ↑ ↓ passent à la roue précédente ou suivante, comme un clic au centre
+  // Échap ferme, ou revient en arrière dans une sous-roue ; ↑ ↓ passent à la roue précédente
+  // ou suivante, comme un clic au centre
+  const inChildren = useRef(false);
+  inChildren.current = parent !== null;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        close();
+      if (event.key === "Escape" || event.key === "Backspace") {
+        if (inChildren.current) goBack();
+        else if (event.key === "Escape") close();
         return;
       }
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
       event.preventDefault();
-      if (busyRef.current || phaseRef.current !== "open") return;
+      if (busyRef.current || phaseRef.current !== "open" || inChildren.current) return;
       const step = event.key === "ArrowDown" ? 1 : -1;
       const target = nextMode(configRef.current.modes, modeRef.current, step);
       if (!target) return;
@@ -637,7 +844,12 @@ export function WheelApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [chooseMode, close]);
+  }, [chooseMode, close, goBack]);
+
+  const updatePointer = useCallback((point: Point | null, keyboard = false) => {
+    keyboardPointer.current = keyboard;
+    setPointer(point);
+  }, []);
 
   const wheel = (
     <Wheel
@@ -650,22 +862,46 @@ export function WheelApp() {
       highlighted={highlighted}
       hub={hub}
       work={work}
-      onPointer={setPointer}
+      onPointer={updatePointer}
       onSelect={(index) => void select(index)}
       onOutsideClick={close}
       dwelling={dwelling}
       dwellMs={config.dwellMs}
+      dwellPart={dwellPart}
+      back={parent !== null}
       accent={config.highlight}
       border={config.border}
+      glass={config.glass}
       scale={fit}
       keyboard
-      onToggleMode={() => next && chooseMode(next)}
+      onToggleMode={() => (parent ? goBack() : next && chooseMode(next))}
     />
   );
-  if (fit === 1) return wheel;
+  const notice = toast && (
+    <div className="toast" data-ok={toast.ok} data-leaving={toastLeaving} role="status">
+      <span className="toast-icon" aria-hidden="true">
+        {toast.ok ? "✓" : "!"}
+      </span>
+      <span className="toast-text">
+        <span className="toast-title">{toast.title}</span>
+        {toast.body && <span className="toast-body">{toast.body}</span>}
+      </span>
+    </div>
+  );
+  if (fit === 1) {
+    return (
+      <>
+        {wheel}
+        {notice}
+      </>
+    );
+  }
   // Les positions d'un glisser arrivent en pixels de la fenêtre, déjà ceux de la roue mise à
   // l'échelle : seuls les événements de la souris passent par `scale`
   return (
-    <div style={{ transform: `scale(${fit})`, transformOrigin: "top left" }}>{wheel}</div>
+    <div style={{ transform: `scale(${fit})`, transformOrigin: "top left" }}>
+      {wheel}
+      {notice}
+    </div>
   );
 }

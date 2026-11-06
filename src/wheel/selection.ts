@@ -14,12 +14,16 @@ const SWITCH_LABELS: Record<Mode, string> = {
   video: "Passer en vidéo",
   apps: "Passer aux apps",
   share: "Passer au partage",
+  actions: "Passer aux actions",
 };
+
+/** Les roues sans formats à griser : les apps, le partage et les actions. */
+const FREE_MODES: ReadonlySet<Mode> = new Set(["apps", "share", "actions"]);
 
 /** Le fichier peut-il être traité dans ce mode ? Un GIF animé passe aussi en vidéo, et
  * n'importe quel fichier peut s'ouvrir avec une app ou se partager. */
 export function convertible(file: FileInfo, mode: Mode): boolean {
-  if (mode === "apps" || mode === "share") return true;
+  if (FREE_MODES.has(mode)) return true;
   return mode === "image" ? file.format !== null : file.video !== null || file.format === "gif";
 }
 
@@ -36,7 +40,9 @@ function sourceFormat(file: FileInfo, mode: "image" | "video"): string | null {
 /** Formats grisés : celui d'origine, ou tous si aucun fichier n'est convertible dans ce mode.
  * Rien n'est grisé sur les roues des apps et de partage. */
 export function disabledFormats(files: FileInfo[], mode: Mode): Set<string> {
-  if (mode === "apps" || mode === "share" || files.length === 0) return new Set();
+  if (mode === "apps" || mode === "share" || mode === "actions" || files.length === 0) {
+    return new Set();
+  }
   const all = new Set<string>(formatsFor(mode).map((format) => format.id));
   if (!files.some((file) => convertible(file, mode))) return all;
   const first = sourceFormat(files[0], mode);
@@ -145,14 +151,16 @@ export function hubFor(
   items: readonly WheelItem[],
   next: Mode | null,
   dwellTarget: Mode | null = null,
+  back = false,
 ): HubText | null {
   if (pointer) {
     const index = sectorAt(...pointer, items.length);
     if (index !== null) {
       const item = items[index];
       if (!disabled.has(item.id)) {
-        return { label: itemAction(item, dragging, mode), tone: "action" };
+        return { label: itemAction(item, dragging, mode), tone: "action", hint: item.hint };
       }
+      if (mode === "actions") return { label: "Pas pour ces fichiers", tone: "muted" };
       const nothingConvertible = disabled.size === items.length;
       return {
         label: nothingConvertible ? "Format non pris en charge" : `Déjà en ${item.label}`,
@@ -165,6 +173,7 @@ export function hubFor(
         return { label, tone: "action", hint: "Relâchez pour annuler" };
       }
       if (dragging) return { label: "Relâcher ici pour annuler", tone: "muted" };
+      if (back) return { label: "Retour", tone: "action" };
       if (next) return { label: SWITCH_LABELS[next], tone: "action" };
     }
   }

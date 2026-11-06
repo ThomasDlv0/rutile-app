@@ -5,10 +5,15 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use tauri::{AppHandle, Manager, Runtime};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::{Action as Button, ActionType, NotificationExt};
 use tauri_plugin_opener::OpenerExt;
 
+use super::wheel::WHEEL_LABEL;
+
+/// Résultat d'une action à afficher, reçu par la page de la roue.
+const TOAST_EVENT: &str = "wheel://toast";
 const CONVERTED: &str = "converted";
 const REVEAL: &str = "reveal";
 const SETTINGS: &str = "settings";
@@ -26,6 +31,26 @@ pub enum Action {
     /// « Ouvrir les réglages » : ouvre une page des réglages du système (macOS seulement).
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenUrl(String),
+}
+
+/// Résultat affiché par Rutile lui-même, à côté du curseur : les notifications peuvent être
+/// coupées dans les réglages du système, et l'utilisateur ne saurait pas que c'est fait.
+#[derive(Clone, Serialize)]
+struct Toast<'a> {
+    title: &'a str,
+    body: &'a str,
+    ok: bool,
+}
+
+/// Annonce le résultat d'une action demandée sur la roue : à l'écran, et par une notification.
+pub fn announce<R: Runtime>(app: &AppHandle<R>, message: Message, ok: bool) {
+    let toast = Toast {
+        title: &message.title,
+        body: &message.body,
+        ok,
+    };
+    let _ = app.emit_to(WHEEL_LABEL, TOAST_EVENT, toast);
+    show(app, message);
 }
 
 pub struct Message {

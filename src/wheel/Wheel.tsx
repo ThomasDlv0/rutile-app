@@ -1,9 +1,11 @@
 import { useEffect, useRef, type CSSProperties, type MouseEvent } from "react";
+import { ActionsIcon } from "../ActionsIcon";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
 import { ShareIcon } from "../ShareIcon";
-import type { WheelBorder } from "../ipc";
+import type { WheelBorder, WheelConfig } from "../ipc";
+import { ActionGlyph } from "./ActionGlyph";
 import type { Mode, WheelItem } from "./formats";
 import {
   BUTTON_RADIUS,
@@ -48,14 +50,20 @@ interface WheelProps {
   /** Fichier maintenu au centre : un anneau se remplit pendant `dwellMs` avant la bascule. */
   dwelling: boolean;
   dwellMs: number;
+  /** Part sur laquelle on reste : son anneau se remplit avant d'ouvrir sa sous-roue. */
+  dwellPart?: number | null;
+  /** Sous-roue ouverte : le centre ramène à la roue d'avant. */
+  back?: boolean;
   /** Couleur de la part survolée, choisie dans les réglages ; le bleu d'origine sinon. */
   accent?: string | null;
   border?: WheelBorder;
+  glass?: WheelConfig["glass"];
   /** Échelle d'affichage, pour l'aperçu réduit des réglages. */
   scale?: number;
   /** La roue répond au clavier de toute la fenêtre (pas l'aperçu des réglages). */
   keyboard?: boolean;
-  onPointer: (point: Point | null) => void;
+  /** `keyboard` : la part est choisie au clavier, pas pointée. */
+  onPointer: (point: Point | null, keyboard?: boolean) => void;
   onSelect: (index: number) => void;
   onOutsideClick: () => void;
   /** Clic au centre : passe à la roue suivante. */
@@ -67,22 +75,25 @@ const MODE_NAMES: Record<Mode, string> = {
   video: "Vidéo",
   apps: "Apps",
   share: "Partage",
+  actions: "Actions",
 };
 
 function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
   if (mode === "video") return <FilmIcon size={size} />;
   if (mode === "apps") return <AppsIcon size={size} />;
   if (mode === "share") return <ShareIcon size={size} />;
+  if (mode === "actions") return <ActionsIcon size={size} />;
   return <GemIcon size={size} />;
 }
 
 /** Roues dont les parts portent un nom (app, destination) plutôt qu'un format. */
-const NAMED_MODES: ReadonlySet<Mode> = new Set(["apps", "share"]);
+const NAMED_MODES: ReadonlySet<Mode> = new Set(["apps", "share", "actions"]);
 
 /** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. Une app
  * garde sa pastille de notifications, comme dans le Dock. */
 function ItemContent({ item }: { item: WheelItem }) {
   const badge = item.badge && <span className="app-badge">{item.badge}</span>;
+  if (item.glyph) return <ActionGlyph name={item.glyph} />;
   if (item.icon) {
     return (
       <>
@@ -210,8 +221,11 @@ export function Wheel({
   work,
   dwelling,
   dwellMs,
+  dwellPart = null,
+  back = false,
   accent,
   border = "light",
+  glass = "off",
   scale = 1,
   keyboard = false,
   onPointer,
@@ -274,6 +288,7 @@ export function Wheel({
       className="wheel-root"
       style={colors}
       data-border={border}
+      data-glass={glass}
       data-busy={busy}
       onPointerMove={busy ? undefined : (event) => onPointer(localPoint(event, scale))}
       onPointerLeave={busy ? undefined : () => onPointer(null)}
@@ -298,8 +313,18 @@ export function Wheel({
               <stop offset={HUB_RADIUS / DISK_RADIUS} className="wedge-stop-inner" />
               <stop offset="1" className="wedge-stop-outer" />
             </radialGradient>
+            <linearGradient id="glass-rim" x1="0.2" y1="0" x2="0.8" y2="1">
+              <stop offset="0" stopColor="#ffffff" stopOpacity="0.75" />
+              <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.12" />
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0.4" />
+            </linearGradient>
+            <radialGradient id="glass-sheen" cx="0.5" cy="0.08" r="0.75">
+              <stop offset="0" stopColor="#ffffff" stopOpacity="0.2" />
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+            </radialGradient>
           </defs>
           <circle className="disk" cx={CENTER} cy={CENTER} r={DISK_RADIUS - 0.75} />
+          <circle className="disk-sheen" cx={CENTER} cy={CENTER} r={DISK_RADIUS - 2} />
           <path
             className="wedge"
             d={sectorPath(0, count)}
@@ -336,13 +361,15 @@ export function Wheel({
               type="button"
               className="format-button"
               data-kind={
-                format.icon
-                  ? "icon"
-                  : format.empty
-                    ? "add"
-                    : NAMED_MODES.has(mode)
-                      ? "name"
-                      : "format"
+                format.glyph
+                  ? "format"
+                  : format.icon
+                    ? "icon"
+                    : format.empty
+                      ? "add"
+                      : NAMED_MODES.has(mode)
+                        ? "name"
+                        : "format"
               }
               style={style}
               disabled={isDisabled || busy}
@@ -355,11 +382,21 @@ export function Wheel({
                   : (format.action ?? `Convertir en ${format.label}`) +
                     (format.badge ? `, ${format.badge} notification(s)` : "")
               }
-              onFocus={() => onPointer(buttonCenter(index, count))}
+              onFocus={() => onPointer(buttonCenter(index, count), true)}
               onBlur={() => onPointer(null)}
               onClick={() => onSelect(index)}
             >
               <ItemContent item={format} />
+              {dwellPart === index && (
+                <svg
+                  className="part-dwell"
+                  viewBox="0 0 66 66"
+                  aria-hidden="true"
+                  style={{ "--dwell-ms": `${dwellMs}ms` } as CSSProperties}
+                >
+                  <circle cx="33" cy="33" r="31" />
+                </svg>
+              )}
             </button>
           );
         })}
@@ -374,7 +411,7 @@ export function Wheel({
             <circle cx="52" cy="52" r="50" />
           </svg>
         )}
-        {busy || !next ? (
+        {busy || (!next && !back) ? (
           <div className="hub" title={hub?.title} aria-live="polite">
             <HubContent hub={hub} work={work} mode={mode} />
           </div>
@@ -383,7 +420,7 @@ export function Wheel({
             type="button"
             className="hub hub-toggle"
             title={hub?.title}
-            aria-label={`Passer à la roue ${MODE_NAMES[next]}`}
+            aria-label={next && !back ? `Passer à la roue ${MODE_NAMES[next]}` : "Revenir à la roue d'avant"}
             onClick={onToggleMode}
           >
             <HubContent hub={hub} work={work} mode={mode} />

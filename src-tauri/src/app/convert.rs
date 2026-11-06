@@ -12,7 +12,7 @@ use super::settings;
 use super::wheel::WHEEL_LABEL;
 
 /// Avancement d'une conversion vidéo, de 0 à 1, pour le centre de la roue.
-const PROGRESS_EVENT: &str = "wheel://progress";
+pub const PROGRESS_EVENT: &str = "wheel://progress";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,7 +73,7 @@ pub async fn convert_files<R: Runtime>(
         tauri::async_runtime::spawn_blocking(move || Report::images(&paths, format, &quality))
             .await
             .map_err(|err| err.to_string())?;
-    notify::show(&app, report.message());
+    notify::announce(&app, report.message(), !report.converted.is_empty());
     Ok(Outcome::from(&report))
 }
 
@@ -99,7 +99,7 @@ pub async fn convert_videos<R: Runtime>(
     })
     .await
     .map_err(|err| err.to_string())?;
-    notify::show(&app, report.message());
+    notify::announce(&app, report.message(), !report.converted.is_empty());
     Ok(Outcome::from(&report))
 }
 

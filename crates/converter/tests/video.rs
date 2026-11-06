@@ -199,3 +199,39 @@ fn un_autre_format_deguise_en_video_est_refuse() {
     );
     assert!(!dir.path().join("image.mp4").exists());
 }
+
+#[test]
+fn compresser_et_retirer_le_son_gardent_l_original() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(sample) = source(dir.path(), true) else {
+        eprintln!("FFmpeg absent : test ignoré");
+        return;
+    };
+    let compressed = video::rework_video(&sample, video::VideoRework::Compress, |_| {}).unwrap();
+    assert_eq!(compressed.file_name().unwrap(), "clip-compressee.mp4");
+    let muted = video::rework_video(&sample, video::VideoRework::Mute, |_| {}).unwrap();
+    assert_eq!(muted.file_name().unwrap(), "clip-sans-son.mkv");
+    assert_eq!(streams(&muted).0, ["video"]);
+    assert!(sample.is_file());
+}
+
+#[test]
+fn une_taille_cible_tient_dans_la_limite() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(sample) = source(dir.path(), true) else {
+        eprintln!("FFmpeg absent : test ignoré");
+        return;
+    };
+    let fit = video::VideoRework::Fit { megabytes: 1 };
+    let output = video::rework_video(&sample, fit, |_| {}).unwrap();
+    assert_eq!(output.file_name().unwrap(), "clip-1mo.mp4");
+    assert!(std::fs::metadata(&output).unwrap().len() <= 1_000_000);
+}
+
+#[test]
+fn le_debit_cible_laisse_de_la_place_au_son() {
+    // 10 Mo pour 80 s : 1 000 kbit/s en tout, moins la marge et le son
+    let kbps = video::fit_video_kbps(10, 80.0);
+    assert!((kbps - 824.0).abs() < 1.0, "{kbps}");
+    assert!(video::fit_video_kbps(1, 100_000.0) >= 50.0);
+}
