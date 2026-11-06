@@ -183,7 +183,7 @@ const PREVIEW: SettingsView = {
   dockAccess: false,
   nativeGlass: true,
   platform: "macos",
-  version: "1.2.0",
+  version: "1.3.0",
   apps: [
     { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
     null,

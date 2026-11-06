@@ -315,3 +315,43 @@ pub fn pick_color(done: impl FnOnce(Option<[u8; 3]>) + Send + 'static) {
         done(PICKED.lock().unwrap().take().flatten());
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use super::*;
+
+    /// PNG blanc avec du texte, dessiné par .NET.
+    fn sample(path: &Path) -> bool {
+        let script = format!(
+            "Add-Type -AssemblyName System.Drawing; \
+             $bitmap = New-Object System.Drawing.Bitmap 900, 200; \
+             $graphics = [System.Drawing.Graphics]::FromImage($bitmap); \
+             $graphics.Clear([System.Drawing.Color]::White); \
+             $font = New-Object System.Drawing.Font 'Arial', 48; \
+             $graphics.DrawString('Bonjour Rutile', $font, [System.Drawing.Brushes]::Black, 40, 50); \
+             $bitmap.Save('{}')",
+            path.display()
+        );
+        Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .status()
+            .is_ok_and(|status| status.success())
+            && path.is_file()
+    }
+
+    #[test]
+    fn le_moteur_de_windows_lit_le_texte_d_une_image() {
+        let path = std::env::temp_dir().join(format!("rutile-ocr-{}.png", std::process::id()));
+        assert!(sample(&path), "image de test impossible à créer");
+        let read = read_text(&path);
+        let _ = std::fs::remove_file(&path);
+        match read {
+            Ok(text) => assert!(text.contains("Bonjour"), "texte lu : {text:?}"),
+            // Une machine sans langue de reconnaissance ne dit rien du code
+            Err(err) if err.contains("langue") => eprintln!("{err} Test ignoré."),
+            Err(err) => panic!("lecture impossible : {err}"),
+        }
+    }
+}
