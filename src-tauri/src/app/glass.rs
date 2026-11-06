@@ -1,7 +1,9 @@
 //! Le disque de la roue en vrai Liquid Glass, sur les versions de macOS qui l'ont. Ailleurs,
 //! la page dessine une imitation : aucun autre système ne donne accès à ce verre.
 
-use tauri::{AppHandle, Manager, Runtime};
+#[cfg(target_os = "macos")]
+use tauri::Manager;
+use tauri::{AppHandle, Runtime};
 
 /// Le vrai verre existe-t-il sur ce système ?
 pub fn available() -> bool {
