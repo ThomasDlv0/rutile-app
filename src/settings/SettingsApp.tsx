@@ -160,7 +160,7 @@ const PREVIEW: SettingsView = {
   finderPermission: "granted",
   dockAccess: false,
   platform: "macos",
-  version: "1.1.0",
+  version: "1.2.0",
   apps: [{ path: "/Applications/Finder.app", name: "Finder", icon: null }, null, null, null, null, null],
   share: PREVIEW_SHARE,
   tab: null,
