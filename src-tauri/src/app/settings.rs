@@ -42,6 +42,12 @@ const COLORED_FORMATS: [&str; 21] = [
 ];
 /// Roues personnalisées, et actions par roue : une part chacune.
 const MAX_CUSTOM: usize = 10;
+/// Parts d'une liste réordonnable de la roue Actions, et longueur de leur identifiant.
+const MAX_PARTS: usize = 40;
+const MAX_PART_ID: usize = 40;
+/// Extensions qui limitent une roue personnalisée à certains fichiers.
+const MAX_EXTENSIONS: usize = 20;
+const MAX_EXTENSION_LEN: usize = 10;
 /// Temps à passer au centre, un fichier glissé, avant de basculer entre conversion et partage.
 const DEFAULT_DWELL_MS: u32 = 1000;
 const DWELL_RANGE_MS: (u32, u32) = (400, 2500);
@@ -107,6 +113,109 @@ pub struct CustomAction {
 pub struct CustomWheel {
     pub name: String,
     pub actions: Vec<CustomAction>,
+    /// Extensions (`pdf`, `docx`…) des fichiers pour lesquels la roue apparaît ; vide, elle
+    /// apparaît pour tous.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+}
+
+/// Part de la roue Actions, ou action proposée pour un type de fichier, à sa place dans la
+/// liste. L'interface connaît la liste complète : une part absente s'ajoute à la fin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartEntry {
+    pub id: String,
+    pub enabled: bool,
+}
+
+/// Roue qui s'ouvre d'abord quand arrive un fichier : secoué, glissé ou sélectionné.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FirstWheel {
+    /// Le convertisseur d'images ou de vidéos.
+    Convert,
+    Actions,
+    Share,
+    Apps,
+    /// La première roue de la liste, comme sans fichier. Une valeur inconnue se lit comme elle.
+    #[default]
+    #[serde(other)]
+    Usual,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileWheel {
+    pub first: FirstWheel,
+    /// Actions de la roue Actions pour ces fichiers, dans l'ordre des parts.
+    pub parts: Vec<PartEntry>,
+}
+
+impl FileWheel {
+    fn opening(first: FirstWheel) -> Self {
+        FileWheel {
+            first,
+            parts: Vec::new(),
+        }
+    }
+}
+
+/// Par type de fichier : la roue ouverte d'abord, et les actions proposées.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FileWheels {
+    pub images: FileWheel,
+    pub videos: FileWheel,
+    pub pdfs: FileWheel,
+    pub archives: FileWheel,
+    /// Tout le reste, et les mélanges de types.
+    pub others: FileWheel,
+}
+
+impl Default for FileWheels {
+    /// Images et vidéos vont d'abord au convertisseur, le reste à la roue Actions.
+    fn default() -> Self {
+        FileWheels {
+            images: FileWheel::opening(FirstWheel::Convert),
+            videos: FileWheel::opening(FirstWheel::Convert),
+            pdfs: FileWheel::opening(FirstWheel::Actions),
+            archives: FileWheel::opening(FirstWheel::Actions),
+            others: FileWheel::opening(FirstWheel::Actions),
+        }
+    }
+}
+
+/// Chaque part une seule fois, sous un identifiant plausible.
+fn sanitized_parts(parts: Vec<PartEntry>) -> Vec<PartEntry> {
+    let mut kept: Vec<PartEntry> = Vec::new();
+    for part in parts {
+        let plausible = !part.id.is_empty()
+            && part.id.len() <= MAX_PART_ID
+            && part
+                .id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if plausible && !kept.iter().any(|known| known.id == part.id) {
+            kept.push(part);
+        }
+    }
+    kept.truncate(MAX_PARTS);
+    kept
+}
+
+/// `.PDF` → `pdf` ; seulement lettres et chiffres, chaque extension une fois.
+fn sanitized_extensions(extensions: Vec<String>) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::new();
+    for extension in extensions {
+        let extension = extension.trim().trim_start_matches('.').to_lowercase();
+        let plausible = !extension.is_empty()
+            && extension.len() <= MAX_EXTENSION_LEN
+            && extension.chars().all(char::is_alphanumeric);
+        if plausible && !kept.contains(&extension) {
+            kept.push(extension);
+        }
+    }
+    kept.truncate(MAX_EXTENSIONS);
+    kept
 }
 
 /// Seules les adresses web s'ouvrent : pas de `file:` ni de `javascript:` depuis la roue.
@@ -147,6 +256,10 @@ pub struct Settings {
     pub capture_reopen: bool,
     /// Roues faites par l'utilisateur.
     pub custom_wheels: Vec<CustomWheel>,
+    /// Ordre des parts de la roue Actions, et parts affichées ou non.
+    pub action_parts: Vec<PartEntry>,
+    /// Roue ouverte d'abord et actions proposées, selon le type des fichiers.
+    pub file_wheels: FileWheels,
     /// Une app (ou rien) par part, dans le sens horaire depuis le haut.
     pub apps: Vec<Option<AppSlot>>,
     /// Une destination (ou rien) par part. Vide tant que la roue de partage n'a jamais été
@@ -178,6 +291,8 @@ impl Default for Settings {
             wheel_glass: true,
             capture_reopen: true,
             custom_wheels: Vec::new(),
+            action_parts: Vec::new(),
+            file_wheels: FileWheels::default(),
             apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
             auto_update: true,
@@ -230,6 +345,22 @@ impl Settings {
                     && !action.value.trim().is_empty()
                     && (action.kind != CustomKind::Url || web_address(&action.value))
             });
+            wheel.extensions = sanitized_extensions(std::mem::take(&mut wheel.extensions));
+        }
+        self.action_parts = sanitized_parts(std::mem::take(&mut self.action_parts));
+        let files = &mut self.file_wheels;
+        for (wheel, convertible) in [
+            (&mut files.images, true),
+            (&mut files.videos, true),
+            (&mut files.pdfs, false),
+            (&mut files.archives, false),
+            (&mut files.others, false),
+        ] {
+            wheel.parts = sanitized_parts(std::mem::take(&mut wheel.parts));
+            // Aucun convertisseur pour ces fichiers : la roue Actions les attend
+            if wheel.first == FirstWheel::Convert && !convertible {
+                wheel.first = FirstWheel::Actions;
+            }
         }
         // Vide : les suggestions du premier lancement le rempliront
         if !self.share.is_empty() {
@@ -425,6 +556,8 @@ pub fn update_settings<R: Runtime>(
         || applied.wheel_border != previous.wheel_border
         || applied.wheel_glass != previous.wheel_glass
         || applied.custom_wheels != previous.custom_wheels
+        || applied.action_parts != previous.action_parts
+        || applied.file_wheels != previous.file_wheels
         || applied.apps != previous.apps
         || applied.share != previous.share
     {
@@ -561,6 +694,7 @@ mod tests {
             ],
             custom_wheels: vec![CustomWheel {
                 name: "Test".into(),
+                extensions: Vec::new(),
                 actions: vec![
                     CustomAction {
                         name: "Bon".into(),
@@ -683,6 +817,40 @@ mod tests {
         assert_eq!(settings.shortcut, shortcut::DEFAULT_SHORTCUT);
         assert_eq!(settings.shake_sensitivity, 10);
         assert_eq!(settings.jpeg_quality, 1);
+    }
+
+    #[test]
+    fn images_et_videos_vont_d_abord_au_convertisseur() {
+        let settings: Settings = serde_json::from_str(r#"{ "jpegQuality": 75 }"#).unwrap();
+        let files = settings.file_wheels;
+        assert_eq!(files.images.first, FirstWheel::Convert);
+        assert_eq!(files.videos.first, FirstWheel::Convert);
+        assert_eq!(files.pdfs.first, FirstWheel::Actions);
+        assert_eq!(files.others.first, FirstWheel::Actions);
+    }
+
+    #[test]
+    fn les_listes_d_actions_sont_nettoyees() {
+        let part = |id: &str| PartEntry {
+            id: id.into(),
+            enabled: true,
+        };
+        let mut settings: Settings = serde_json::from_str(
+            r#"{ "fileWheels": { "pdfs": { "first": "convert" }, "others": { "first": "plus-tard" } } }"#,
+        )
+        .unwrap();
+        assert_eq!(settings.file_wheels.images.first, FirstWheel::Convert);
+        settings.action_parts = vec![part("action-text"), part("action-text"), part("<script>")];
+        settings.custom_wheels = vec![CustomWheel {
+            name: " Docs ".into(),
+            actions: Vec::new(),
+            extensions: vec![".PDF".into(), "pdf".into(), "docx".into(), "a b".into()],
+        }];
+        let settings = settings.sanitized();
+        assert_eq!(settings.action_parts, [part("action-text")]);
+        assert_eq!(settings.file_wheels.pdfs.first, FirstWheel::Actions);
+        assert_eq!(settings.file_wheels.others.first, FirstWheel::Usual);
+        assert_eq!(settings.custom_wheels[0].extensions, ["pdf", "docx"]);
     }
 
     #[test]

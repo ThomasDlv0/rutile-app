@@ -4,15 +4,15 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Cursor};
+use std::io::{self, BufReader, BufWriter, Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local};
 use image::{ColorType, ImageDecoder, ImageReader, metadata::Orientation};
 use lopdf::{Document, Object, ObjectId, Stream, dictionary};
 use serde::{Deserialize, Serialize};
-use zip::CompressionMethod;
 use zip::write::{SimpleFileOptions, ZipWriter};
+use zip::{CompressionMethod, ZipArchive};
 
 use crate::encode::flatten_on_white;
 use crate::{ConvertError, InputFormat, decode, output};
@@ -21,6 +21,21 @@ use crate::{ConvertError, InputFormat, decode, output};
 const PDF_POINTS_PER_PIXEL: f32 = 72.0 / 150.0;
 /// Fichiers que macOS laisse dans les dossiers, sans intérêt dans une archive.
 const IGNORED_IN_ARCHIVE: [&str; 2] = [".DS_Store", "Thumbs.db"];
+/// Dossier de métadonnées que macOS ajoute à ses archives.
+const MACOS_ARCHIVE_EXTRAS: &str = "__MACOSX";
+/// Au-delà, une archive est sans doute piégée (bombe de décompression).
+const MAX_EXTRACTED_BYTES: u64 = 16 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 100_000;
+/// Ligatures des PDF, rendues lettre par lettre pour que le texte copié se cherche.
+const LIGATURES: [(char, &str); 7] = [
+    ('ﬀ', "ff"),
+    ('ﬁ', "fi"),
+    ('ﬂ', "fl"),
+    ('ﬃ', "ffi"),
+    ('ﬄ', "ffl"),
+    ('ﬅ', "st"),
+    ('ﬆ', "st"),
+];
 
 /// Compare deux noms comme un humain : « photo 2 » avant « photo 10 », sans tenir compte de
 /// la casse.
@@ -156,6 +171,143 @@ fn add_to_zip<W: io::Write + io::Seek>(
     Ok(())
 }
 
+/// Entrée d'une archive à décompresser.
+struct Entry {
+    index: usize,
+    path: PathBuf,
+    is_dir: bool,
+    mode: Option<u32>,
+}
+
+/// Décompresse un ZIP à côté de lui, dans un dossier à son nom. Une archive qui ne contient
+/// qu'un dossier le redonne tel quel, comme l'Utilitaire d'archive.
+pub fn extract_zip(path: &Path) -> Result<PathBuf, ConvertError> {
+    let read_error = |source| ConvertError::Read {
+        path: path.to_path_buf(),
+        source,
+    };
+    let bad = |err: zip::result::ZipError| ConvertError::BadArchive(err.to_string());
+    let file = File::open(path).map_err(read_error)?;
+    let mut archive = ZipArchive::new(BufReader::new(file)).map_err(bad)?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(ConvertError::ArchiveTooLarge);
+    }
+
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index_raw(index).map_err(bad)?;
+        // Un nom en `../` ou absolu sortirait du dossier, un lien pourrait y mener : écartés
+        let Some(name) = entry.enclosed_name() else {
+            continue;
+        };
+        let extra = name
+            .components()
+            .next()
+            .is_some_and(|first| first.as_os_str() == MACOS_ARCHIVE_EXTRAS)
+            || name
+                .file_name()
+                .is_some_and(|file| IGNORED_IN_ARCHIVE.iter().any(|ignored| file == *ignored));
+        if extra || entry.is_symlink() || name.as_os_str().is_empty() {
+            continue;
+        }
+        if entry.encrypted() {
+            return Err(ConvertError::ProtectedArchive);
+        }
+        entries.push(Entry {
+            index,
+            path: name,
+            is_dir: entry.is_dir(),
+            mode: entry.unix_mode(),
+        });
+    }
+    if entries.iter().all(|entry| entry.is_dir) {
+        return Err(ConvertError::EmptyArchive);
+    }
+
+    // Un seul dossier à la racine : il prend sa place à côté de l'archive
+    let first = |entry: &Entry| {
+        entry
+            .path
+            .components()
+            .next()
+            .map(|c| c.as_os_str().to_owned())
+    };
+    let root = first(&entries[0]);
+    let single_folder = root.is_some()
+        && entries.iter().all(|entry| first(entry) == root)
+        && entries
+            .iter()
+            .any(|entry| entry.is_dir || entry.path.components().count() > 1);
+    let (target, strip) = match (single_folder, root) {
+        (true, Some(root)) => (path.with_file_name(&root), Some(PathBuf::from(root))),
+        _ => (path.with_file_name(output::suffixed(path, "")), None),
+    };
+    let output = output::reserve_dir(&target)?;
+    let result = write_entries(&mut archive, &entries, strip.as_deref(), &output);
+    if result.is_err() {
+        // Le dossier vient d'être créé : il ne contient que ce que l'on y a écrit
+        let _ = fs::remove_dir_all(&output);
+    }
+    result.map(|()| output)
+}
+
+fn write_entries<R: Read + io::Seek>(
+    archive: &mut ZipArchive<R>,
+    entries: &[Entry],
+    strip: Option<&Path>,
+    output: &Path,
+) -> Result<(), ConvertError> {
+    let write_error = |source| ConvertError::Write {
+        dir: output.to_path_buf(),
+        source,
+    };
+    let mut written = 0u64;
+    for entry in entries {
+        let relative = match strip {
+            Some(root) => entry.path.strip_prefix(root).unwrap_or(&entry.path),
+            None => &entry.path,
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let target = output.join(relative);
+        if entry.is_dir {
+            fs::create_dir_all(&target).map_err(write_error)?;
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(write_error)?;
+        }
+        // Un nom en double dans l'archive : le premier reste
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(file) => file,
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(write_error(err)),
+        };
+        let mut content = archive
+            .by_index(entry.index)
+            .map_err(|err| ConvertError::BadArchive(err.to_string()))?;
+        let room = MAX_EXTRACTED_BYTES - written;
+        written += io::copy(&mut (&mut content).take(room + 1), &mut file).map_err(write_error)?;
+        if written > MAX_EXTRACTED_BYTES {
+            return Err(ConvertError::ArchiveTooLarge);
+        }
+        // Un programme reste exécutable, sans droits d'écriture pour les autres
+        #[cfg(unix)]
+        if let Some(mode) = entry.mode {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755));
+        }
+        #[cfg(not(unix))]
+        let _ = entry.mode;
+    }
+    Ok(())
+}
+
 /// Écrit un PDF sous un nom réservé.
 fn save_pdf(document: &mut Document, target: &Path) -> Result<PathBuf, ConvertError> {
     let (output, file) = output::reserve(target, "pdf")?;
@@ -286,6 +438,46 @@ fn page_with_inherited(document: &Document, id: ObjectId) -> Option<lopdf::Dicti
         parent = node.get(b"Parent").and_then(Object::as_reference).ok();
     }
     Some(page)
+}
+
+/// Texte des PDF, dans l'ordre de leurs noms ; vide pour un PDF fait d'images (scanné).
+pub fn pdf_text(paths: &[PathBuf]) -> Result<String, ConvertError> {
+    let mut texts = Vec::new();
+    for path in sorted(paths) {
+        let document =
+            Document::load_mem(&read(&path)?).map_err(|err| ConvertError::Pdf(err.to_string()))?;
+        if document.is_encrypted() {
+            return Err(ConvertError::ProtectedPdf);
+        }
+        let pages: Vec<u32> = document.get_pages().into_keys().collect();
+        let text = document
+            .extract_text(&pages)
+            .map_err(|err| ConvertError::Pdf(err.to_string()))?;
+        texts.push(tidy_text(&text));
+    }
+    Ok(texts
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n"))
+}
+
+/// Lignes sans espaces au bout, ligatures défaites, au plus une ligne vide d'affilée.
+fn tidy_text(text: &str) -> String {
+    let mut tidy = String::new();
+    let mut blank = 0;
+    for line in text.lines() {
+        let mut line = line.trim_end().to_string();
+        for (ligature, letters) in LIGATURES {
+            line = line.replace(ligature, letters);
+        }
+        blank = if line.is_empty() { blank + 1 } else { 0 };
+        if blank < 2 {
+            tidy.push_str(&line);
+            tidy.push('\n');
+        }
+    }
+    tidy.trim().to_string()
 }
 
 /// Fusionne des PDF dans l'ordre de leurs noms, à côté du premier.
@@ -511,5 +703,11 @@ mod tests {
         assert_eq!(clean_stem("Été à Noël (2026)"), "Ete-a-Noel-2026");
         assert_eq!(clean_stem("œuvre  n°1"), "oeuvre-n-1");
         assert_eq!(clean_stem("???"), "fichier");
+    }
+
+    #[test]
+    fn le_texte_d_un_pdf_se_copie_sans_ligatures_ni_vides() {
+        let text = "Merci de votre conﬁance.   \n\n\n\nAﬄuence  \n";
+        assert_eq!(tidy_text(text), "Merci de votre confiance.\n\nAffluence");
     }
 }

@@ -367,11 +367,11 @@ html.settings #root {
   outline-offset: 1px;
 }
 
-.settings-card[data-sorting="true"] .settings-row {
+[data-sorting="true"] .settings-row {
   transition: transform 160ms ease-out;
 }
 
-.settings-card[data-sorting="true"] .settings-row[data-dragging="true"] {
+[data-sorting="true"] .settings-row[data-dragging="true"] {
   position: relative;
   z-index: 2;
   border-radius: 10px;
@@ -783,4 +783,35 @@ html.settings #root {
 .custom-wheel-head .text-input {
   flex: 1;
   font-weight: 600;
+}
+
+.custom-wheel-extensions {
+  display: flex;
+  padding: 2px 14px 6px;
+}
+
+.custom-wheel-extensions .text-input {
+  flex: 1;
+  font-size: 12px;
+}
+
+/* Parts de la roue Actions */
+.part-chip {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--control);
+  color: var(--label);
+}
+
+.kind-switch {
+  padding: 10px 14px 4px;
+}
+
+.segmented-fill button {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
 }

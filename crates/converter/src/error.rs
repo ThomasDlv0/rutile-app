@@ -53,6 +53,18 @@ pub enum ConvertError {
 
     #[error("Échec de la création de l'archive ({0}).")]
     Archive(String),
+
+    #[error("Archive illisible ou endommagée ({0}).")]
+    BadArchive(String),
+
+    #[error("Cette archive est protégée par un mot de passe.")]
+    ProtectedArchive,
+
+    #[error("Archive trop volumineuse une fois décompressée.")]
+    ArchiveTooLarge,
+
+    #[error("L'archive est vide.")]
+    EmptyArchive,
 }
 
 impl ConvertError {

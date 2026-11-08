@@ -68,7 +68,7 @@ export const wheelClosing = () => invoke("wheel_closing");
 export const primaryButtonPressed = () => invoke<boolean | null>("primary_button_pressed");
 export const inspectFiles = (paths: string[]) => invoke<FileInfo[]>("inspect_files", { paths });
 /** Sélecteur de fichiers du système, filtré selon la roue ; liste vide si l'utilisateur annule. */
-export const pickFiles = (kind: "images" | "videos" | "pdfs" | "files" | "any") =>
+export const pickFiles = (kind: "images" | "videos" | "pdfs" | "archives" | "files" | "any") =>
   invoke<FileInfo[]>("pick_files", { kind });
 /** Se termine quand la conversion est finie ; Rust envoie la notification. */
 export const convertFiles = (paths: string[], format: OutputFormat) =>
@@ -83,8 +83,13 @@ export type ActionRequest =
   | { kind: "text" }
   | { kind: "color"; format: "hex" | "rgb" | "hsl" }
   | { kind: "zip" }
+  | { kind: "extract" }
   | { kind: "imagesToPdf" }
   | { kind: "mergePdfs" }
+  | { kind: "pdfText" }
+  | { kind: "readText" }
+  | { kind: "copyImage" }
+  | { kind: "copyPaths" }
   | { kind: "rename"; style: "number" | "date" | "lowercase" | "clean" }
   | { kind: "retouch"; retouch: "half" | "fullHd" | "compress" | "stripMetadata" }
   | {
@@ -136,6 +141,10 @@ export interface Settings {
   captureReopen: boolean;
   /** Roues faites par l'utilisateur, dans la part « Mes roues » de la roue Actions. */
   customWheels: CustomWheel[];
+  /** Ordre des parts de la roue Actions, et parts affichées ou non. */
+  actionParts: PartEntry[];
+  /** Roue ouverte d'abord et actions proposées, selon le type des fichiers. */
+  fileWheels: FileWheels;
   /** Une app (ou rien) par part, dans le sens horaire depuis le haut. */
   apps: (AppSlot | null)[];
   /** Une destination (ou rien) par part de la roue de partage. */
@@ -230,13 +239,35 @@ export interface CustomAction {
 export interface CustomWheel {
   name: string;
   actions: CustomAction[];
+  /** Extensions des fichiers pour lesquels la roue apparaît (`pdf`, `docx`) ; vide, tous. */
+  extensions: string[];
 }
 
 /** Roue personnalisée vue par la roue : le nom et le type des actions suffisent. */
 export type CustomWheelView = {
   name: string;
   actions: { name: string; kind: CustomAction["kind"] }[];
+  extensions: string[];
 };
+
+/** Part d'une liste réglable de la roue Actions, à sa place, affichée ou non. */
+export interface PartEntry {
+  id: string;
+  enabled: boolean;
+}
+
+/** Types de fichiers qui ont chacun leur roue Actions ; `others` couvre aussi les mélanges. */
+export type FileKind = "images" | "videos" | "pdfs" | "archives" | "others";
+
+/** Roue ouverte d'abord quand arrive un fichier ; `usual`, la première de la liste. */
+export type FirstWheel = "convert" | "actions" | "share" | "apps" | "usual";
+
+export interface FileWheel {
+  first: FirstWheel;
+  parts: PartEntry[];
+}
+
+export type FileWheels = Record<FileKind, FileWheel>;
 
 /** Roues actives dans l'ordre du clic au centre, apps et destinations de partage des parts. */
 export interface WheelConfig {
@@ -254,6 +285,8 @@ export interface WheelConfig {
   /** Les fenêtres se rangent sur ce système (pas sous Wayland). */
   windowLayout: boolean;
   custom: CustomWheelView[];
+  actionParts: PartEntry[];
+  fileWheels: FileWheels;
   apps: (AppView | null)[];
   share: (ShareView | null)[];
 }

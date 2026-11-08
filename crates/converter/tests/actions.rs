@@ -236,3 +236,167 @@ fn retirer_les_metadonnees_nomme_le_fichier_produit() {
     assert_eq!(output.file_name().unwrap(), "logo-sans-metadonnees.png");
     assert_eq!(fs::read(&output).unwrap(), fs::read(&path).unwrap());
 }
+
+/// ZIP écrit à la main, `../` compris : le crate `zip` ne vérifie pas les noms à l'écriture.
+fn zip_with(path: &std::path::Path, entries: &[(&str, &str)]) {
+    use std::io::Write;
+    let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
+    let options = zip::write::SimpleFileOptions::default();
+    for (name, content) in entries {
+        if name.ends_with('/') {
+            archive.add_directory(*name, options).unwrap();
+        } else {
+            archive.start_file(*name, options).unwrap();
+            archive.write_all(content.as_bytes()).unwrap();
+        }
+    }
+    archive.finish().unwrap();
+}
+
+#[test]
+fn un_zip_se_decompresse_dans_un_dossier_a_son_nom() {
+    let dir = tempdir().unwrap();
+    let archive = dir.path().join("Photos.zip");
+    zip_with(
+        &archive,
+        &[
+            ("a.txt", "un"),
+            ("sous/b.txt", "deux"),
+            ("__MACOSX/._a.txt", "x"),
+            ("sous/.DS_Store", "x"),
+        ],
+    );
+    let output = files::extract_zip(&archive).unwrap();
+    assert_eq!(output, dir.path().join("Photos"));
+    assert_eq!(fs::read_to_string(output.join("a.txt")).unwrap(), "un");
+    assert_eq!(
+        fs::read_to_string(output.join("sous/b.txt")).unwrap(),
+        "deux"
+    );
+    assert!(!output.join("__MACOSX").exists());
+    assert!(!output.join("sous/.DS_Store").exists());
+
+    // Le nom est pris : rien n'est écrasé
+    let again = files::extract_zip(&archive).unwrap();
+    assert_eq!(again, dir.path().join("Photos-1"));
+}
+
+#[test]
+fn un_zip_d_un_seul_dossier_redonne_ce_dossier() {
+    let dir = tempdir().unwrap();
+    let archive = dir.path().join("envoi.zip");
+    zip_with(&archive, &[("Rapport/", ""), ("Rapport/page.txt", "texte")]);
+    let output = files::extract_zip(&archive).unwrap();
+    assert_eq!(output, dir.path().join("Rapport"));
+    assert_eq!(
+        fs::read_to_string(output.join("page.txt")).unwrap(),
+        "texte"
+    );
+}
+
+#[test]
+fn un_nom_piege_ne_sort_pas_du_dossier() {
+    let dir = tempdir().unwrap();
+    let inside = dir.path().join("dedans");
+    fs::create_dir(&inside).unwrap();
+    let archive = inside.join("piege.zip");
+    zip_with(
+        &archive,
+        &[
+            ("../evade.txt", "non"),
+            ("/abs.txt", "non"),
+            ("ok.txt", "oui"),
+        ],
+    );
+    let output = files::extract_zip(&archive).unwrap();
+    assert!(!dir.path().join("evade.txt").exists());
+    assert_eq!(fs::read_to_string(output.join("ok.txt")).unwrap(), "oui");
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+}
+
+#[test]
+fn une_archive_vide_ou_illisible_est_refusee() {
+    let dir = tempdir().unwrap();
+    let empty = dir.path().join("vide.zip");
+    zip_with(&empty, &[("dossier/", "")]);
+    assert!(matches!(
+        files::extract_zip(&empty),
+        Err(converter::ConvertError::EmptyArchive)
+    ));
+    assert!(!dir.path().join("dossier").exists());
+    let fake = dir.path().join("faux.zip");
+    fs::write(&fake, "pas une archive").unwrap();
+    assert!(matches!(
+        files::extract_zip(&fake),
+        Err(converter::ConvertError::BadArchive(_))
+    ));
+}
+
+/// PDF d'une page avec une ligne de texte en Helvetica.
+fn text_pdf(path: &std::path::Path, text: &str) {
+    use lopdf::content::{Content, Operation};
+    use lopdf::{Object, Stream, dictionary};
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let font = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+        "Encoding" => "WinAnsiEncoding",
+    });
+    let resources = doc.add_object(dictionary! { "Font" => dictionary! { "F1" => font } });
+    let content = Content {
+        operations: vec![
+            Operation::new("BT", vec![]),
+            Operation::new("Tf", vec!["F1".into(), 24.into()]),
+            Operation::new("Td", vec![72.into(), 700.into()]),
+            Operation::new("Tj", vec![Object::string_literal(text)]),
+            Operation::new("ET", vec![]),
+        ],
+    };
+    let contents = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "Contents" => contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page.into()],
+            "Count" => 1,
+            "Resources" => resources,
+            "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+    doc.trailer.set("Root", catalog);
+    doc.save(path).unwrap();
+}
+
+#[test]
+fn le_texte_des_pdf_se_lit_dans_l_ordre_des_noms() {
+    let dir = tempdir().unwrap();
+    let second = dir.path().join("page 10.pdf");
+    let first = dir.path().join("page 2.pdf");
+    text_pdf(&second, "Fin du document");
+    text_pdf(&first, "Bonjour la confiance");
+    let text = files::pdf_text(&[second, first]).unwrap();
+    let start = text.find("Bonjour").expect(&text);
+    let end = text.find("Fin du document").expect(&text);
+    assert!(start < end, "{text}");
+}
+
+#[test]
+fn une_image_se_relit_en_png() {
+    let dir = tempdir().unwrap();
+    let jpeg = dir.path().join("photo.jpg");
+    image::RgbImage::from_pixel(8, 6, image::Rgb([200, 30, 30]))
+        .save(&jpeg)
+        .unwrap();
+    let png = converter::to_png(&jpeg).unwrap();
+    let decoded = image::load_from_memory(&png).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (8, 6));
+    assert!(converter::to_png(&dir.path().join("absent.png")).is_err());
+}

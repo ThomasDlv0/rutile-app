@@ -39,12 +39,16 @@ import {
 } from "../ipc";
 import {
   type ActionNode,
+  DEFAULT_FILE_WHEELS,
   actionParent,
   actionTree,
   actionsAt,
   colorizeActions,
   disabledActions,
+  fileKind,
+  fileTree,
   filesFor,
+  firstModeFor,
   opensOnDwell,
 } from "./actions";
 import {
@@ -119,6 +123,8 @@ const PREVIEW_CONFIG: WheelConfig = {
   glass: "css",
   windowLayout: true,
   custom: [],
+  actionParts: [],
+  fileWheels: DEFAULT_FILE_WHEELS,
   apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
     name ? { path: name, name, kind: "app", icon: null } : null,
   ),
@@ -163,15 +169,15 @@ function dwellTargetFor(
 }
 
 // Hors de Tauri (aperçu dans un navigateur), `?file=photo.png` ou `?file=clip.mov` simule
-// un fichier
+// un fichier, `?file=a.pdf&file=b.pdf` plusieurs
 function previewFiles(): FileInfo[] {
-  const name = new URLSearchParams(window.location.search).get("file");
-  if (!name) return [];
-  const extension = name.split(".").pop()?.toLowerCase();
-  const id = extension === "jpg" ? "jpeg" : extension;
-  const format = OUTPUT_FORMATS.find((f) => f.id === id)?.id ?? null;
-  const video = VIDEO_FORMATS.find((f) => f.id === id && f.id !== "gif" && f.id !== "mp3");
-  return [{ path: name, name, format, video: (video?.id as FileInfo["video"]) ?? null }];
+  return new URLSearchParams(window.location.search).getAll("file").map((name) => {
+    const extension = name.split(".").pop()?.toLowerCase();
+    const id = extension === "jpg" ? "jpeg" : extension;
+    const format = OUTPUT_FORMATS.find((f) => f.id === id)?.id ?? null;
+    const video = VIDEO_FORMATS.find((f) => f.id === id && f.id !== "gif" && f.id !== "mp3");
+    return { path: name, name, format, video: (video?.id as FileInfo["video"]) ?? null };
+  });
 }
 
 /** Échelle qui ramène la roue, dessinée pour WINDOW_SIZE pixels CSS, à la taille de sa
@@ -215,12 +221,20 @@ export function WheelApp() {
   // Pastilles de notifications des apps, comme dans le Dock
   const [badges, setBadges] = useState<(string | null)[]>(isTauri() ? [] : PREVIEW_BADGES);
 
+  const shown = dragFiles ?? files;
   // Sous-roues ouvertes dans la roue Actions : un index par niveau
   const [actionPath, setActionPath] = useState<number[]>([]);
+  // Avec des fichiers, la roue Actions ne propose que ce qui leur convient
   const actionsTree = useMemo(
-    () => colorizeActions(actionTree(config), config.colors),
-    [config],
+    () =>
+      colorizeActions(
+        shown.length > 0 ? fileTree(config, shown) : actionTree(config),
+        config.colors,
+      ),
+    [config, shown],
   );
+  const treeKind = shown.length > 0 ? fileKind(shown) : null;
+  useEffect(() => setActionPath([]), [treeKind]);
   const inActions = mode === "actions";
   const videoMissing = mode === "video" && video?.available === false;
   const items = inActions
@@ -228,7 +242,6 @@ export function WheelApp() {
     : itemsFor(mode, config, badges);
   const parent = inActions ? actionParent(actionsTree, actionPath) : null;
   const next = parent ? null : nextMode(config.modes, mode);
-  const shown = dragFiles ?? files;
   const disabled = useMemo(() => {
     if (inActions) return disabledActions(items as readonly ActionNode[], shown);
     return videoMissing
@@ -310,17 +323,17 @@ export function WheelApp() {
   // fichiers ne la changent plus
   const chosenRef = useRef(false);
 
-  /** Une image ouvre le convertisseur d'images, une vidéo celui de vidéos, quelle que soit la
-   * roue d'ouverture ; une roue choisie à la main reste affichée. */
+  /** Les fichiers ouvrent la roue réglée pour leur type (le convertisseur pour une image ou
+   * une vidéo, la roue Actions pour le reste), quelle que soit la roue d'ouverture ; une roue
+   * choisie à la main reste affichée. */
   const adoptMode = useCallback((infos: FileInfo[]): Mode => {
     const current = modeRef.current;
-    const preferred = preferredMode(infos);
-    if (chosenRef.current || !preferred || !configRef.current.modes.includes(preferred)) {
-      return current;
-    }
-    modeRef.current = preferred;
-    setMode(preferred);
-    return preferred;
+    const { fileWheels, modes } = configRef.current;
+    const first = firstModeFor(infos, fileWheels, modes);
+    if (chosenRef.current || !first) return current;
+    modeRef.current = first;
+    setMode(first);
+    return first;
   }, []);
 
   /** Clic au centre, ou fichier maintenu au centre : la roue est choisie à la main. */
@@ -576,6 +589,9 @@ export function WheelApp() {
       const dropped = await inspectFiles(paths);
       busyRef.current = false;
       setDragFiles(null);
+      // Gardés : la roue Actions des fichiers reste affichée, et une sous-roue ouverte par le
+      // dépôt (Renommer) travaille sur eux
+      setFiles(dropped);
       setPointer(null);
       const dropMode = adoptMode(dropped);
       if (dropMode === "actions") {

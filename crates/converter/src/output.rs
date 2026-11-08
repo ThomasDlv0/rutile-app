@@ -37,6 +37,28 @@ pub(crate) fn reserve(input: &Path, extension: &str) -> Result<(PathBuf, File), 
     ))
 }
 
+/// Crée un dossier vide au chemin `target`, ou `target-1`, `target-2`… si le nom est pris.
+pub(crate) fn reserve_dir(target: &Path) -> Result<PathBuf, ConvertError> {
+    let dir = target.parent().unwrap_or(Path::new("."));
+    let name = target.file_name().unwrap_or(target.as_os_str());
+    for attempt in 0..MAX_ATTEMPTS {
+        let mut candidate = OsString::from(name);
+        if attempt > 0 {
+            candidate.push(format!("-{attempt}"));
+        }
+        let path = dir.join(candidate);
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(source) => return Err(write_error(dir, source)),
+        }
+    }
+    Err(write_error(
+        dir,
+        io::Error::other("aucun nom de dossier disponible"),
+    ))
+}
+
 /// Chemin à donner à [`reserve`] pour un fichier nommé `stem`, à côté de `input`.
 pub(crate) fn sibling(input: &Path, stem: &str) -> PathBuf {
     // L'extension factice protège un nom qui contient un point : `reserve` la retire

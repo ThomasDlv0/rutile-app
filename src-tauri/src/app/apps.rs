@@ -14,7 +14,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use super::glass;
-use super::settings::{self, CustomKind, WheelBorder, WheelMode};
+use super::settings::{self, CustomKind, FileWheels, PartEntry, WheelBorder, WheelMode};
 use super::share::{self, ShareView};
 use super::wheel::WHEEL_LABEL;
 
@@ -147,6 +147,10 @@ pub struct WheelConfig {
     /// Les fenêtres se rangent sur ce système.
     window_layout: bool,
     custom: Vec<CustomWheelView>,
+    /// Ordre des parts de la roue Actions.
+    action_parts: Vec<PartEntry>,
+    /// Roue ouverte d'abord et actions proposées, selon le type des fichiers.
+    file_wheels: FileWheels,
     apps: Vec<Option<AppView>>,
     share: Vec<Option<ShareView>>,
 }
@@ -157,6 +161,7 @@ pub struct WheelConfig {
 struct CustomWheelView {
     name: String,
     actions: Vec<CustomActionView>,
+    extensions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,8 +199,11 @@ pub fn wheel_config<R: Runtime>(app: AppHandle<R>) -> WheelConfig {
                         kind: action.kind,
                     })
                     .collect(),
+                extensions: wheel.extensions.clone(),
             })
             .collect(),
+        action_parts: settings.action_parts.clone(),
+        file_wheels: settings.file_wheels.clone(),
         apps: views(&app, &settings.apps),
         share: share::views(&app, &settings.share),
     }

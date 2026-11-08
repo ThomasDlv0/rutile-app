@@ -38,17 +38,43 @@ pub enum ColorFormat {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ActionRequest {
-    Capture { target: CaptureTarget, delay: u32 },
+    Capture {
+        target: CaptureTarget,
+        delay: u32,
+    },
     Text,
-    Color { format: ColorFormat },
+    Color {
+        format: ColorFormat,
+    },
     Zip,
+    /// Décompresse des archives ZIP.
+    Extract,
     ImagesToPdf,
     MergePdfs,
-    Rename { style: RenameStyle },
-    Retouch { retouch: Retouch },
-    Video { rework: VideoRework },
-    Place { layout: Layout },
-    Custom { wheel: usize, action: usize },
+    /// Copie le texte de PDF.
+    PdfText,
+    /// Copie le texte d'images, lu comme sur une capture.
+    ReadText,
+    /// Met une image dans le presse-papiers.
+    CopyImage,
+    /// Copie le chemin des fichiers.
+    CopyPaths,
+    Rename {
+        style: RenameStyle,
+    },
+    Retouch {
+        retouch: Retouch,
+    },
+    Video {
+        rework: VideoRework,
+    },
+    Place {
+        layout: Layout,
+    },
+    Custom {
+        wheel: usize,
+        action: usize,
+    },
 }
 
 /// Lance une action ; `Ok` aussi quand l'utilisateur annule, sans notification.
@@ -105,6 +131,11 @@ async fn perform<R: Runtime>(
             let output = blocking(move || files::zip_files(&paths)).await;
             one_file("Archive créée", "Archive impossible", output)
         }
+        ActionRequest::Extract => extract(paths).await,
+        ActionRequest::PdfText => pdf_text(paths).await,
+        ActionRequest::ReadText => read_images_text(paths).await,
+        ActionRequest::CopyImage => copy_image_file(paths).await,
+        ActionRequest::CopyPaths => copy_paths(&paths),
         ActionRequest::ImagesToPdf => {
             let output = blocking(move || files::images_to_pdf(&paths)).await;
             one_file("PDF créé", "PDF impossible", output)
@@ -190,6 +221,120 @@ async fn rename(paths: Vec<PathBuf>, style: RenameStyle) -> Done {
         Some(Err(err)) => Err(failure("Renommage impossible", err.to_string())),
         None => Err(failure("Renommage impossible", "Action interrompue.")),
     }
+}
+
+async fn extract(paths: Vec<PathBuf>) -> Done {
+    let results = blocking(move || {
+        let mut done = Vec::new();
+        let mut failed = Vec::new();
+        for path in &paths {
+            match files::extract_zip(path) {
+                Ok(output) => done.push(output),
+                Err(err) => failed.push(format!("{} : {err}", file_name(path))),
+            }
+        }
+        (done, failed)
+    })
+    .await
+    .unwrap_or_default();
+    summary(
+        "Archive décompressée",
+        |count| format!("{count} archives décompressées"),
+        "Décompression impossible",
+        results.0,
+        results.1,
+    )
+}
+
+async fn pdf_text(paths: Vec<PathBuf>) -> Done {
+    const TITLE: &str = "Lecture impossible";
+    match blocking(move || files::pdf_text(&paths)).await {
+        Some(Ok(text)) => copy_found(
+            TITLE,
+            &text,
+            "Aucun texte dans ce PDF : c'est peut-être un scan.",
+        ),
+        Some(Err(err)) => Err(failure(TITLE, err.to_string())),
+        None => Err(failure(TITLE, "Action interrompue.")),
+    }
+}
+
+/// Fichier temporaire où écrire une image en PNG pour le système.
+fn temporary_png(purpose: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("rutile-{purpose}-{}.png", std::process::id()))
+}
+
+/// L'image en PNG dans un fichier temporaire, passée à `use_png`, puis effacée.
+fn with_png<T>(
+    path: &Path,
+    purpose: &str,
+    use_png: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let png = converter::to_png(path).map_err(|err| format!("{} : {err}", file_name(path)))?;
+    let temporary = temporary_png(purpose);
+    std::fs::write(&temporary, png).map_err(|err| err.to_string())?;
+    let result = use_png(&temporary);
+    let _ = std::fs::remove_file(&temporary);
+    result
+}
+
+async fn read_images_text(paths: Vec<PathBuf>) -> Done {
+    const TITLE: &str = "Lecture impossible";
+    let texts = blocking(move || {
+        paths
+            .iter()
+            .map(|path| with_png(path, "texte", capture::read_text))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await
+    .unwrap_or_else(|| Err("Action interrompue.".into()))
+    .map_err(|err| failure(TITLE, err))?;
+    let text = texts
+        .iter()
+        .map(|text| text.trim())
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    copy_found(TITLE, &text, "Aucun texte trouvé dans l'image.")
+}
+
+async fn copy_image_file(paths: Vec<PathBuf>) -> Done {
+    const TITLE: &str = "Copie impossible";
+    let Some(path) = paths.into_iter().next() else {
+        return Err(failure(TITLE, "Aucune image à copier."));
+    };
+    let name = file_name(&path);
+    blocking(move || with_png(&path, "copie", capture::copy_image))
+        .await
+        .unwrap_or_else(|| Err("Action interrompue.".into()))
+        .map_err(|err| failure(TITLE, err))?;
+    Ok(Some(Message {
+        title: "Image copiée".into(),
+        body: name,
+        action: None,
+    }))
+}
+
+fn copy_paths(paths: &[PathBuf]) -> Done {
+    const TITLE: &str = "Copie impossible";
+    if paths.is_empty() {
+        return Err(failure(TITLE, "Aucun fichier à traiter."));
+    }
+    let text = paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    capture::copy_text(&text).map_err(|err| failure(TITLE, err))?;
+    let title = match paths.len() {
+        1 => "Chemin copié".to_string(),
+        count => format!("{count} chemins copiés"),
+    };
+    Ok(Some(Message {
+        title,
+        body: preview(&text),
+        action: None,
+    }))
 }
 
 async fn retouch_images<R: Runtime>(
@@ -341,7 +486,7 @@ fn preview(text: &str) -> String {
 
 async fn capture_text() -> Done {
     const TITLE: &str = "Lecture impossible";
-    let path = std::env::temp_dir().join(format!("rutile-texte-{}.png", std::process::id()));
+    let path = temporary_png("texte");
     let image = path.clone();
     let result = blocking(move || {
         let taken = capture::capture(CaptureTarget::Zone, 0, &image).map_err(capture_failure)?;
@@ -359,14 +504,18 @@ async fn capture_text() -> Done {
     let Some(text) = result? else {
         return Ok(None);
     };
+    copy_found(TITLE, &text, "Aucun texte trouvé dans cette zone.")
+}
+
+/// Copie le texte trouvé, annoncé par ses premiers mots ; `nothing` s'il n'y en a pas.
+fn copy_found(title: &str, text: &str, nothing: &str) -> Done {
     if text.trim().is_empty() {
-        return Err(failure(TITLE, "Aucun texte trouvé dans cette zone."));
+        return Err(failure(title, nothing));
     }
-    let shown = preview(&text);
-    capture::copy_text(&text).map_err(|err| failure(TITLE, err))?;
+    capture::copy_text(text).map_err(|err| failure(title, err))?;
     Ok(Some(Message {
         title: "Texte copié".into(),
-        body: shown,
+        body: preview(text),
         action: None,
     }))
 }
@@ -556,6 +705,61 @@ async fn run_custom<R: Runtime>(
 mod tests {
     use super::*;
 
+    /// Photo JPEG avec du texte, dessinée par AppKit.
+    #[cfg(target_os = "macos")]
+    fn photo_with_text(path: &Path) -> bool {
+        let script = path.with_extension("swift");
+        let source = r#"
+import AppKit
+let rep = NSBitmapImageRep(
+    bitmapDataPlanes: nil, pixelsWide: 900, pixelsHigh: 200, bitsPerSample: 8,
+    samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+    bytesPerRow: 0, bitsPerPixel: 0)!
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+NSColor.white.setFill()
+NSRect(x: 0, y: 0, width: 900, height: 200).fill()
+("Facture payée" as NSString).draw(
+    at: NSPoint(x: 40, y: 60),
+    withAttributes: [.font: NSFont.systemFont(ofSize: 64), .foregroundColor: NSColor.black])
+try rep.representation(using: .jpeg, properties: [:])!
+    .write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
+"#;
+        let drawn = std::fs::write(&script, source).is_ok()
+            && Command::new("/usr/bin/swift")
+                .arg(&script)
+                .arg(path)
+                .status()
+                .is_ok_and(|status| status.success());
+        let _ = std::fs::remove_file(&script);
+        drawn && path.is_file()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn le_texte_d_une_photo_se_lit_comme_celui_d_une_capture() {
+        let path = std::env::temp_dir().join(format!("rutile-photo-{}.jpg", std::process::id()));
+        if !photo_with_text(&path) {
+            eprintln!("image de test impossible à créer : test ignoré");
+            return;
+        }
+        let text = with_png(&path, "essai", capture::read_text).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(text.contains("Facture"), "texte lu : {text:?}");
+        assert!(
+            !temporary_png("essai").exists(),
+            "le PNG temporaire est effacé"
+        );
+    }
+
+    #[test]
+    fn un_fichier_qui_n_est_pas_une_image_est_nomme_dans_l_erreur() {
+        let path = std::env::temp_dir().join(format!("rutile-note-{}.txt", std::process::id()));
+        std::fs::write(&path, "pas une image").unwrap();
+        let err = with_png(&path, "essai", |_| Ok(())).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.starts_with("rutile-note-"), "{err}");
+    }
+
     #[test]
     fn une_couleur_s_ecrit_dans_les_trois_formats() {
         let orange = [0xf9, 0x73, 0x16];
@@ -606,6 +810,26 @@ mod tests {
             ActionRequest::Video {
                 rework: VideoRework::Fit { megabytes: 10 }
             }
+        ));
+        assert!(matches!(
+            read(r#"{"kind":"extract"}"#),
+            ActionRequest::Extract
+        ));
+        assert!(matches!(
+            read(r#"{"kind":"pdfText"}"#),
+            ActionRequest::PdfText
+        ));
+        assert!(matches!(
+            read(r#"{"kind":"readText"}"#),
+            ActionRequest::ReadText
+        ));
+        assert!(matches!(
+            read(r#"{"kind":"copyImage"}"#),
+            ActionRequest::CopyImage
+        ));
+        assert!(matches!(
+            read(r#"{"kind":"copyPaths"}"#),
+            ActionRequest::CopyPaths
         ));
         assert!(matches!(
             read(r#"{"kind":"place","layout":"maximize"}"#),

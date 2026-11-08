@@ -37,6 +37,7 @@ const VIDEO_EXTENSIONS: [&str; 16] = [
 ];
 
 const PDF_EXTENSIONS: [&str; 1] = ["pdf"];
+const ARCHIVE_EXTENSIONS: [&str; 1] = ["zip"];
 
 /// D'où viennent les fichiers proposés à l'ouverture de la roue.
 #[derive(Debug, PartialEq, Eq)]
@@ -410,6 +411,7 @@ pub enum PickKind {
     Images,
     Videos,
     Pdfs,
+    Archives,
     /// Roue Actions : tous les fichiers.
     Files,
     /// Roue de partage : tous les fichiers.
@@ -430,6 +432,10 @@ pub async fn pick_files<R: Runtime>(app: AppHandle<R>, kind: PickKind) -> Vec<Fi
             Some(("Vidéos", &VIDEO_EXTENSIONS)),
         ),
         PickKind::Pdfs => ("Choisir les PDF", Some(("PDF", &PDF_EXTENSIONS))),
+        PickKind::Archives => (
+            "Choisir les archives",
+            Some(("Archives ZIP", &ARCHIVE_EXTENSIONS)),
+        ),
         PickKind::Files => ("Choisir les fichiers", None),
         PickKind::Any => ("Choisir les fichiers à partager", None),
     };

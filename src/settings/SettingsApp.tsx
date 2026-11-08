@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ActionsIcon } from "../ActionsIcon";
@@ -26,6 +34,9 @@ import {
   type AppSlot,
   type CustomAction,
   type CustomWheel,
+  type FileKind,
+  type FirstWheel,
+  type PartEntry,
   type Settings,
   type SettingsTab,
   type SettingsView,
@@ -36,7 +47,19 @@ import {
   type VideoSupport,
   type WheelBorder,
 } from "../ipc";
-import { actionTree } from "../wheel/actions";
+import { ActionGlyph } from "../wheel/ActionGlyph";
+import {
+  type ActionNode,
+  type Arranged,
+  DEFAULT_FILE_WHEELS,
+  FILE_ACTIONS,
+  FILE_KIND_LABELS,
+  actionCatalog,
+  actionTree,
+  arrange,
+  partEntries,
+} from "../wheel/actions";
+import { readableInk } from "../wheel/color";
 import { DEFAULT_ACCENT } from "../wheel/color";
 import {
   type Mode,
@@ -163,6 +186,8 @@ const PREVIEW: SettingsView = {
     wheelGlass: true,
     captureReopen: true,
     customWheels: [],
+    actionParts: [],
+    fileWheels: DEFAULT_FILE_WHEELS,
     apps: [
       { path: "/Applications/Finder.app", name: "Finder", kind: "app" },
       null,
@@ -569,9 +594,9 @@ function WheelsTab({
           />
         </Row>
         <p className="section-note">
-          Une image ouvre directement le convertisseur d'images, une vidéo celui de vidéos. En
-          glissant un fichier, restez au centre pour passer à la roue de partage, puis revenez-y
-          pour repasser au convertisseur.
+          Un fichier ouvre d'abord la roue réglée pour son type dans l'onglet Actions : le
+          convertisseur pour une image ou une vidéo, la roue Actions pour le reste. En glissant
+          un fichier, restez au centre pour passer à la roue de partage.
         </p>
       </Section>
     </>
@@ -683,16 +708,14 @@ function ConversionTab({
   );
 }
 
-/** Parts de la roue Actions, pour lui choisir ses couleurs. */
-const ACTION_PARTS: readonly WheelItem[] = actionTree({ custom: [], windowLayout: true });
-
 type PreviewMode = "image" | "video" | "actions";
 
 /** Roues dont on règle les couleurs, avec les couleurs par défaut de leurs parts. */
 const COLOR_GROUPS: { mode: PreviewMode; title: string; parts: readonly WheelItem[] }[] = [
   { mode: "image", title: "Images", parts: OUTPUT_FORMATS },
   { mode: "video", title: "Vidéos", parts: VIDEO_FORMATS },
-  { mode: "actions", title: "Actions", parts: ACTION_PARTS },
+  // Parts dans l'ordre réglé, calculées par l'onglet
+  { mode: "actions", title: "Actions", parts: [] },
 ];
 
 /** Échelle de l'aperçu de la roue dans les réglages. */
@@ -734,7 +757,12 @@ function ColorsTab({
     [formatColors, highlightColor, wheelBorder],
   );
   const [previewMode, setPreviewMode] = useState<PreviewMode>("image");
-  const group = COLOR_GROUPS.find(({ mode }) => mode === previewMode) ?? COLOR_GROUPS[0];
+  const actionParts = useMemo(
+    () => actionTree({ custom: [], windowLayout: true, actionParts: settings.actionParts }),
+    [settings.actionParts],
+  );
+  const known = COLOR_GROUPS.find(({ mode }) => mode === previewMode) ?? COLOR_GROUPS[0];
+  const group = known.mode === "actions" ? { ...known, parts: actionParts } : known;
 
   const update = (next: ColorDraft) => {
     setDraft(next);
@@ -1032,24 +1060,165 @@ function CustomActionForm({
   );
 }
 
+/** Pastille d'une part de la roue Actions, à sa couleur. */
+function PartChip({ node, colors }: { node: ActionNode; colors: Record<string, string> }) {
+  const color =
+    colors[node.id] ?? (node.family !== undefined ? colors[node.family] : undefined) ?? node.color;
+  return (
+    <span
+      className="part-chip"
+      style={color ? { background: color, color: readableInk(color) } : undefined}
+    >
+      <ActionGlyph name={node.glyph} size={15} />
+    </span>
+  );
+}
+
+/** Lignes d'une liste de parts qu'on réordonne en glissant et qu'on affiche ou masque. Au
+ * moins une part reste affichée. */
+function usePartRows(
+  parts: readonly Arranged<ActionNode>[],
+  colors: Record<string, string>,
+  onChange: (entries: PartEntry[]) => void,
+) {
+  const sortable = useSortable(parts.length, (from, to) =>
+    onChange(partEntries(moved(parts, from, to))),
+  );
+  const shown = parts.filter(({ enabled }) => enabled).length;
+  const rows = parts.map(({ item, enabled }, index) => (
+    <Row
+      key={item.id}
+      label={item.label}
+      hint={item.setup ? "Vos roues personnalisées, s'il y en a" : item.action}
+      icon={<PartChip node={item} colors={colors} />}
+      muted={!enabled}
+      sortable={sortable.row(index)}
+      handle={<DragHandle label={item.label} {...sortable.handle(index)} />}
+    >
+      <Toggle
+        checked={enabled}
+        label={`Afficher ${item.label}`}
+        disabled={enabled && shown === 1}
+        onChange={(next) =>
+          onChange(
+            partEntries(parts.map((part, i) => (i === index ? { ...part, enabled: next } : part))),
+          )
+        }
+      />
+    </Row>
+  ));
+  return { rows, sorting: sortable.sorting };
+}
+
+const FILE_KINDS = Object.keys(FILE_KIND_LABELS) as FileKind[];
+
+/** Ce que propose le menu « S'ouvre sur », selon le type de fichier. */
+function firstChoices(kind: FileKind): { id: FirstWheel; label: string; mode: Mode | null }[] {
+  const convert =
+    kind === "images"
+      ? [{ id: "convert" as const, label: "Convertisseur d'images", mode: "image" as const }]
+      : kind === "videos"
+        ? [{ id: "convert" as const, label: "Convertisseur vidéo", mode: "video" as const }]
+        : [];
+  return [
+    ...convert,
+    { id: "actions", label: "Roue Actions", mode: "actions" },
+    { id: "share", label: "Partage", mode: "share" },
+    { id: "apps", label: "Apps", mode: "apps" },
+    { id: "usual", label: "Première roue de la liste", mode: null },
+  ];
+}
+
+/** D'où viennent les fichiers sélectionnés, selon le système. */
+const fileManager = (platform: string) =>
+  platform === "macos" ? "le Finder" : platform === "windows" ? "l'Explorateur" : "vos fichiers";
+
 function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
+  const colors = settings.formatColors;
   const wheels = settings.customWheels;
   const setWheels = (customWheels: CustomWheel[]) => change("actions", { customWheels });
   const replace = (index: number, wheel: CustomWheel) =>
     setWheels(wheels.map((known, i) => (i === index ? wheel : known)));
 
+  const windowLayout = view.platform !== "linux" || !view.wayland;
+  const rootParts = arrange(actionCatalog({ custom: [], windowLayout }), settings.actionParts);
+  const root = usePartRows(rootParts, colors, (actionParts) => change("actions", { actionParts }));
+
+  const [kind, setKind] = useState<FileKind>("images");
+  const fileWheel = settings.fileWheels[kind];
+  const setFileWheel = (next: Partial<typeof fileWheel>) =>
+    change("actions", {
+      fileWheels: { ...settings.fileWheels, [kind]: { ...fileWheel, ...next } },
+    });
+  const fileParts = arrange(FILE_ACTIONS[kind], fileWheel.parts);
+  const forFiles = usePartRows(fileParts, colors, (parts) => setFileWheel({ parts }));
+  const choices = firstChoices(kind);
+  const chosen = choices.find(({ id }) => id === fileWheel.first) ?? choices[choices.length - 1];
+  const chosenOff =
+    chosen.mode !== null &&
+    !settings.modes.some((entry) => entry.id === chosen.mode && entry.enabled);
+
   return (
     <>
-      <Section title="Roue Actions" error={errors.wheels}>
+      <Section title="Roue Actions" error={errors.wheels} sorting={root.sorting}>
         <WheelSwitch settings={settings} mode="actions" label="Afficher la roue Actions" change={change} />
+        {root.rows}
         <p className="section-note">
-          Restez une seconde sur une part pour ouvrir ses options dans une nouvelle roue ; le
-          centre ramène à la roue d'avant, comme Échap. Le temps se règle dans l'onglet Roues.
+          Glissez une part par sa poignée pour la déplacer : la première est en haut de la roue,
+          les suivantes dans le sens des aiguilles d'une montre. Restez une seconde sur une part
+          pour ouvrir ses options ; le centre ramène à la roue d'avant, comme Échap.
         </p>
       </Section>
 
-      <Section title="Capture" error={errors.actions}>
+      <Section title="Selon le fichier" error={errors.actions} sorting={forFiles.sorting}>
+        <div className="kind-switch">
+          <div className="segmented segmented-fill" role="tablist" aria-label="Type de fichier">
+            {FILE_KINDS.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={kind === id}
+                onClick={() => setKind(id)}
+              >
+                {FILE_KIND_LABELS[id]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Row
+          label="S'ouvre sur"
+          hint={
+            chosenOff
+              ? "Cette roue est désactivée : la première de la liste s'ouvre à sa place."
+              : "La roue affichée quand arrive un fichier de ce type."
+          }
+        >
+          <select
+            className="text-input"
+            aria-label="Roue ouverte d'abord"
+            value={chosen.id}
+            onChange={(event) => setFileWheel({ first: event.target.value as FirstWheel })}
+          >
+            {choices.map(({ id, label }) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </Row>
+        {/* Remontées à chaque type : un interrupteur ne glisse pas d'un type à l'autre */}
+        <Fragment key={kind}>{forFiles.rows}</Fragment>
+        <p className="section-note">
+          Un fichier secoué, glissé sur la roue ou sélectionné dans {fileManager(view.platform)}{" "}
+          ouvre la roue choisie. Sa roue Actions ne montre que ces actions, dans cet ordre, et
+          seulement celles qui ont un sens (la fusion à partir de deux PDF) ; dix au plus.
+          Plusieurs types mélangés comptent comme « Autres ».
+        </p>
+      </Section>
+
+      <Section title="Capture">
         <Row
           label="Rouvrir la roue après une capture"
           hint="Pour convertir ou partager l'image tout de suite."
@@ -1085,70 +1254,115 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
 
       <Section title="Mes roues" sorting={false}>
         {wheels.map((wheel, index) => (
-          <div className="custom-wheel" key={index}>
-            <div className="custom-wheel-head">
-              <input
-                className="text-input"
-                aria-label="Nom de la roue"
-                maxLength={30}
-                defaultValue={wheel.name}
-                onBlur={(event) => {
-                  const name = event.target.value.trim();
-                  if (name && name !== wheel.name) replace(index, { ...wheel, name });
-                }}
-              />
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setWheels(wheels.filter((_, i) => i !== index))}
-              >
-                Supprimer
-              </button>
-            </div>
-            {wheel.actions.map((action, slot) => (
-              <Row
-                key={`${slot}-${action.name}`}
-                label={action.name}
-                hint={`${CUSTOM_KINDS.find(({ id }) => id === action.kind)?.label} : ${action.value}`}
-              >
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() =>
-                    replace(index, {
-                      ...wheel,
-                      actions: wheel.actions.filter((_, i) => i !== slot),
-                    })
-                  }
-                >
-                  Retirer
-                </button>
-              </Row>
-            ))}
-            {wheel.actions.length < MAX_SECTORS && (
-              <CustomActionForm
-                platform={view.platform}
-                onAdd={(action) =>
-                  replace(index, { ...wheel, actions: [...wheel.actions, action] })
-                }
-              />
-            )}
-          </div>
+          <CustomWheelEditor
+            key={index}
+            wheel={wheel}
+            platform={view.platform}
+            onChange={(next) => replace(index, next)}
+            onRemove={() => setWheels(wheels.filter((_, i) => i !== index))}
+          />
         ))}
         {wheels.length < MAX_SECTORS && (
           <AddRow
             label="Créer une roue"
             onClick={() =>
-              setWheels([...wheels, { name: `Roue ${wheels.length + 1}`, actions: [] }])
+              setWheels([
+                ...wheels,
+                { name: `Roue ${wheels.length + 1}`, actions: [], extensions: [] },
+              ])
             }
           />
         )}
         <p className="section-note">
           Vos roues s'ouvrent depuis la part « Mes roues » de la roue Actions. Une commande reçoit
-          les fichiers de la roue en arguments.
+          les fichiers de la roue en arguments. Avec des extensions, une roue n'apparaît que pour
+          ces fichiers.
         </p>
       </Section>
     </>
+  );
+}
+
+/** `.PDF, docx; txt` → `["pdf", "docx", "txt"]`. */
+function parseExtensions(text: string): string[] {
+  const extensions = text
+    .split(/[\s,;]+/)
+    .map((extension) => extension.replace(/^\.+/, "").toLowerCase())
+    .filter((extension) => /^[\p{L}\p{N}]{1,10}$/u.test(extension));
+  return [...new Set(extensions)];
+}
+
+/** Une roue personnalisée : son nom, les fichiers qu'elle concerne, ses actions dans l'ordre. */
+function CustomWheelEditor({
+  wheel,
+  platform,
+  onChange,
+  onRemove,
+}: {
+  wheel: CustomWheel;
+  platform: string;
+  onChange: (wheel: CustomWheel) => void;
+  onRemove: () => void;
+}) {
+  const sortable = useSortable(wheel.actions.length, (from, to) =>
+    onChange({ ...wheel, actions: moved(wheel.actions, from, to) }),
+  );
+  return (
+    <div className="custom-wheel" data-sorting={sortable.sorting || undefined}>
+      <div className="custom-wheel-head">
+        <input
+          className="text-input"
+          aria-label="Nom de la roue"
+          maxLength={30}
+          defaultValue={wheel.name}
+          onBlur={(event) => {
+            const name = event.target.value.trim();
+            if (name && name !== wheel.name) onChange({ ...wheel, name });
+          }}
+        />
+        <button type="button" className="link-button" onClick={onRemove}>
+          Supprimer
+        </button>
+      </div>
+      <div className="custom-wheel-extensions">
+        <input
+          className="text-input"
+          aria-label="Extensions des fichiers concernés"
+          placeholder="Pour tous les fichiers, ou : pdf, docx…"
+          defaultValue={wheel.extensions.join(", ")}
+          onBlur={(event) => {
+            const extensions = parseExtensions(event.target.value);
+            event.target.value = extensions.join(", ");
+            if (extensions.join() !== wheel.extensions.join()) onChange({ ...wheel, extensions });
+          }}
+        />
+      </div>
+      {wheel.actions.map((action, slot) => (
+        <Row
+          key={`${slot}-${action.name}`}
+          label={action.name}
+          hint={`${CUSTOM_KINDS.find(({ id }) => id === action.kind)?.label} : ${action.value}`}
+          sortable={sortable.row(slot)}
+          handle={<DragHandle label={action.name} {...sortable.handle(slot)} />}
+        >
+          <button
+            type="button"
+            className="link-button"
+            onClick={() =>
+              onChange({ ...wheel, actions: wheel.actions.filter((_, i) => i !== slot) })
+            }
+          >
+            Retirer
+          </button>
+        </Row>
+      ))}
+      {wheel.actions.length < MAX_SECTORS && (
+        <CustomActionForm
+          platform={platform}
+          onAdd={(action) => onChange({ ...wheel, actions: [...wheel.actions, action] })}
+        />
+      )}
+    </div>
   );
 }
 
