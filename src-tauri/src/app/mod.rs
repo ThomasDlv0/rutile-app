@@ -11,6 +11,7 @@ pub mod settings;
 pub mod shake;
 pub mod share;
 pub mod shortcut;
+pub mod sites;
 pub mod tray;
 pub mod updates;
 pub mod wheel;

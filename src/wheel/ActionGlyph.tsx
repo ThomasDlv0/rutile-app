@@ -1,4 +1,5 @@
-// Pictogrammes des parts de la roue Actions, tracés au trait pour se lire sur les pastilles
+// Pictogrammes des parts de la roue Actions et des roues personnalisées, tracés au trait
+// pour se lire sur les pastilles
 const PATHS = {
   capture: "M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0",
   zone: "M4 4h4M12 4h4M20 4v4M20 12v4M20 20h-4M12 20H8M4 20v-4M4 12V8",
@@ -37,6 +38,7 @@ const PATHS = {
   star: "m12 3 2.7 5.6 6.1.8-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1-4.4-4.3 6.1-.8Z",
   wheels: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 3v6M12 15v6M3 12h6M15 12h6",
   play: "M7 4v16l13-8Z",
+  terminal: "M5 7l5 5-5 5M13 17h6",
   plus: "M12 5v14M5 12h14",
 } as const;
 

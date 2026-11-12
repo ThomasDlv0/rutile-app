@@ -660,13 +660,6 @@ html.settings #root {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-.color-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  padding: 8px;
-}
-
 .color-field {
   display: flex;
   align-items: center;
@@ -707,10 +700,6 @@ html.settings #root {
   outline-offset: 2px;
 }
 
-.color-field-label {
-  font-weight: 500;
-}
-
 .color-field-code {
   margin-left: auto;
   color: var(--hint);
@@ -721,17 +710,6 @@ html.settings #root {
 .shortcut-button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-/* Sélecteur du système ouvert par un clic sur l'aperçu de la roue */
-.color-picker-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .wheel-preview .format-button,
@@ -757,44 +735,6 @@ html.settings #root {
   outline-offset: 1px;
 }
 
-.custom-form {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 10px 14px;
-}
-
-.custom-form .custom-form-value {
-  grid-column: 1;
-}
-
-.custom-wheel + .custom-wheel,
-.custom-wheel + .add-row {
-  border-top: 1px solid var(--row-divider);
-}
-
-.custom-wheel-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px 4px;
-}
-
-.custom-wheel-head .text-input {
-  flex: 1;
-  font-weight: 600;
-}
-
-.custom-wheel-extensions {
-  display: flex;
-  padding: 2px 14px 6px;
-}
-
-.custom-wheel-extensions .text-input {
-  flex: 1;
-  font-size: 12px;
-}
-
 /* Parts de la roue Actions */
 .part-chip {
   display: grid;
@@ -814,4 +754,362 @@ html.settings #root {
   flex: 1;
   min-width: 0;
   padding: 4px 6px;
+}
+
+/* Titre d'une section, avec un bouton discret en face */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 4px 7px;
+}
+
+.settings-section .section-head h2 {
+  margin: 0;
+}
+
+/* Explication sous une carte : hors d'elle, pour ne pas passer pour une option */
+.section-footnote {
+  margin: 7px 14px 0;
+  color: var(--hint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.link-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.link-button[data-danger] {
+  color: var(--danger-text);
+}
+
+.primary-button {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.primary-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Huit onglets : chacun prend la largeur de son nom */
+.settings-tab {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  padding: 6px 5px 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.row-control .text-input {
+  width: 170px;
+}
+
+/* Mes roues */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 24px 24px;
+  text-align: center;
+}
+
+.empty-state h3 {
+  margin: 4px 0 0;
+  color: var(--title);
+  font-size: 15px;
+}
+
+.empty-state p {
+  max-width: 340px;
+  margin: 0 0 8px;
+  color: var(--hint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.wheel-builder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--row-divider);
+}
+
+.wheel-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 216px;
+  height: 216px;
+  border: 1.5px dashed var(--hint);
+  border-radius: 50%;
+  background: none;
+  color: var(--hint);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.wheel-empty:hover {
+  border-color: var(--accent);
+  color: var(--label);
+}
+
+.wheel-empty-plus {
+  color: var(--accent);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.part-chip[data-large] {
+  width: 28px;
+  height: 28px;
+}
+
+.part-chip-text {
+  font-size: 8px;
+  font-weight: 700;
+}
+
+/* Feuille de choix d'une part */
+.kind-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+  gap: 8px;
+  padding: 4px 14px 12px;
+}
+
+.kind-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--page);
+  color: var(--label);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.kind-tile .tab-icon {
+  stroke: var(--accent);
+}
+
+.kind-tile:hover,
+.kind-tile:focus-visible,
+.kind-tile[aria-pressed="true"] {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.kind-tile[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--page));
+}
+
+.picker-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--row-divider);
+}
+
+.picker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--hint);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.site-preview,
+.picker-submit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.site-preview .text-input {
+  flex: 1;
+}
+
+.site-preview[data-waiting] .site-preview-icon {
+  opacity: 0.45;
+}
+
+.site-preview-icon[data-looking] {
+  animation: site-looking 700ms ease-in-out infinite alternate;
+}
+
+@keyframes site-looking {
+  to {
+    opacity: 0.35;
+  }
+}
+
+.picker-submit {
+  justify-content: space-between;
+}
+
+.picker-hint {
+  margin: 0;
+  color: var(--hint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.picker-panel {
+  padding: 8px 8px 12px;
+  border-top: 1px solid var(--row-divider);
+}
+
+.picker-panel .picker-hint {
+  margin: 8px 8px 0;
+}
+
+.format-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 8px 4px;
+}
+
+.format-choice {
+  width: 46px;
+  height: 46px;
+  border: none;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms var(--spring);
+}
+
+.format-choice:hover,
+.format-choice:focus-visible {
+  outline: none;
+  transform: scale(1.08);
+}
+
+.picker-list {
+  max-height: 300px;
+  border-top: 1px solid var(--row-divider);
+}
+
+.sheet-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sheet-item-hint {
+  color: var(--hint);
+  font-size: 11px;
+}
+
+.sheet-item:hover .sheet-item-hint,
+.sheet-item:focus-visible .sheet-item-hint {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* Couleur de la part choisie sur l'aperçu */
+.color-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--row-divider);
+}
+
+.color-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-well {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+}
+
+.swatch[aria-checked="true"],
+.swatch-custom[data-current] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch-custom {
+  position: relative;
+  overflow: hidden;
+  background: conic-gradient(#ff3b30, #ffcc00, #34c759, #32ade6, #5856d6, #ff2d55, #ff3b30);
+}
+
+.swatch-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatches-reset {
+  margin-left: auto;
+}
+
+.color-preview .row-hint,
+.wheel-builder .row-hint {
+  text-align: center;
 }

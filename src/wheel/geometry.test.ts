@@ -6,6 +6,7 @@ import {
   buttonCenter,
   polar,
   sectorAt,
+  sectorPath,
   separatorAngles,
 } from "./geometry";
 import { shortenMiddle } from "./fileName";
@@ -62,5 +63,26 @@ describe("shortenMiddle", () => {
     expect(short).toHaveLength(22);
     expect(short.endsWith(".jpeg")).toBe(true);
     expect(short).toContain("…");
+  });
+});
+
+describe("roue à une seule part", () => {
+  it("occupe tout le disque, sans séparation", () => {
+    for (const angle of [0, 90, 180, 270]) {
+      const [x, y] = polar(120, angle);
+      expect(sectorAt(x, y, 1)).toBe(0);
+    }
+    expect(separatorAngles(1)).toEqual([]);
+    expect(buttonCenter(0, 1)).toEqual(polar(123, 0));
+  });
+
+  it("se trace en couronne entière, sans arc qui revient sur lui-même", () => {
+    const path = sectorPath(0, 1);
+    // Deux contours fermés (l'extérieur et le trou du centre), de deux demi-cercles chacun
+    expect(path.match(/M /g)).toHaveLength(2);
+    expect(path.match(/A /g)).toHaveLength(4);
+    expect(path).not.toContain("NaN");
+    // Une part parmi d'autres reste un secteur
+    expect(sectorPath(0, 6).match(/A /g)).toHaveLength(2);
   });
 });

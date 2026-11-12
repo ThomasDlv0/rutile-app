@@ -4,9 +4,10 @@ import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
 import { ShareIcon } from "../ShareIcon";
+import { WheelsIcon } from "../WheelsIcon";
 import type { WheelBorder, WheelConfig } from "../ipc";
 import { ActionGlyph } from "./ActionGlyph";
-import type { Mode, WheelItem } from "./formats";
+import { type BuiltinMode, type Mode, type WheelItem, isCustomMode } from "./formats";
 import {
   BUTTON_RADIUS,
   CENTER,
@@ -42,6 +43,9 @@ interface WheelProps {
   mode: Mode;
   /** Roue suivante au clic sur le centre, `null` si une seule roue est active. */
   next: Mode | null;
+  /** Nom de la roue affichée et de la suivante, quand ce sont des roues personnalisées. */
+  title?: string;
+  nextTitle?: string;
   items: readonly WheelItem[];
   disabled: Set<string>;
   highlighted: number | null;
@@ -70,7 +74,7 @@ interface WheelProps {
   onToggleMode: () => void;
 }
 
-const MODE_NAMES: Record<Mode, string> = {
+const MODE_NAMES: Record<BuiltinMode, string> = {
   image: "Images",
   video: "Vidéo",
   apps: "Apps",
@@ -78,7 +82,13 @@ const MODE_NAMES: Record<Mode, string> = {
   actions: "Actions",
 };
 
-function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
+/** Nom court d'une roue ; `title` est celui d'une roue personnalisée. */
+function modeName(mode: Mode, title?: string): string {
+  return isCustomMode(mode) ? title || "Ma roue" : MODE_NAMES[mode];
+}
+
+export function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
+  if (isCustomMode(mode)) return <WheelsIcon size={size} />;
   if (mode === "video") return <FilmIcon size={size} />;
   if (mode === "apps") return <AppsIcon size={size} />;
   if (mode === "share") return <ShareIcon size={size} />;
@@ -86,8 +96,17 @@ function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
   return <GemIcon size={size} />;
 }
 
-/** Roues dont les parts portent un nom (app, destination) plutôt qu'un format. */
-const NAMED_MODES: ReadonlySet<Mode> = new Set(["apps", "share", "actions"]);
+/** Roues dont les parts portent un nom (app, destination, action) plutôt qu'un format. */
+const isNamed = (mode: Mode): boolean => mode !== "image" && mode !== "video";
+
+/** Allure du bouton d'une part : une pastille de couleur pour un format ou une action,
+ * l'icône seule pour une app, un « + » pour une part libre, sinon un nom. */
+function itemKind(item: WheelItem, mode: Mode): "format" | "icon" | "add" | "name" {
+  if (item.glyph || item.color) return "format";
+  if (item.icon) return "icon";
+  if (item.empty) return "add";
+  return isNamed(mode) ? "name" : "format";
+}
 
 /** Contenu d'une part : icône d'app, « + » pour une part vide, ou nom du format. Une app
  * garde sa pastille de notifications, comme dans le Dock. */
@@ -153,7 +172,17 @@ function useWedge(highlighted: number | null, count: number) {
   return { angle: angle.current, appearing };
 }
 
-function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | null; mode: Mode }) {
+function HubContent({
+  hub,
+  work,
+  mode,
+  title,
+}: {
+  hub: HubText | null;
+  work: Work | null;
+  mode: Mode;
+  title?: string;
+}) {
   if (work?.state === "working") {
     if (work.progress !== undefined) {
       return (
@@ -193,7 +222,7 @@ function HubContent({ hub, work, mode }: { hub: HubText | null; work: Work | nul
       <span className="hub-text hub-mode" key={mode}>
         <ModeIcon mode={mode} size={30} />
         <span className="hub-label" data-tone="muted">
-          {MODE_NAMES[mode]}
+          {modeName(mode, title)}
         </span>
       </span>
     );
@@ -214,6 +243,8 @@ export function Wheel({
   phase,
   mode,
   next,
+  title,
+  nextTitle,
   items,
   disabled,
   highlighted,
@@ -360,22 +391,12 @@ export function Wheel({
               }}
               type="button"
               className="format-button"
-              data-kind={
-                format.glyph
-                  ? "format"
-                  : format.icon
-                    ? "icon"
-                    : format.empty
-                      ? "add"
-                      : NAMED_MODES.has(mode)
-                        ? "name"
-                        : "format"
-              }
+              data-kind={itemKind(format, mode)}
               style={style}
               disabled={isDisabled || busy}
               data-unavailable={isDisabled}
               data-active={highlighted === index}
-              title={NAMED_MODES.has(mode) && !format.empty ? format.label : undefined}
+              title={isNamed(mode) && !format.empty ? format.label : undefined}
               aria-label={
                 isDisabled
                   ? `${format.label}, indisponible`
@@ -413,17 +434,21 @@ export function Wheel({
         )}
         {busy || (!next && !back) ? (
           <div className="hub" title={hub?.title} aria-live="polite">
-            <HubContent hub={hub} work={work} mode={mode} />
+            <HubContent hub={hub} work={work} mode={mode} title={title} />
           </div>
         ) : (
           <button
             type="button"
             className="hub hub-toggle"
             title={hub?.title}
-            aria-label={next && !back ? `Passer à la roue ${MODE_NAMES[next]}` : "Revenir à la roue d'avant"}
+            aria-label={
+              next && !back
+                ? `Passer à la roue ${modeName(next, nextTitle)}`
+                : "Revenir à la roue d'avant"
+            }
             onClick={onToggleMode}
           >
-            <HubContent hub={hub} work={work} mode={mode} />
+            <HubContent hub={hub} work={work} mode={mode} title={title} />
           </button>
         )}
       </div>

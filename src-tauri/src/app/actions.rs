@@ -1,5 +1,5 @@
 //! Roue Actions : capture, lecture de texte, pipette, fichiers, retouches, vidéos, fenêtres et
-//! actions personnalisées. Le résultat s'annonce par une notification, comme les conversions.
+//! parts des roues personnalisées. Le résultat s'annonce par une notification, comme les conversions.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -18,7 +18,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use super::convert::PROGRESS_EVENT;
 use super::notify::{self, Action, Message};
-use super::settings::{self, CustomAction, CustomKind};
+use super::settings::{self, CustomPart, PartKind};
 use super::wheel::{self, Source, WHEEL_LABEL};
 
 /// Longueur du texte lu rappelée dans la notification.
@@ -628,11 +628,10 @@ fn hidden(program: &str) -> Command {
     command
 }
 
-/// Commande à lancer pour une action personnalisée ; les fichiers en sont les arguments.
-fn custom_command(action: &CustomAction, paths: &[PathBuf]) -> Option<Command> {
+/// Commande à lancer pour un raccourci ou une commande ; les fichiers en sont les arguments.
+fn custom_command(action: &CustomPart, paths: &[PathBuf]) -> Option<Command> {
     match action.kind {
-        CustomKind::Url => None,
-        CustomKind::Shortcut => {
+        PartKind::Shortcut => {
             let mut command = hidden("/usr/bin/shortcuts");
             command.args(["run", action.value.as_str()]);
             for path in paths {
@@ -640,12 +639,12 @@ fn custom_command(action: &CustomAction, paths: &[PathBuf]) -> Option<Command> {
             }
             Some(command)
         }
-        CustomKind::Command if cfg!(windows) => {
+        PartKind::Command if cfg!(windows) => {
             let mut command = hidden("cmd");
             command.args(["/C", action.value.as_str()]).args(paths);
             Some(command)
         }
-        CustomKind::Command => {
+        PartKind::Command => {
             // `$1`, `$2`… : les fichiers, sans qu'un nom bizarre devienne du code
             let mut command = hidden("/bin/sh");
             command
@@ -653,6 +652,7 @@ fn custom_command(action: &CustomAction, paths: &[PathBuf]) -> Option<Command> {
                 .args(paths);
             Some(command)
         }
+        _ => None,
     }
 }
 
@@ -666,17 +666,41 @@ async fn run_custom<R: Runtime>(
     let chosen = settings::current(app)
         .custom_wheels
         .get(wheel)
-        .and_then(|wheel| wheel.actions.get(action))
+        .and_then(|wheel| wheel.parts().get(action))
         .cloned()
-        .ok_or_else(|| failure(TITLE, "Cette action n'existe plus."))?;
-    if chosen.kind == CustomKind::Url {
-        if !settings::web_address(&chosen.value) {
-            return Err(failure(TITLE, "Seules les adresses web s'ouvrent."));
+        .ok_or_else(|| failure(TITLE, "Cette part n'existe plus."))?;
+    match chosen.kind {
+        PartKind::Url => {
+            if !settings::web_address(&chosen.value) {
+                return Err(failure(TITLE, "Seules les adresses web s'ouvrent."));
+            }
+            app.opener()
+                .open_url(chosen.value.trim(), None::<&str>)
+                .map_err(|err| failure(TITLE, err.to_string()))?;
+            return Ok(None);
         }
-        app.opener()
-            .open_url(chosen.value.trim(), None::<&str>)
-            .map_err(|err| failure(TITLE, err.to_string()))?;
-        return Ok(None);
+        PartKind::Folder => {
+            app.opener()
+                .open_path(chosen.value.as_str(), None::<&str>)
+                .map_err(|err| failure(TITLE, err.to_string()))?;
+            return Ok(None);
+        }
+        // Comme sur la roue des apps : les fichiers de la roue s'ouvrent avec elle
+        PartKind::App => {
+            let name = chosen.name.clone();
+            return match blocking(move || platform::apps::launch(Path::new(&chosen.value), &paths))
+                .await
+            {
+                Some(Ok(())) => Ok(None),
+                Some(Err(err)) => Err(failure(TITLE, format!("{name} : {err}"))),
+                None => Err(failure(TITLE, "Action interrompue.")),
+            };
+        }
+        // L'interface les lance elle-même, comme sur les roues de Rutile
+        PartKind::Convert | PartKind::Action => {
+            return Err(failure(TITLE, "Cette part se lance depuis la roue."));
+        }
+        PartKind::Shortcut | PartKind::Command => {}
     }
     let name = chosen.name.clone();
     let output = blocking(move || {

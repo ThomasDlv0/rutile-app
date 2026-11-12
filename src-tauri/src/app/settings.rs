@@ -6,11 +6,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use converter::Quality;
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt as _;
 
-use super::apps::{self, AppSlot, AppView, MIN_SLOTS};
+use super::apps::{self, AppSlot, AppView, CustomWheelView, MIN_SLOTS};
 use super::shake::{self, ShakeSettings};
 use super::share::{self, ShareTarget, ShareView};
 use super::{shortcut, tray};
@@ -40,8 +41,17 @@ const COLORED_FORMATS: [&str; 21] = [
     "action-apps",
     "action-custom",
 ];
-/// Roues personnalisées, et actions par roue : une part chacune.
+/// Formats vers lesquels une part d'une roue personnalisée peut convertir.
+const CONVERT_FORMATS: [&str; 12] = [
+    "png", "jpeg", "webp", "avif", "svg", "ico", "mp4", "webm", "mov", "mkv", "gif", "mp3",
+];
+/// Roues personnalisées, et parts par roue.
 const MAX_CUSTOM: usize = 10;
+/// Longueur du nom d'une roue personnalisée et de son identifiant.
+const MAX_WHEEL_NAME: usize = 30;
+const MAX_WHEEL_ID: usize = 16;
+/// Devant l'identifiant d'une roue personnalisée, dans l'ordre des roues.
+const CUSTOM_PREFIX: &str = "custom:";
 /// Parts d'une liste réordonnable de la roue Actions, et longueur de leur identifiant.
 const MAX_PARTS: usize = 40;
 const MAX_PART_ID: usize = 40;
@@ -73,6 +83,17 @@ impl WheelMode {
         WheelMode::Share,
         WheelMode::Actions,
     ];
+
+    /// Nom de la roue dans l'ordre des roues, le même que dans les réglages enregistrés.
+    fn key(self) -> &'static str {
+        match self {
+            WheelMode::Image => "image",
+            WheelMode::Video => "video",
+            WheelMode::Apps => "apps",
+            WheelMode::Share => "share",
+            WheelMode::Actions => "actions",
+        }
+    }
 }
 
 /// Contour du disque de la roue.
@@ -89,34 +110,128 @@ pub enum WheelBorder {
     Light,
 }
 
-/// Ce que lance une action personnalisée.
+/// Ce que fait une part d'une roue personnalisée.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum CustomKind {
+pub enum PartKind {
+    /// App à lancer, par son chemin ; les fichiers de la roue s'ouvrent avec elle.
+    App,
+    /// Dossier à ouvrir.
+    Folder,
+    /// Adresse d'un site.
+    Url,
+    /// Conversion vers un format des roues Images et Vidéo (`png`, `mp4`…).
+    Convert,
+    /// Action de la roue Actions, par son identifiant.
+    Action,
     /// Raccourci de l'app Raccourcis (macOS), par son nom.
     Shortcut,
     /// Commande du système ; les fichiers de la roue lui sont passés en arguments.
     Command,
-    /// Adresse d'un site.
-    Url,
+}
+
+impl PartKind {
+    /// Les seules parts que connaissent les versions d'avant la 1.4.
+    fn legacy(self) -> bool {
+        matches!(self, PartKind::Shortcut | PartKind::Command | PartKind::Url)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CustomAction {
+pub struct CustomPart {
+    /// Nom affiché ; celui d'une conversion ou d'une action vient de la roue.
+    #[serde(default)]
     pub name: String,
-    pub kind: CustomKind,
+    pub kind: PartKind,
+    /// Chemin, adresse, format, identifiant d'action, nom du raccourci ou commande.
     pub value: String,
 }
 
-/// Roue faite par l'utilisateur, dans la part « Mes roues » de la roue Actions.
+impl CustomPart {
+    /// Une part doit pouvoir se lancer : les réglages sont un fichier modifiable.
+    fn valid(&self) -> bool {
+        let value = self.value.trim();
+        let named = !self.name.trim().is_empty();
+        match self.kind {
+            PartKind::App | PartKind::Folder | PartKind::Shortcut | PartKind::Command => {
+                named && !value.is_empty()
+            }
+            PartKind::Url => named && web_address(value),
+            PartKind::Convert => CONVERT_FORMATS.contains(&value),
+            PartKind::Action => plausible_id(value),
+        }
+    }
+}
+
+fn enabled_by_default() -> bool {
+    true
+}
+
+/// Liste dont on garde ce qui se lit : une part d'un genre inconnu de cette version (écrite
+/// par une plus récente) est écartée sans faire perdre les autres réglages.
+fn lenient<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(readable(values))
+}
+
+fn lenient_option<'de, D, T>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let values = Option::<Vec<serde_json::Value>>::deserialize(deserializer)?;
+    Ok(values.map(readable))
+}
+
+fn readable<T: DeserializeOwned>(values: Vec<serde_json::Value>) -> Vec<T> {
+    values
+        .into_iter()
+        .filter_map(|value| serde_json::from_value(value).ok())
+        .collect()
+}
+
+/// Roue faite par l'utilisateur : elle prend sa place parmi les autres roues.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CustomWheel {
+    /// Identifiant stable, qui la désigne dans l'ordre des roues ; vide, il est attribué.
+    #[serde(default)]
+    pub id: String,
     pub name: String,
-    pub actions: Vec<CustomAction>,
+    /// Affichée parmi les roues, au clic sur le centre.
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
+    /// Parts dans l'ordre. Absentes des réglages d'avant la 1.4 : elles viennent alors
+    /// d'`actions`.
+    #[serde(default, deserialize_with = "lenient_option")]
+    pub parts: Option<Vec<CustomPart>>,
+    /// Ce que lisent les versions d'avant la 1.4 : les parts qu'elles connaissent, recopiées
+    /// à chaque enregistrement.
+    #[serde(default, deserialize_with = "lenient")]
+    pub actions: Vec<CustomPart>,
     /// Extensions (`pdf`, `docx`…) des fichiers pour lesquels la roue apparaît ; vide, elle
-    /// apparaît pour tous.
+    /// apparaît toujours.
     #[serde(default)]
     pub extensions: Vec<String>,
+}
+
+impl CustomWheel {
+    pub fn parts(&self) -> &[CustomPart] {
+        self.parts.as_deref().unwrap_or_default()
+    }
+
+    /// Clé de la roue dans l'ordre des roues.
+    fn key(&self) -> String {
+        format!("{CUSTOM_PREFIX}{}", self.id)
+    }
+
+    /// Sans part, il n'y a rien à afficher.
+    fn shown(&self) -> bool {
+        self.enabled && !self.parts().is_empty()
+    }
 }
 
 /// Part de la roue Actions, ou action proposée pour un type de fichier, à sa place dans la
@@ -184,22 +299,33 @@ impl Default for FileWheels {
     }
 }
 
+/// Identifiant d'une part de la roue Actions tel que l'interface en écrit : `capture-zone`,
+/// `image-fullHd`.
+fn plausible_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_PART_ID
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 /// Chaque part une seule fois, sous un identifiant plausible.
 fn sanitized_parts(parts: Vec<PartEntry>) -> Vec<PartEntry> {
     let mut kept: Vec<PartEntry> = Vec::new();
     for part in parts {
-        let plausible = !part.id.is_empty()
-            && part.id.len() <= MAX_PART_ID
-            && part
-                .id
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if plausible && !kept.iter().any(|known| known.id == part.id) {
+        if plausible_id(&part.id) && !kept.iter().any(|known| known.id == part.id) {
             kept.push(part);
         }
     }
     kept.truncate(MAX_PARTS);
     kept
+}
+
+/// Identifiant d'une roue personnalisée : quelques lettres minuscules et chiffres.
+fn plausible_wheel_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_WHEEL_ID
+        && id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
 }
 
 /// `.PDF` → `pdf` ; seulement lettres et chiffres, chaque extension une fois.
@@ -239,8 +365,12 @@ pub struct Settings {
     pub jpeg_quality: u8,
     pub webp_quality: u8,
     pub avif_quality: u8,
-    /// Ordre du clic au centre, et roues affichées ou non.
+    /// Roues de Rutile, affichées ou non. Leur ordre suit `wheel_order` : c'est celui que
+    /// lisent les versions d'avant la 1.4.
     pub modes: Vec<ModeEntry>,
+    /// Ordre du clic au centre, roues personnalisées comprises (`custom:` puis leur
+    /// identifiant).
+    pub wheel_order: Vec<String>,
     /// La roue se rouvre sur celle affichée à la fermeture, plutôt que sur la première.
     pub remember_wheel: bool,
     /// Millisecondes au centre, un fichier glissé, avant de basculer entre conversion et partage.
@@ -283,6 +413,7 @@ impl Default for Settings {
             modes: WheelMode::ALL
                 .map(|id| ModeEntry { id, enabled: true })
                 .to_vec(),
+            wheel_order: Vec::new(),
             remember_wheel: false,
             dwell_ms: DEFAULT_DWELL_MS,
             format_colors: BTreeMap::new(),
@@ -326,9 +457,65 @@ impl Settings {
                 modes.push(ModeEntry { id, enabled: true });
             }
         }
-        if !modes.iter().any(|entry| entry.enabled) {
+        self.custom_wheels.truncate(MAX_CUSTOM);
+        let mut ids: Vec<String> = Vec::new();
+        for wheel in &mut self.custom_wheels {
+            wheel.name = wheel.name.trim().chars().take(MAX_WHEEL_NAME).collect();
+            // Réglages d'avant la 1.4 : les actions deviennent les parts
+            let mut parts = wheel
+                .parts
+                .take()
+                .unwrap_or_else(|| std::mem::take(&mut wheel.actions));
+            parts.retain(CustomPart::valid);
+            parts.truncate(MAX_CUSTOM);
+            wheel.actions = parts
+                .iter()
+                .filter(|part| part.kind.legacy())
+                .cloned()
+                .collect();
+            wheel.parts = Some(parts);
+            wheel.extensions = sanitized_extensions(std::mem::take(&mut wheel.extensions));
+            if !plausible_wheel_id(&wheel.id) || ids.contains(&wheel.id) {
+                wheel.id.clear();
+            }
+            ids.push(wheel.id.clone());
+        }
+        // Un identifiant manquant ou en double est attribué : « r1 », « r2 »…
+        for index in 0..self.custom_wheels.len() {
+            if self.custom_wheels[index].id.is_empty() {
+                let fresh = (1..)
+                    .map(|number| format!("r{number}"))
+                    .find(|id| !ids.contains(id))
+                    .expect("il reste toujours un numéro libre");
+                ids[index] = fresh.clone();
+                self.custom_wheels[index].id = fresh;
+            }
+        }
+        // Il faut une roue qui s'affiche quels que soient les fichiers
+        let always = self
+            .custom_wheels
+            .iter()
+            .any(|wheel| wheel.shown() && wheel.extensions.is_empty());
+        if !modes.iter().any(|entry| entry.enabled) && !always {
             modes[0].enabled = true;
         }
+        // Ordre des roues : celui enregistré, puis les roues qu'il ne connaît pas encore
+        let mut order: Vec<String> = Vec::new();
+        let known = modes
+            .iter()
+            .map(|entry| entry.id.key().to_owned())
+            .chain(self.custom_wheels.iter().map(CustomWheel::key));
+        let known: Vec<String> = known.collect();
+        for key in std::mem::take(&mut self.wheel_order)
+            .into_iter()
+            .chain(known.clone())
+        {
+            if known.contains(&key) && !order.contains(&key) {
+                order.push(key);
+            }
+        }
+        modes.sort_by_key(|entry| order.iter().position(|key| key == entry.id.key()));
+        self.wheel_order = order;
         self.modes = modes;
         for slot in &mut self.apps {
             if slot.as_ref().is_some_and(|slot| !slot.opens_safely()) {
@@ -336,17 +523,6 @@ impl Settings {
             }
         }
         apps::fit_slots(&mut self.apps);
-        self.custom_wheels.truncate(MAX_CUSTOM);
-        for wheel in &mut self.custom_wheels {
-            wheel.name = wheel.name.trim().to_string();
-            wheel.actions.truncate(MAX_CUSTOM);
-            wheel.actions.retain(|action| {
-                !action.name.trim().is_empty()
-                    && !action.value.trim().is_empty()
-                    && (action.kind != CustomKind::Url || web_address(&action.value))
-            });
-            wheel.extensions = sanitized_extensions(std::mem::take(&mut wheel.extensions));
-        }
         self.action_parts = sanitized_parts(std::mem::take(&mut self.action_parts));
         let files = &mut self.file_wheels;
         for (wheel, convertible) in [
@@ -377,11 +553,22 @@ impl Settings {
         self
     }
 
-    pub fn enabled_modes(&self) -> Vec<WheelMode> {
-        self.modes
+    /// Roues affichées, dans l'ordre du clic au centre : le nom d'une roue de Rutile, ou
+    /// `custom:` suivi de l'identifiant d'une roue personnalisée.
+    pub fn enabled_modes(&self) -> Vec<String> {
+        self.wheel_order
             .iter()
-            .filter(|entry| entry.enabled)
-            .map(|entry| entry.id)
+            .filter(|key| match key.strip_prefix(CUSTOM_PREFIX) {
+                Some(id) => self
+                    .custom_wheels
+                    .iter()
+                    .any(|wheel| wheel.id == id && wheel.shown()),
+                None => self
+                    .modes
+                    .iter()
+                    .any(|entry| entry.id.key() == key.as_str() && entry.enabled),
+            })
+            .cloned()
             .collect()
     }
 
@@ -415,12 +602,32 @@ fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     Some(dir.join("settings.json"))
 }
 
+/// Lit des réglages en gardant tout ce qui se lit : un réglage inconnu de cette version
+/// (écrit par une plus récente, ou à la main) reprend sa valeur par défaut, sans emporter
+/// les autres.
+fn parse(text: &str) -> Option<Settings> {
+    if let Ok(settings) = serde_json::from_str::<Settings>(text) {
+        return Some(settings);
+    }
+    let serde_json::Value::Object(saved) = serde_json::from_str(text).ok()? else {
+        return None;
+    };
+    let mut kept = serde_json::Map::new();
+    for (key, value) in saved {
+        let alone = serde_json::Map::from_iter([(key.clone(), value.clone())]);
+        if serde_json::from_value::<Settings>(alone.into()).is_ok() {
+            kept.insert(key, value);
+        }
+    }
+    serde_json::from_value(kept.into()).ok()
+}
+
 /// Lit les réglages enregistrés et les garde en mémoire ; un fichier absent ou abîmé
 /// redonne les valeurs par défaut.
 pub fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
     let mut settings = file(app)
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
+        .and_then(|text| parse(&text))
         .unwrap_or_default();
     if settings.share.is_empty() {
         settings.share = share::suggestions(app);
@@ -468,6 +675,8 @@ pub struct SettingsView {
     apps: Vec<Option<AppView>>,
     /// Destinations de la roue de partage, avec leurs icônes.
     share: Vec<Option<ShareView>>,
+    /// Roues personnalisées, avec les icônes de leurs parts.
+    custom: Vec<CustomWheelView>,
     /// Onglet demandé à l'ouverture de la fenêtre (une part vide de la roue, par exemple).
     tab: Option<String>,
 }
@@ -477,6 +686,7 @@ fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
     SettingsView {
         apps: apps::views(app, &settings.apps),
         share: share::views(app, &settings.share),
+        custom: apps::custom_views(app, &settings.custom_wheels),
         tab: None,
         shortcut_label: shortcut::label(&settings.shortcut),
         settings,
@@ -549,6 +759,7 @@ pub fn update_settings<R: Runtime>(
         super::glass::apply(&app, applied.wheel_glass);
     }
     if applied.modes != previous.modes
+        || applied.wheel_order != previous.wheel_order
         || applied.remember_wheel != previous.remember_wheel
         || applied.dwell_ms != previous.dwell_ms
         || applied.format_colors != previous.format_colors
@@ -660,6 +871,249 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, tab: Option<&str>) {
 mod tests {
     use super::*;
 
+    fn part(kind: PartKind, name: &str, value: &str) -> CustomPart {
+        CustomPart {
+            name: name.into(),
+            kind,
+            value: value.into(),
+        }
+    }
+
+    fn wheel(name: &str, parts: Vec<CustomPart>) -> CustomWheel {
+        CustomWheel {
+            id: String::new(),
+            name: name.into(),
+            enabled: true,
+            parts: Some(parts),
+            actions: Vec::new(),
+            extensions: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn les_roues_d_avant_la_1_4_gardent_leurs_actions() {
+        let settings: Settings = serde_json::from_str(
+            r#"{ "customWheels": [{ "name": "Docs", "extensions": ["pdf"], "actions": [
+                { "name": "Site", "kind": "url", "value": "https://exemple.fr" },
+                { "name": "Tri", "kind": "command", "value": "sort \"$1\"" }
+            ] }] }"#,
+        )
+        .unwrap();
+        let settings = settings.sanitized();
+        let docs = &settings.custom_wheels[0];
+        assert_eq!(docs.id, "r1");
+        assert!(docs.enabled);
+        assert_eq!(docs.parts().len(), 2);
+        assert_eq!(docs.parts()[1].kind, PartKind::Command);
+        assert_eq!(docs.extensions, ["pdf"]);
+        assert_eq!(
+            settings.wheel_order,
+            ["image", "video", "apps", "share", "actions", "custom:r1"],
+            "une roue que l'ordre ne connaît pas se range à la fin"
+        );
+    }
+
+    #[test]
+    fn une_roue_melange_apps_sites_conversions_et_actions() {
+        let settings = Settings {
+            custom_wheels: vec![wheel(
+                "Boulot",
+                vec![
+                    part(PartKind::App, "Mail", "/Applications/Mail.app"),
+                    part(PartKind::Folder, "Projets", "/Users/moi/Projets"),
+                    part(PartKind::Url, "YouTube", "https://youtube.com/"),
+                    part(PartKind::Convert, "", "png"),
+                    part(PartKind::Action, "", "image-fullHd"),
+                    part(PartKind::Shortcut, "Ranger", "Ranger le bureau"),
+                    // Écartées : format inconnu, identifiant piégé, app sans chemin
+                    part(PartKind::Convert, "", "exe"),
+                    part(PartKind::Action, "", "<script>"),
+                    part(PartKind::App, "Rien", "  "),
+                ],
+            )],
+            ..Settings::default()
+        }
+        .sanitized();
+        let boulot = &settings.custom_wheels[0];
+        let kinds: Vec<PartKind> = boulot.parts().iter().map(|part| part.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                PartKind::App,
+                PartKind::Folder,
+                PartKind::Url,
+                PartKind::Convert,
+                PartKind::Action,
+                PartKind::Shortcut
+            ]
+        );
+        // Les anciennes versions n'y lisent que ce qu'elles connaissent
+        let legacy: Vec<&str> = boulot
+            .actions
+            .iter()
+            .map(|part| part.name.as_str())
+            .collect();
+        assert_eq!(legacy, ["YouTube", "Ranger"]);
+    }
+
+    #[test]
+    fn les_reglages_restent_lisibles_par_la_1_3() {
+        let settings = Settings {
+            wheel_order: vec!["custom:ab".into(), "share".into(), "image".into()],
+            custom_wheels: vec![CustomWheel {
+                id: "ab".into(),
+                ..wheel(
+                    "Mix",
+                    vec![part(PartKind::App, "Mail", "/Applications/Mail.app")],
+                )
+            }],
+            ..Settings::default()
+        }
+        .sanitized();
+        let saved: serde_json::Value = serde_json::to_value(&settings).unwrap();
+        // Les roues de Rutile seulement, dans l'ordre choisi
+        let modes: Vec<&str> = saved["modes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(modes, ["share", "image", "video", "apps", "actions"]);
+        // Et aucune part d'un genre que la 1.3 refuserait
+        let kinds: Vec<&str> = saved["customWheels"][0]["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|action| action["kind"].as_str().unwrap())
+            .collect();
+        assert!(
+            kinds
+                .iter()
+                .all(|kind| ["shortcut", "command", "url"].contains(kind))
+        );
+        assert_eq!(saved["customWheels"][0]["parts"][0]["kind"], "app");
+    }
+
+    #[test]
+    fn retirer_la_derniere_part_ne_fait_pas_revenir_les_anciennes() {
+        let mut emptied = wheel("Vide", Vec::new());
+        emptied.actions = vec![part(PartKind::Url, "Reste", "https://exemple.fr")];
+        let settings = Settings {
+            custom_wheels: vec![emptied],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert!(settings.custom_wheels[0].parts().is_empty());
+        assert!(settings.custom_wheels[0].actions.is_empty());
+    }
+
+    #[test]
+    fn les_roues_perso_prennent_leur_place_parmi_les_autres() {
+        let settings = Settings {
+            wheel_order: vec![
+                "apps".into(),
+                "custom:mix".into(),
+                "image".into(),
+                "custom:disparue".into(),
+                "apps".into(),
+            ],
+            custom_wheels: vec![
+                CustomWheel {
+                    id: "mix".into(),
+                    ..wheel("Mix", vec![part(PartKind::Convert, "", "png")])
+                },
+                // Sans part, elle n'a rien à afficher
+                CustomWheel {
+                    id: "vide".into(),
+                    ..wheel("Vide", Vec::new())
+                },
+                CustomWheel {
+                    id: "off".into(),
+                    enabled: false,
+                    ..wheel("Coupée", vec![part(PartKind::Convert, "", "mp4")])
+                },
+                // Même identifiant qu'une autre : elle en reçoit un nouveau
+                CustomWheel {
+                    id: "mix".into(),
+                    ..wheel("Double", vec![part(PartKind::Convert, "", "gif")])
+                },
+            ],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(
+            settings.wheel_order,
+            [
+                "apps",
+                "custom:mix",
+                "image",
+                "video",
+                "share",
+                "actions",
+                "custom:vide",
+                "custom:off",
+                "custom:r1"
+            ]
+        );
+        assert_eq!(
+            settings.enabled_modes(),
+            [
+                "apps",
+                "custom:mix",
+                "image",
+                "video",
+                "share",
+                "actions",
+                "custom:r1"
+            ]
+        );
+    }
+
+    #[test]
+    fn une_roue_perso_peut_rester_la_seule_affichee() {
+        let all_off = WheelMode::ALL
+            .map(|id| ModeEntry { id, enabled: false })
+            .to_vec();
+        let alone = Settings {
+            modes: all_off.clone(),
+            custom_wheels: vec![wheel("Seule", vec![part(PartKind::Convert, "", "png")])],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(alone.enabled_modes(), ["custom:r1"]);
+
+        // Limitée à certains fichiers, elle ne suffit pas : il faut une roue toujours là
+        let mut limited = wheel("PDF", vec![part(PartKind::Convert, "", "png")]);
+        limited.extensions = vec!["pdf".into()];
+        let settings = Settings {
+            modes: all_off,
+            custom_wheels: vec![limited],
+            ..Settings::default()
+        }
+        .sanitized();
+        assert_eq!(settings.enabled_modes(), ["image", "custom:r1"]);
+    }
+
+    #[test]
+    fn un_reglage_illisible_n_emporte_pas_les_autres() {
+        let settings = parse(
+            r#"{ "jpegQuality": 75, "modes": [{ "id": "hologramme", "enabled": true }],
+                 "apps": "pas une liste", "shortcut": "Alt+Space",
+                 "customWheels": [{ "name": "Demain", "parts": [
+                     { "name": "Vu", "kind": "url", "value": "https://exemple.fr" },
+                     { "name": "Pas encore", "kind": "telepathie", "value": "x" }
+                 ] }] }"#,
+        )
+        .unwrap()
+        .sanitized();
+        assert_eq!(settings.jpeg_quality, 75);
+        assert_eq!(settings.shortcut, "Alt+Space");
+        assert_eq!(settings.modes.len(), WheelMode::ALL.len());
+        assert_eq!(settings.apps.len(), MIN_SLOTS);
+        assert_eq!(settings.custom_wheels[0].parts().len(), 1);
+        assert!(parse("pas du JSON").is_none());
+    }
+
     #[test]
     fn un_fichier_incomplet_garde_les_valeurs_par_defaut() {
         let settings: Settings = serde_json::from_str(r#"{ "jpegQuality": 75 }"#).unwrap();
@@ -676,7 +1130,7 @@ mod tests {
             settings
                 .sanitized()
                 .enabled_modes()
-                .contains(&WheelMode::Actions)
+                .contains(&"actions".to_owned())
         );
     }
 
@@ -692,28 +1146,19 @@ mod tests {
                 Some(url("https://exemple.fr")),
                 Some(url("file:///etc/passwd")),
             ],
-            custom_wheels: vec![CustomWheel {
-                name: "Test".into(),
-                extensions: Vec::new(),
-                actions: vec![
-                    CustomAction {
-                        name: "Bon".into(),
-                        kind: CustomKind::Url,
-                        value: "https://exemple.fr".into(),
-                    },
-                    CustomAction {
-                        name: "Piégé".into(),
-                        kind: CustomKind::Url,
-                        value: "javascript:alert(1)".into(),
-                    },
+            custom_wheels: vec![wheel(
+                "Test",
+                vec![
+                    part(PartKind::Url, "Bon", "https://exemple.fr"),
+                    part(PartKind::Url, "Piégé", "javascript:alert(1)"),
                 ],
-            }],
+            )],
             ..Settings::default()
         }
         .sanitized();
         assert!(settings.apps[0].is_some());
         assert!(settings.apps[1].is_none());
-        assert_eq!(settings.custom_wheels[0].actions.len(), 1);
+        assert_eq!(settings.custom_wheels[0].parts().len(), 1);
     }
 
     #[test]
@@ -757,10 +1202,7 @@ mod tests {
                 WheelMode::Actions
             ]
         );
-        assert_eq!(
-            settings.enabled_modes(),
-            [WheelMode::Video, WheelMode::Share, WheelMode::Actions]
-        );
+        assert_eq!(settings.enabled_modes(), ["video", "share", "actions"]);
         assert_eq!(settings.apps.len(), MIN_SLOTS);
         assert_eq!(settings.share.len(), apps::MAX_SLOTS);
         let nine = Settings {
@@ -781,7 +1223,7 @@ mod tests {
             ..Settings::default()
         }
         .sanitized();
-        assert_eq!(none_enabled.enabled_modes(), [WheelMode::Image]);
+        assert_eq!(none_enabled.enabled_modes(), ["image"]);
     }
 
     #[test]
@@ -831,7 +1273,7 @@ mod tests {
 
     #[test]
     fn les_listes_d_actions_sont_nettoyees() {
-        let part = |id: &str| PartEntry {
+        let entry = |id: &str| PartEntry {
             id: id.into(),
             enabled: true,
         };
@@ -840,14 +1282,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(settings.file_wheels.images.first, FirstWheel::Convert);
-        settings.action_parts = vec![part("action-text"), part("action-text"), part("<script>")];
+        settings.action_parts = vec![
+            entry("action-text"),
+            entry("action-text"),
+            entry("<script>"),
+        ];
+        settings.file_wheels.images.parts = vec![entry("image-fullHd")];
         settings.custom_wheels = vec![CustomWheel {
             name: " Docs ".into(),
-            actions: Vec::new(),
             extensions: vec![".PDF".into(), "pdf".into(), "docx".into(), "a b".into()],
+            ..wheel("", Vec::new())
         }];
         let settings = settings.sanitized();
-        assert_eq!(settings.action_parts, [part("action-text")]);
+        assert_eq!(settings.action_parts, [entry("action-text")]);
+        assert_eq!(
+            settings.file_wheels.images.parts,
+            [entry("image-fullHd")],
+            "une majuscule dans un identifiant ne le fait pas rejeter"
+        );
         assert_eq!(settings.file_wheels.pdfs.first, FirstWheel::Actions);
         assert_eq!(settings.file_wheels.others.first, FirstWheel::Usual);
         assert_eq!(settings.custom_wheels[0].extensions, ["pdf", "docx"]);

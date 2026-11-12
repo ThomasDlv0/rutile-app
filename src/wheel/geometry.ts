@@ -50,16 +50,29 @@ export function buttonCenter(index: number, count = SECTOR_COUNT): [number, numb
 
 /** Angle des lignes de séparation, entre les parts. */
 export function separatorAngles(count = SECTOR_COUNT): number[] {
+  // Une seule part : rien à séparer
+  if (count < 2) return [];
   const angle = sectorAngle(count);
   return Array.from({ length: count }, (_, i) => i * angle + angle / 2);
 }
 
 /** Tracé SVG de la part `index`, en couronne autour du cercle central. */
 export function sectorPath(index: number, count = SECTOR_COUNT): string {
-  const start = index * sectorAngle(count) - sectorAngle(count) / 2;
-  const end = start + sectorAngle(count);
   const outer = DISK_RADIUS - 1;
   const inner = HUB_RADIUS + 4;
+  // Une seule part (une roue personnalisée qui commence) : la couronne entière, qu'un arc de
+  // 360° ne sait pas tracer. Deux demi-cercles dehors, deux dedans en sens inverse pour le trou
+  if (count < 2) {
+    const ring = (radius: number, sweep: 0 | 1) => {
+      const [x1, y1] = polar(radius, 0);
+      const [x2, y2] = polar(radius, 180);
+      const arc = `A ${radius} ${radius} 0 1 ${sweep}`;
+      return `M ${x1} ${y1} ${arc} ${x2} ${y2} ${arc} ${x1} ${y1} Z`;
+    };
+    return `${ring(outer, 1)} ${ring(inner, 0)}`;
+  }
+  const start = index * sectorAngle(count) - sectorAngle(count) / 2;
+  const end = start + sectorAngle(count);
   const [x1, y1] = polar(outer, start);
   const [x2, y2] = polar(outer, end);
   const [x3, y3] = polar(inner, end);

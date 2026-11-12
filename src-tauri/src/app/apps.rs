@@ -14,8 +14,9 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use super::glass;
-use super::settings::{self, CustomKind, FileWheels, PartEntry, WheelBorder, WheelMode};
+use super::settings::{self, CustomWheel, FileWheels, PartEntry, PartKind, WheelBorder};
 use super::share::{self, ShareView};
+use super::sites;
 use super::wheel::WHEEL_LABEL;
 
 /// Emplacements des roues des apps et de partage, une part chacun : six au moins, et dix au
@@ -117,9 +118,10 @@ pub fn views<R: Runtime>(app: &AppHandle<R>, slots: &[Option<AppSlot>]) -> Vec<O
         .iter()
         .map(|slot| {
             slot.as_ref().map(|slot| AppView {
-                icon: (slot.kind != AppKind::Url)
-                    .then(|| file_icon(app, &slot.path))
-                    .flatten(),
+                icon: match slot.kind {
+                    AppKind::Url => sites::icon(app, &slot.path.to_string_lossy()),
+                    AppKind::App | AppKind::Folder => file_icon(app, &slot.path),
+                },
                 path: slot.path.clone(),
                 name: slot.name.clone(),
                 kind: slot.kind,
@@ -133,7 +135,9 @@ pub fn views<R: Runtime>(app: &AppHandle<R>, slots: &[Option<AppSlot>]) -> Vec<O
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WheelConfig {
-    modes: Vec<WheelMode>,
+    /// Roues affichées, dans l'ordre du clic au centre : le nom d'une roue de Rutile, ou
+    /// `custom:` suivi de l'identifiant d'une roue personnalisée.
+    modes: Vec<String>,
     /// Rouvrir sur la dernière roue affichée.
     remember: bool,
     /// Temps au centre avant de basculer entre conversion et partage.
@@ -155,19 +159,53 @@ pub struct WheelConfig {
     share: Vec<Option<ShareView>>,
 }
 
-/// Roue personnalisée vue par la roue : ni commande, ni adresse, seulement ce qu'il faut pour
-/// afficher ses parts.
+/// Roue personnalisée telle que l'interface l'affiche : ni commande, ni adresse, seulement
+/// ce qu'il faut pour dessiner ses parts.
 #[derive(Debug, Clone, Serialize)]
-struct CustomWheelView {
+pub struct CustomWheelView {
+    id: String,
     name: String,
-    actions: Vec<CustomActionView>,
+    parts: Vec<CustomPartView>,
     extensions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct CustomActionView {
+struct CustomPartView {
     name: String,
-    kind: CustomKind,
+    kind: PartKind,
+    /// Format d'une conversion ou identifiant d'une action : l'interface en tire la part.
+    value: Option<String>,
+    /// Icône d'une app, d'un dossier ou d'un site, en data URL.
+    icon: Option<String>,
+}
+
+pub fn custom_views<R: Runtime>(
+    app: &AppHandle<R>,
+    wheels: &[CustomWheel],
+) -> Vec<CustomWheelView> {
+    wheels
+        .iter()
+        .map(|wheel| CustomWheelView {
+            id: wheel.id.clone(),
+            name: wheel.name.clone(),
+            parts: wheel
+                .parts()
+                .iter()
+                .map(|part| CustomPartView {
+                    name: part.name.clone(),
+                    kind: part.kind,
+                    value: matches!(part.kind, PartKind::Convert | PartKind::Action)
+                        .then(|| part.value.clone()),
+                    icon: match part.kind {
+                        PartKind::App | PartKind::Folder => file_icon(app, Path::new(&part.value)),
+                        PartKind::Url => sites::icon(app, &part.value),
+                        _ => None,
+                    },
+                })
+                .collect(),
+            extensions: wheel.extensions.clone(),
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -186,22 +224,7 @@ pub fn wheel_config<R: Runtime>(app: AppHandle<R>) -> WheelConfig {
             (true, false) => "css",
         },
         window_layout: platform::placement::supported(),
-        custom: settings
-            .custom_wheels
-            .iter()
-            .map(|wheel| CustomWheelView {
-                name: wheel.name.clone(),
-                actions: wheel
-                    .actions
-                    .iter()
-                    .map(|action| CustomActionView {
-                        name: action.name.clone(),
-                        kind: action.kind,
-                    })
-                    .collect(),
-                extensions: wheel.extensions.clone(),
-            })
-            .collect(),
+        custom: custom_views(&app, &settings.custom_wheels),
         action_parts: settings.action_parts.clone(),
         file_wheels: settings.file_wheels.clone(),
         apps: views(&app, &settings.apps),

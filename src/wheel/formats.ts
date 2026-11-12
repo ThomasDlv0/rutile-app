@@ -34,10 +34,28 @@ export const VIDEO_FORMATS = [
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number]["id"];
 export type VideoFormat = (typeof VIDEO_FORMATS)[number]["id"];
 
+/** Les roues de Rutile. */
+export type BuiltinMode = "image" | "video" | "apps" | "share" | "actions";
+/** Roue faite par l'utilisateur, désignée par son identifiant. */
+export type CustomMode = `custom:${string}`;
 /** Les roues entre lesquelles le clic au centre fait passer. */
-export type Mode = "image" | "video" | "apps" | "share" | "actions";
+export type Mode = BuiltinMode | CustomMode;
 
-export const ALL_MODES: readonly Mode[] = ["image", "video", "apps", "share", "actions"];
+export const ALL_MODES: readonly BuiltinMode[] = ["image", "video", "apps", "share", "actions"];
+
+export const isCustomMode = (mode: Mode): mode is CustomMode => mode.startsWith("custom:");
+
+export const customMode = (id: string): CustomMode => `custom:${id}`;
+
+/** Place de la roue personnalisée `mode` dans la liste des roues de l'utilisateur, -1 si ce
+ * n'en est pas une ou qu'elle n'existe plus. */
+export function customIndex(mode: Mode, wheels: readonly { id: string }[]): number {
+  return isCustomMode(mode) ? wheels.findIndex((wheel) => customMode(wheel.id) === mode) : -1;
+}
+
+/** Roues dont les parts sont un arbre d'actions, avec leurs sous-roues : la roue Actions et
+ * les roues personnalisées. */
+export const isTreeMode = (mode: Mode): boolean => mode === "actions" || isCustomMode(mode);
 
 /** Contenu d'une part de la roue : un format, ou une app. */
 export interface WheelItem {
@@ -45,6 +63,8 @@ export interface WheelItem {
   label: string;
   /** Texte du centre au survol, « Convertir en … » par défaut. */
   action?: string;
+  /** Texte du centre quand un fichier glissé survole la part, s'il diffère. */
+  dragAction?: string;
   /** Seconde ligne du centre au survol. */
   hint?: string;
   /** Pictogramme d'une part de la roue Actions. */
@@ -80,8 +100,8 @@ function slotCount(slots: readonly unknown[]): number {
   return Math.min(Math.max(slots.length, SECTOR_COUNT), MAX_SECTORS);
 }
 
-/** Icône d'un site : un globe sur une tuile bleue. */
-const WEB_ICON = `data:image/svg+xml,${encodeURIComponent(
+/** Icône d'un site dont le logo n'est pas (encore) connu : un globe sur une tuile bleue. */
+export const WEB_ICON = `data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
     <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#5aa9ff"/><stop offset="1" stop-color="#1f6fe5"/>

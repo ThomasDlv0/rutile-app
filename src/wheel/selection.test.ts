@@ -170,6 +170,55 @@ describe("nextMode", () => {
     expect(nextMode(["apps", "image", "video"], "image", -1)).toBe("apps");
     expect(nextMode(["apps", "image", "video"], "apps", -1)).toBe("video");
   });
+
+  it("mène à la première roue quand celle affichée n'est plus proposée", () => {
+    // Une roue personnalisée réservée à d'autres fichiers que ceux qui viennent d'arriver
+    expect(nextMode(["apps", "image"], "custom:pdf")).toBe("apps");
+    expect(nextMode(["apps"], "custom:pdf", -1)).toBe("apps");
+    expect(nextMode([], "apps")).toBeNull();
+  });
+
+  it("passe par les roues personnalisées comme par les autres", () => {
+    expect(nextMode(["apps", "custom:mix", "image"], "apps")).toBe("custom:mix");
+    expect(nextMode(["apps", "custom:mix", "image"], "custom:mix")).toBe("image");
+  });
+});
+
+describe("roue personnalisée", () => {
+  const items = [
+    { id: "custom-0-0", label: "Mail", action: "Ouvrir Mail", dragAction: "Ouvrir avec Mail" },
+    { id: "custom-0-1", label: "PNG", action: "Convertir en PNG" },
+  ];
+  const onMail: [number, number] = [180, 60];
+  const center: [number, number] = [180, 180];
+
+  it("annonce l'ouverture d'un fichier glissé sur une app", () => {
+    expect(hubFor(onMail, new Set(), [], false, "custom:mix", items, null)?.label).toBe(
+      "Ouvrir Mail",
+    );
+    expect(hubFor(onMail, new Set(), [photo], true, "custom:mix", items, null)?.label).toBe(
+      "Ouvrir avec Mail",
+    );
+  });
+
+  it("dit qu'une part grisée n'est pas pour ces fichiers", () => {
+    const disabled = new Set(["custom-0-0"]);
+    expect(hubFor(onMail, disabled, [photo], false, "custom:mix", items, null)?.label).toBe(
+      "Pas pour ces fichiers",
+    );
+  });
+
+  it("nomme la roue personnalisée où mène le centre", () => {
+    const hub = (name?: string) =>
+      hubFor(center, new Set(), [], false, "apps", items, "custom:mix", null, false, name);
+    expect(hub("Boulot")?.label).toBe("Passer à Boulot");
+    expect(hub()?.label).toBe("Passer à ma roue");
+  });
+
+  it("n'y grise aucun format : ses parts ont leurs propres règles", () => {
+    expect(disabledFormats([photo], "custom:mix").size).toBe(0);
+    expect(hubText([file("notes.txt", null)], "custom:mix")?.hint).toBeUndefined();
+  });
 });
 
 describe("disabledFormats sur les roues des apps et de partage", () => {

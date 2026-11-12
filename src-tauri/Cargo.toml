@@ -1,6 +1,6 @@
 [package]
 name = "rutile"
-version = "1.3.1"
+version = "1.4.0"
 description = "Images, vidéos, apps et partage sur une roue radiale"
 edition = "2024"
 rust-version = "1.88"
@@ -18,6 +18,9 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Logo des sites web : le même client HTTP et le même chiffrement que le module de mises à jour
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rutile-converter = { path = "../crates/converter" }
 rutile-platform = { path = "../crates/platform" }
 rutile-shake-detector = { path = "../crates/shake_detector" }
@@ -31,6 +34,7 @@ tauri-plugin-notification = "2.8.0"
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.12.0"
+url = "2.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = "2.1.1"

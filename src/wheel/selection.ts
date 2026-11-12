@@ -1,6 +1,13 @@
 import type { FileInfo } from "../ipc";
 import { shortenMiddle } from "./fileName";
-import { type Mode, type WheelItem, formatsFor } from "./formats";
+import {
+  type BuiltinMode,
+  type Mode,
+  type WheelItem,
+  formatsFor,
+  isCustomMode,
+  isTreeMode,
+} from "./formats";
 import { isInsideHub, sectorAt } from "./geometry";
 
 export type Point = [number, number];
@@ -9,7 +16,7 @@ export type Point = [number, number];
 const VIDEO_ON_WHEEL = new Set(["mp4", "webm", "mov", "mkv"]);
 
 /** Ce qu'annonce le centre au survol : la roue suivante dans l'ordre des réglages. */
-const SWITCH_LABELS: Record<Mode, string> = {
+const SWITCH_LABELS: Record<BuiltinMode, string> = {
   image: "Passer aux images",
   video: "Passer en vidéo",
   apps: "Passer aux apps",
@@ -17,13 +24,20 @@ const SWITCH_LABELS: Record<Mode, string> = {
   actions: "Passer aux actions",
 };
 
-/** Les roues sans formats à griser : les apps, le partage et les actions. */
-const FREE_MODES: ReadonlySet<Mode> = new Set(["apps", "share", "actions"]);
+/** Annonce du passage à la roue `mode` ; `name` est le nom d'une roue personnalisée. */
+export function switchLabel(mode: Mode, name?: string): string {
+  if (isCustomMode(mode)) return name ? `Passer à ${name}` : "Passer à ma roue";
+  return SWITCH_LABELS[mode];
+}
+
+/** Les roues de conversion, seules à griser des formats. */
+const isConverter = (mode: Mode): mode is "image" | "video" =>
+  mode === "image" || mode === "video";
 
 /** Le fichier peut-il être traité dans ce mode ? Un GIF animé passe aussi en vidéo, et
  * n'importe quel fichier peut s'ouvrir avec une app ou se partager. */
 export function convertible(file: FileInfo, mode: Mode): boolean {
-  if (FREE_MODES.has(mode)) return true;
+  if (!isConverter(mode)) return true;
   return mode === "image" ? file.format !== null : file.video !== null || file.format === "gif";
 }
 
@@ -40,9 +54,7 @@ function sourceFormat(file: FileInfo, mode: "image" | "video"): string | null {
 /** Formats grisés : celui d'origine, ou tous si aucun fichier n'est convertible dans ce mode.
  * Rien n'est grisé sur les roues des apps et de partage. */
 export function disabledFormats(files: FileInfo[], mode: Mode): Set<string> {
-  if (mode === "apps" || mode === "share" || mode === "actions" || files.length === 0) {
-    return new Set();
-  }
+  if (!isConverter(mode) || files.length === 0) return new Set();
   const all = new Set<string>(formatsFor(mode).map((format) => format.id));
   if (!files.some((file) => convertible(file, mode))) return all;
   const first = sourceFormat(files[0], mode);
@@ -62,8 +74,11 @@ export function preferredMode(files: FileInfo[]): "image" | "video" | null {
 /** Roue qui suit `mode` dans l'ordre des réglages (celle d'avant pour `step` -1), ou `null`
  * s'il n'y en a qu'une. */
 export function nextMode(modes: readonly Mode[], mode: Mode, step: 1 | -1 = 1): Mode | null {
-  if (modes.length < 2) return null;
   const index = modes.indexOf(mode);
+  // La roue affichée n'est plus dans la liste (elle ne convient pas aux fichiers arrivés
+  // depuis) : la première roue la remplace
+  if (index < 0) return modes[0] ?? null;
+  if (modes.length < 2) return null;
   return modes[(index + step + modes.length) % modes.length];
 }
 
@@ -136,12 +151,14 @@ export function hubText(files: FileInfo[], mode: Mode): HubText | null {
 
 /** Texte du survol d'une part : convertir, ouvrir une app, ou en ajouter une. */
 function itemAction(item: WheelItem, dragging: boolean, mode: Mode): string {
+  if (dragging && item.dragAction) return item.dragAction;
   if (mode === "apps" && !item.empty && dragging) return `Ouvrir avec ${item.label}`;
   return item.action ?? `Convertir en ${item.label}`;
 }
 
 /** Le centre décrit ce que fera la roue à l'endroit pointé, sinon le fichier en cours.
- * `dwellTarget` : pendant un glisser, roue où mène un temps passé au centre. */
+ * `dwellTarget` : pendant un glisser, roue où mène un temps passé au centre. `nextName` : nom
+ * de la roue suivante, si c'est une roue personnalisée. */
 export function hubFor(
   pointer: Point | null,
   disabled: Set<string>,
@@ -152,6 +169,7 @@ export function hubFor(
   next: Mode | null,
   dwellTarget: Mode | null = null,
   back = false,
+  nextName?: string,
 ): HubText | null {
   if (pointer) {
     const index = sectorAt(...pointer, items.length);
@@ -160,7 +178,7 @@ export function hubFor(
       if (!disabled.has(item.id)) {
         return { label: itemAction(item, dragging, mode), tone: "action", hint: item.hint };
       }
-      if (mode === "actions") return { label: "Pas pour ces fichiers", tone: "muted" };
+      if (isTreeMode(mode)) return { label: "Pas pour ces fichiers", tone: "muted" };
       const nothingConvertible = disabled.size === items.length;
       return {
         label: nothingConvertible ? "Format non pris en charge" : `Déjà en ${item.label}`,
@@ -174,7 +192,7 @@ export function hubFor(
       }
       if (dragging) return { label: "Relâcher ici pour annuler", tone: "muted" };
       if (back) return { label: "Retour", tone: "action" };
-      if (next) return { label: SWITCH_LABELS[next], tone: "action" };
+      if (next) return { label: switchLabel(next, nextName), tone: "action" };
     }
   }
   return hubText(files, mode);

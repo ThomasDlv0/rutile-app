@@ -44,12 +44,14 @@ import {
   actionTree,
   actionsAt,
   colorizeActions,
+  customTree,
   disabledActions,
   fileKind,
   fileTree,
   filesFor,
   firstModeFor,
   opensOnDwell,
+  wheelModes,
 } from "./actions";
 import {
   ALL_MODES,
@@ -59,7 +61,10 @@ import {
   type WheelItem,
   appItems,
   colorize,
+  customIndex,
   formatsFor,
+  isCustomMode,
+  isTreeMode,
   shareItems,
 } from "./formats";
 import { WINDOW_SIZE, isInsideHub } from "./geometry";
@@ -93,15 +98,20 @@ const DWELL_MOVE_PX = 14;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Indication du centre quand la roue attend un fichier secoué, selon la roue. */
-const DROP_HINTS: Record<Mode, HubText | null> = {
-  image: { label: "Déposez sur un format", tone: "muted" },
-  video: { label: "Déposez sur un format", tone: "muted" },
-  apps: null,
-  share: { label: "Déposez sur un partage", tone: "muted" },
-  actions: { label: "Déposez sur une action", tone: "muted" },
-};
+function dropHint(mode: Mode): HubText | null {
+  if (mode === "apps") return null;
+  const target = isCustomMode(mode)
+    ? "une part"
+    : mode === "share"
+      ? "un partage"
+      : mode === "actions"
+        ? "une action"
+        : "un format";
+  return { label: `Déposez sur ${target}`, tone: "muted" };
+}
 
 const ACTION_LABELS = { working: "En cours…", done: "Terminé" };
+const CONVERT_LABELS = { working: "Conversion…", done: "Converti" };
 
 const OPEN_LABELS = { working: "Ouverture…", done: "Ouvert" };
 /** Un service ouvre sa fenêtre (choix de l'appareil, du destinataire) ; le reste copie. */
@@ -112,9 +122,10 @@ const SHARE_LABELS: Record<ShareTarget["kind"], Work["labels"]> = {
   system: { working: "Choisissez…", done: "Partagé" },
 };
 
-// Aperçu dans un navigateur : toutes les roues, et quelques apps et partages sans icône
+// Aperçu dans un navigateur : toutes les roues, une roue personnalisée qui mélange tout, et
+// quelques apps et partages sans icône
 const PREVIEW_CONFIG: WheelConfig = {
-  modes: [...ALL_MODES],
+  modes: [...ALL_MODES, "custom:demo"],
   remember: false,
   dwellMs: 1000,
   colors: {},
@@ -122,7 +133,22 @@ const PREVIEW_CONFIG: WheelConfig = {
   border: "light",
   glass: "css",
   windowLayout: true,
-  custom: [],
+  custom: [
+    {
+      id: "demo",
+      name: "Boulot",
+      extensions: [],
+      parts: [
+        { name: "Finder", kind: "app", value: null, icon: null },
+        { name: "YouTube", kind: "url", value: null, icon: null },
+        { name: "", kind: "convert", value: "png", icon: null },
+        { name: "", kind: "convert", value: "mp4", icon: null },
+        { name: "", kind: "action", value: "action-capture", icon: null },
+        { name: "", kind: "action", value: "image-compress", icon: null },
+        { name: "Ranger", kind: "command", value: null, icon: null },
+      ],
+    },
+  ],
   actionParts: [],
   fileWheels: DEFAULT_FILE_WHEELS,
   apps: ["Finder", "Signal", null, "Brave", "Items", "Claude"].map((name) =>
@@ -149,7 +175,8 @@ function itemsFor(
 ): readonly WheelItem[] {
   if (mode === "apps") return appItems(config.apps, badges);
   if (mode === "share") return shareItems(config.share);
-  if (mode === "actions") return [];
+  // Les parts de la roue Actions et des roues personnalisées viennent de leur arbre
+  if (mode === "actions" || isCustomMode(mode)) return [];
   return colorize(formatsFor(mode), config.colors);
 }
 
@@ -222,7 +249,10 @@ export function WheelApp() {
   const [badges, setBadges] = useState<(string | null)[]>(isTauri() ? [] : PREVIEW_BADGES);
 
   const shown = dragFiles ?? files;
-  // Sous-roues ouvertes dans la roue Actions : un index par niveau
+  // Roues entre lesquelles passer : une roue personnalisée limitée à certains fichiers ne
+  // s'affiche que pour eux
+  const modes = useMemo(() => wheelModes(config, shown), [config, shown]);
+  // Sous-roues ouvertes dans la roue Actions ou une roue personnalisée : un index par niveau
   const [actionPath, setActionPath] = useState<number[]>([]);
   // Avec des fichiers, la roue Actions ne propose que ce qui leur convient
   const actionsTree = useMemo(
@@ -233,21 +263,27 @@ export function WheelApp() {
       ),
     [config, shown],
   );
+  const customAt = customIndex(mode, config.custom);
+  const customNodes = useMemo(
+    () => colorizeActions(customTree(config, customAt), config.colors),
+    [config, customAt],
+  );
+  const tree = customAt >= 0 ? customNodes : actionsTree;
   const treeKind = shown.length > 0 ? fileKind(shown) : null;
   useEffect(() => setActionPath([]), [treeKind]);
-  const inActions = mode === "actions";
+  const inTree = isTreeMode(mode);
   const videoMissing = mode === "video" && video?.available === false;
-  const items = inActions
-    ? actionsAt(actionsTree, actionPath)
-    : itemsFor(mode, config, badges);
-  const parent = inActions ? actionParent(actionsTree, actionPath) : null;
-  const next = parent ? null : nextMode(config.modes, mode);
+  const items = inTree ? actionsAt(tree, actionPath) : itemsFor(mode, config, badges);
+  const parent = inTree ? actionParent(tree, actionPath) : null;
+  const next = parent ? null : nextMode(modes, mode);
+  const customName = (wheel: Mode | null) =>
+    wheel ? config.custom[customIndex(wheel, config.custom)]?.name : undefined;
   const disabled = useMemo(() => {
-    if (inActions) return disabledActions(items as readonly ActionNode[], shown);
+    if (inTree) return disabledActions(items as readonly ActionNode[], shown);
     return videoMissing
       ? new Set<string>(formatsFor("video").map((format) => format.id))
       : disabledFormats(shown, mode);
-  }, [shown, mode, videoMissing, inActions, items]);
+  }, [shown, mode, videoMissing, inTree, items]);
   const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, items);
   // Rester sur une part ouvre sa sous-roue. Après ouverture, il faut bouger un peu pour
   // recommencer : sinon une sous-roue en ouvrirait une autre, sous le pointeur resté immobile
@@ -262,7 +298,7 @@ export function WheelApp() {
   }
   const keyboardPointer = useRef(false);
   const dwellPart =
-    inActions &&
+    inTree &&
     work === null &&
     highlighted !== null &&
     dwellFrom.current === null &&
@@ -277,7 +313,7 @@ export function WheelApp() {
   const inHub = pointer !== null && isInsideHub(...pointer);
   const dwellTarget =
     dragFiles !== null && dwellArmed
-      ? dwellTargetFor(mode, dragFiles, config.modes, beforeShareRef.current)
+      ? dwellTargetFor(mode, dragFiles, modes, beforeShareRef.current)
       : null;
   const dwelling = dwellTarget !== null && work === null && inHub;
   const missingHint: HubText | null =
@@ -295,10 +331,11 @@ export function WheelApp() {
       next,
       dwellTarget,
       parent !== null,
+      customName(next),
     ) ??
     missingHint ??
     (parent ? { label: parent.label, tone: "muted", hint: "Retour au centre" } : null) ??
-    (openMode === "drop" ? DROP_HINTS[mode] : null);
+    (openMode === "drop" ? dropHint(mode) : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
   const phaseRef = useRef(phase);
@@ -309,8 +346,10 @@ export function WheelApp() {
   configRef.current = config;
   const pointerRef = useRef(pointer);
   pointerRef.current = pointer;
+  const modesRef = useRef(modes);
+  modesRef.current = modes;
   const actionNodesRef = useRef<readonly ActionNode[]>([]);
-  actionNodesRef.current = inActions ? (items as readonly ActionNode[]) : actionsTree;
+  actionNodesRef.current = inTree ? (items as readonly ActionNode[]) : actionsTree;
   const busyRef = useRef(false);
   const dragOverRef = useRef(false);
   const focusedRef = useRef(false);
@@ -328,12 +367,16 @@ export function WheelApp() {
    * choisie à la main reste affichée. */
   const adoptMode = useCallback((infos: FileInfo[]): Mode => {
     const current = modeRef.current;
-    const { fileWheels, modes } = configRef.current;
-    const first = firstModeFor(infos, fileWheels, modes);
-    if (chosenRef.current || !first) return current;
-    modeRef.current = first;
-    setMode(first);
-    return first;
+    const config = configRef.current;
+    const usable = wheelModes(config, infos);
+    const first = firstModeFor(infos, config.fileWheels, usable);
+    let target = chosenRef.current || !first ? current : first;
+    // Une roue personnalisée réservée à d'autres fichiers laisse la place à la première
+    if (!usable.includes(target)) target = usable[0] ?? current;
+    if (target === current) return current;
+    modeRef.current = target;
+    setMode(target);
+    return target;
   }, []);
 
   /** Clic au centre, ou fichier maintenu au centre : la roue est choisie à la main. */
@@ -380,7 +423,7 @@ export function WheelApp() {
   const applyConfig = useCallback((next: WheelConfig) => {
     configRef.current = next;
     setConfig(next);
-    if (!next.modes.includes(modeRef.current)) setMode(next.modes[0]);
+    if (!next.modes.includes(modeRef.current)) setMode(next.modes[0] ?? "image");
   }, []);
 
   useEffect(() => {
@@ -540,13 +583,8 @@ export function WheelApp() {
         chooseMode(node.goesTo);
         return;
       }
-      if (node.setup) {
-        void openSettings("actions");
-        close();
-        return;
-      }
-      const { run, convert: conversion } = node;
-      if (!run && !conversion) {
+      const { run, convert: conversion, convertImage } = node;
+      if (!run && !conversion && !convertImage) {
         if (node.children) openChildren(index);
         return;
       }
@@ -571,14 +609,23 @@ export function WheelApp() {
       }
       const paths = targets.map((file) => file.path);
       const isVideo = node.needs === "videos";
+      // Une conversion qui n'a rien converti est un échec, comme sur les roues de conversion
+      const converted = async (outcome: Promise<{ converted: number }>) => {
+        if ((await outcome).converted === 0) throw new Error("aucun fichier converti");
+      };
       await perform(
         index,
-        ACTION_LABELS,
-        () => (conversion ? convertVideos(paths, conversion) : runAction(run as ActionRequest, paths)),
+        conversion || convertImage ? CONVERT_LABELS : node.opens ? OPEN_LABELS : ACTION_LABELS,
+        () =>
+          conversion
+            ? converted(convertVideos(paths, conversion))
+            : convertImage
+              ? converted(convertFiles(paths, convertImage))
+              : runAction(run as ActionRequest, paths),
         isVideo ? 0 : undefined,
       );
     },
-    [chooseMode, close, openChildren, perform],
+    [chooseMode, openChildren, perform, close],
   );
 
   const drop = useCallback(
@@ -594,7 +641,7 @@ export function WheelApp() {
       setFiles(dropped);
       setPointer(null);
       const dropMode = adoptMode(dropped);
-      if (dropMode === "actions") {
+      if (dropMode === "actions" || isCustomMode(dropMode)) {
         const nodes = actionNodesRef.current;
         const index = usableSector(x, y, disabledActions(nodes, dropped), nodes);
         if (index === null) close();
@@ -630,7 +677,7 @@ export function WheelApp() {
         await openApp(index, []);
         return;
       }
-      if (mode === "actions") {
+      if (mode === "actions" || isCustomMode(mode)) {
         await runNode(actionNodesRef.current[index], index, files);
         return;
       }
@@ -737,8 +784,10 @@ export function WheelApp() {
           chosenRef.current = false;
           beforeShareRef.current = null;
           // Dernière roue affichée si le réglage le demande, sinon la première de la liste
-          const { modes, remember } = configRef.current;
-          const opening = remember && modes.includes(modeRef.current) ? modeRef.current : modes[0];
+          const { remember } = configRef.current;
+          const usable = wheelModes(configRef.current, []);
+          const opening =
+            remember && usable.includes(modeRef.current) ? modeRef.current : (usable[0] ?? "image");
           modeRef.current = opening;
           setMode(opening);
           setOpenMode(payload.mode);
@@ -853,7 +902,7 @@ export function WheelApp() {
       event.preventDefault();
       if (busyRef.current || phaseRef.current !== "open" || inChildren.current) return;
       const step = event.key === "ArrowDown" ? 1 : -1;
-      const target = nextMode(configRef.current.modes, modeRef.current, step);
+      const target = nextMode(modesRef.current, modeRef.current, step);
       if (!target) return;
       setPointer(null);
       chooseMode(target);
@@ -873,6 +922,8 @@ export function WheelApp() {
       phase={phase}
       mode={mode}
       next={next}
+      title={customName(mode)}
+      nextTitle={customName(next)}
       items={items}
       disabled={disabled}
       highlighted={highlighted}

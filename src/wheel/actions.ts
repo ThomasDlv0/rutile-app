@@ -1,5 +1,6 @@
 import type {
   ActionRequest,
+  CustomPartView,
   CustomWheelView,
   FileInfo,
   FileKind,
@@ -9,20 +10,33 @@ import type {
 } from "../ipc";
 import { readableInk } from "./color";
 import type { GlyphName } from "./ActionGlyph";
-import type { Mode, VideoFormat, WheelItem } from "./formats";
+import {
+  type Mode,
+  OUTPUT_FORMATS,
+  type OutputFormat,
+  VIDEO_FORMATS,
+  type VideoFormat,
+  WEB_ICON,
+  type WheelItem,
+  customIndex,
+  isCustomMode,
+} from "./formats";
 import { MAX_SECTORS } from "./geometry";
 
 /** Fichiers qu'une action sait traiter. */
 export type FileNeed = "images" | "videos" | "pdfs" | "archives" | "files";
 
-/** Part de la roue Actions. Un clic lance `run` s'il y en a un, sinon ouvre `children` ;
- * rester sur la part ouvre aussi `children`. */
+/** Part de la roue Actions ou d'une roue personnalisée. Un clic lance `run` s'il y en a un,
+ * sinon ouvre `children` ; rester sur la part ouvre aussi `children`. */
 export interface ActionNode extends WheelItem {
-  glyph: GlyphName;
   /** Ce qui se passe au clic. */
   run?: ActionRequest;
   /** Conversion de la roue Vidéo, reprise telle quelle. */
   convert?: VideoFormat;
+  /** Conversion de la roue Images, reprise telle quelle. */
+  convertImage?: OutputFormat;
+  /** La part ouvre une app, un dossier ou un site : le centre l'annonce comme tel. */
+  opens?: boolean;
   /** Fichiers à traiter : ceux de la roue, ou choisis au moment du clic. */
   needs?: FileNeed;
   /** La roue se ferme d'abord, pour laisser l'écran libre (capture, pipette, fenêtres). */
@@ -32,8 +46,6 @@ export interface ActionNode extends WheelItem {
   children?: readonly ActionNode[];
   /** Passe sur une autre roue. */
   goesTo?: "apps";
-  /** Ouvre les réglages sur l'onglet des actions. */
-  setup?: boolean;
   /** Nombre de fichiers qui conviennent, au moins et au plus, pour que l'action ait un sens. */
   least?: number;
   most?: number;
@@ -289,61 +301,11 @@ const WINDOWS: readonly ActionNode[] = [
   run: { kind: "place", layout } as ActionRequest,
 }));
 
-/** Actions d'une roue personnalisée. */
-function customActions(wheel: CustomWheelView, index: number): ActionNode[] {
-  return wheel.actions.slice(0, MAX_SECTORS).map((action, slot) => ({
-    id: `custom-${index}-${slot}`,
-    label: action.name,
-    action: action.name,
-    glyph: "play",
-    hides: action.kind === "shortcut",
-    takesFiles: true,
-    run: { kind: "custom", wheel: index, action: slot },
-  }));
-}
-
+/** Famille de couleur des raccourcis et des commandes d'une roue personnalisée. */
 const CUSTOM_ID = "action-custom";
 
-/** Part « Mes roues » : directement les actions s'il n'y a qu'une roue. `shown` : les roues
- * à proposer parmi `wheels`, toutes par défaut. */
-function customNode(
-  wheels: readonly CustomWheelView[],
-  shown: readonly CustomWheelView[] = wheels,
-): ActionNode {
-  const base = {
-    id: CUSTOM_ID,
-    label: "Mes roues",
-    glyph: "wheels" as const,
-    color: YELLOW,
-    family: CUSTOM_ID,
-  };
-  const usable = shown.filter((wheel) => wheel.actions.length > 0).slice(0, MAX_SECTORS);
-  if (usable.length === 0) {
-    return { ...base, action: "Créer une roue personnalisée", setup: true };
-  }
-  if (usable.length === 1) {
-    return { ...base, action: usable[0].name, children: customActions(usable[0], wheels.indexOf(usable[0])) };
-  }
-  return {
-    ...base,
-    action: "Mes roues personnalisées",
-    children: usable.map((wheel) => {
-      const index = wheels.indexOf(wheel);
-      return {
-        id: `custom-wheel-${index}`,
-        label: wheel.name,
-        action: wheel.name,
-        glyph: "wheels",
-        children: customActions(wheel, index),
-      };
-    }),
-  };
-}
-
 /** Toutes les parts de la roue Actions, dans leur ordre d'origine. */
-export function actionCatalog(
-  config: Pick<WheelConfig, "custom" | "windowLayout">,
-): ActionNode[] {
+export function actionCatalog(config: Pick<WheelConfig, "windowLayout">): ActionNode[] {
   const tree: ActionNode[] = [
     {
       id: "action-capture",
@@ -411,17 +373,14 @@ export function actionCatalog(
       children: WINDOWS,
     });
   }
-  tree.push(
-    {
-      id: "action-apps",
-      label: "Apps",
-      action: "Passer aux apps",
-      glyph: "star",
-      color: TEAL,
-      goesTo: "apps",
-    },
-    customNode(config.custom),
-  );
+  tree.push({
+    id: "action-apps",
+    label: "Apps",
+    action: "Passer aux apps",
+    glyph: "star",
+    color: TEAL,
+    goesTo: "apps",
+  });
   return tree;
 }
 
@@ -453,15 +412,14 @@ export const partEntries = (parts: readonly Arranged<{ id: string }>[]): PartEnt
 
 /** Parts de la roue Actions, dans le sens horaire depuis le haut. */
 export function actionTree(
-  config: Pick<WheelConfig, "custom" | "windowLayout"> & Partial<Pick<WheelConfig, "actionParts">>,
+  config: Pick<WheelConfig, "windowLayout"> & Partial<Pick<WheelConfig, "actionParts">>,
 ): ActionNode[] {
   return arrange(actionCatalog(config), config.actionParts ?? [])
     .filter(({ enabled }) => enabled)
     .map(({ item }) => item);
 }
 
-/** Actions proposées pour chaque type de fichier, dans leur ordre d'origine. « Mes roues »
- * y tient sa place, remplie par les roues personnalisées qui conviennent aux fichiers. */
+/** Actions proposées pour chaque type de fichier, dans leur ordre d'origine. */
 export const FILE_ACTIONS: Record<FileKind, readonly ActionNode[]> = {
   images: [
     IMAGE.find(({ id }) => id === "image-compress")!,
@@ -474,12 +432,11 @@ export const FILE_ACTIONS: Record<FileKind, readonly ActionNode[]> = {
     ZIP,
     RENAME_NODE,
     { ...PATHS, offByDefault: true },
-    customNode([]),
   ],
-  videos: [...VIDEO, ZIP, RENAME_NODE, { ...PATHS, offByDefault: true }, customNode([])],
-  pdfs: [MERGE, PDF_TEXT, ZIP, RENAME_NODE, PATHS, customNode([])],
-  archives: [EXTRACT, RENAME_NODE, PATHS, customNode([])],
-  others: [ZIP, RENAME_NODE, PATHS, customNode([])],
+  videos: [...VIDEO, ZIP, RENAME_NODE, { ...PATHS, offByDefault: true }],
+  pdfs: [MERGE, PDF_TEXT, ZIP, RENAME_NODE, PATHS],
+  archives: [EXTRACT, RENAME_NODE, PATHS],
+  others: [ZIP, RENAME_NODE, PATHS],
 };
 
 /** Comme les réglages par défaut côté Rust : images et vidéos au convertisseur d'abord. */
@@ -537,7 +494,10 @@ export function firstModeFor(
 }
 
 /** Roue personnalisée proposée pour ces fichiers : sans extension, elle va à tous. */
-const customSuits = (wheel: CustomWheelView, files: readonly FileInfo[]) =>
+export const customSuits = (
+  wheel: Pick<CustomWheelView, "extensions">,
+  files: readonly FileInfo[],
+) =>
   wheel.extensions.length === 0 ||
   files.every((file) => wheel.extensions.includes(extension(file)));
 
@@ -551,21 +511,164 @@ function applies(node: ActionNode, files: readonly FileInfo[]): boolean {
 /** Roue Actions des fichiers glissés, déposés ou sélectionnés : seulement ce qui leur
  * convient, dans l'ordre des réglages. Sans rien d'utilisable, la roue Actions habituelle. */
 export function fileTree(
-  config: Pick<WheelConfig, "custom" | "windowLayout" | "fileWheels"> &
+  config: Pick<WheelConfig, "windowLayout" | "fileWheels"> &
     Partial<Pick<WheelConfig, "actionParts">>,
   files: readonly FileInfo[],
 ): ActionNode[] {
   const kind = fileKind(files);
   const nodes = arrange(FILE_ACTIONS[kind], config.fileWheels?.[kind]?.parts ?? [])
-    .filter(({ enabled }) => enabled)
-    .flatMap(({ item }) => {
-      if (item.id !== CUSTOM_ID) return applies(item, files) ? [item] : [];
-      const shown = config.custom.filter((wheel) => customSuits(wheel, files));
-      const node = customNode(config.custom, shown);
-      return node.setup ? [] : [node];
-    })
+    .filter(({ enabled, item }) => enabled && applies(item, files))
+    .map(({ item }) => item)
     .slice(0, MAX_SECTORS);
   return nodes.length > 0 ? nodes : actionTree(config);
+}
+
+/** Les actions d'un arbre et de ses sous-roues, à plat. */
+function descendants(nodes: readonly ActionNode[] = []): ActionNode[] {
+  return nodes.flatMap((node) => [node, ...descendants(node.children)]);
+}
+
+/** Actions qu'on peut poser sur une roue personnalisée, rangées par part de la roue Actions :
+ * la part entière d'abord (elle garde sa sous-roue), puis chacune de ses actions, avec celles
+ * que la roue Actions ne propose que pour un fichier. Chacune porte la couleur de sa part. */
+export function actionChoices(
+  config: Pick<WheelConfig, "windowLayout">,
+): { group: ActionNode; actions: ActionNode[] }[] {
+  const extras = Object.values(FILE_ACTIONS).flat();
+  return actionCatalog(config)
+    .filter((group) => !group.goesTo)
+    .map((group) => {
+      const family = group.family ?? group.id;
+      const known = [group, ...descendants(group.children)];
+      const added = extras.filter(
+        (extra) => extra.family === family && !known.some((node) => node.id === extra.id),
+      );
+      const unique = [...known, ...added].filter(
+        (node, index, all) => all.findIndex((other) => other.id === node.id) === index,
+      );
+      return {
+        group,
+        actions: unique.map((node) => ({ ...node, family, color: node.color ?? group.color })),
+      };
+    });
+}
+
+/** Ce que devient une part d'une roue personnalisée sur la roue ; `null` si elle ne
+ * correspond à rien de connu (un format ou une action d'une autre version). */
+function partNode(
+  part: CustomPartView,
+  wheel: number,
+  slot: number,
+  actions: readonly ActionNode[],
+): ActionNode | null {
+  const id = `custom-${wheel}-${slot}`;
+  const run: ActionRequest = { kind: "custom", wheel, action: slot };
+  switch (part.kind) {
+    case "app":
+      return {
+        id,
+        label: part.name,
+        action: `Ouvrir ${part.name}`,
+        dragAction: `Ouvrir avec ${part.name}`,
+        // Sans icône lisible, la part garde une pastille
+        ...(part.icon ? { icon: part.icon } : { glyph: "grid" as const, color: SLATE }),
+        opens: true,
+        takesFiles: true,
+        run,
+      };
+    case "folder":
+      return {
+        id,
+        label: part.name,
+        action: `Ouvrir ${part.name}`,
+        ...(part.icon ? { icon: part.icon } : { glyph: "files" as const, color: BLUE }),
+        opens: true,
+        run,
+      };
+    case "url":
+      return {
+        id,
+        label: part.name,
+        action: `Ouvrir ${part.name}`,
+        icon: part.icon ?? WEB_ICON,
+        opens: true,
+        run,
+      };
+    case "convert": {
+      const image = OUTPUT_FORMATS.find((format) => format.id === part.value);
+      if (image) {
+        return {
+          id,
+          label: image.label,
+          action: `Convertir en ${image.label}`,
+          color: image.color,
+          family: image.id,
+          needs: "images",
+          convertImage: image.id,
+        };
+      }
+      const video = VIDEO_FORMATS.find((format) => format.id === part.value);
+      if (!video) return null;
+      return {
+        id,
+        label: video.label,
+        action: "action" in video ? video.action : `Convertir en ${video.label}`,
+        color: video.color,
+        family: video.id,
+        needs: "videos",
+        convert: video.id,
+      };
+    }
+    case "action": {
+      const node = actions.find((action) => action.id === part.value);
+      return node ? { ...node, id } : null;
+    }
+    case "shortcut":
+    case "command":
+      return {
+        id,
+        label: part.name,
+        action: part.name,
+        glyph: part.kind === "command" ? "terminal" : "play",
+        color: YELLOW,
+        family: CUSTOM_ID,
+        hides: part.kind === "shortcut",
+        takesFiles: true,
+        run,
+      };
+  }
+}
+
+/** Parts de la roue personnalisée `index`, dans le sens horaire depuis le haut. */
+export function customTree(
+  config: Pick<WheelConfig, "custom" | "windowLayout">,
+  index: number,
+): ActionNode[] {
+  const wheel = config.custom[index];
+  if (!wheel) return [];
+  const actions = actionChoices(config).flatMap((choice) => choice.actions);
+  return wheel.parts.slice(0, MAX_SECTORS).flatMap((part, slot) => {
+    const node = partNode(part, index, slot, actions);
+    return node ? [node] : [];
+  });
+}
+
+/** Roues entre lesquelles passer avec ces fichiers. Une roue personnalisée limitée à des
+ * extensions ne s'affiche que pour eux, et jamais sans part. */
+export function wheelModes(
+  config: Pick<WheelConfig, "modes" | "custom" | "windowLayout">,
+  files: readonly FileInfo[],
+): Mode[] {
+  return config.modes.filter((mode) => {
+    if (!isCustomMode(mode)) return true;
+    const index = customIndex(mode, config.custom);
+    const wheel = config.custom[index];
+    return (
+      wheel !== undefined &&
+      (files.length === 0 || customSuits(wheel, files)) &&
+      customTree(config, index).length > 0
+    );
+  });
 }
 
 /** Couleurs choisies dans les réglages, et celle de la part de départ sur ses sous-roues. */
@@ -630,6 +733,13 @@ export function filesFor(node: ActionNode, files: readonly FileInfo[]): FileInfo
   return needs ? files.filter((file) => suits(file, needs)) : [];
 }
 
+/** Tous les fichiers sont déjà dans le format de la conversion : elle n'aurait pas de sens. */
+function alreadyConverted(node: ActionNode, files: readonly FileInfo[]): boolean {
+  if (node.convertImage) return files.every((file) => file.format === node.convertImage);
+  if (node.convert) return files.every((file) => file.video === node.convert);
+  return false;
+}
+
 /** Parts grisées : celles dont aucun des fichiers connus ne convient. */
 export function disabledActions(
   nodes: readonly ActionNode[],
@@ -638,7 +748,11 @@ export function disabledActions(
   if (files.length === 0) return new Set();
   return new Set(
     nodes
-      .filter((node) => node.needs && filesFor(node, files).length === 0)
+      .filter((node) => {
+        if (!node.needs) return false;
+        const suited = filesFor(node, files);
+        return suited.length === 0 || alreadyConverted(node, suited);
+      })
       .map((node) => node.id),
   );
 }

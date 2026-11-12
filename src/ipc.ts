@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Mode, OutputFormat, VideoFormat } from "./wheel/formats";
+import type { BuiltinMode, Mode, OutputFormat, VideoFormat } from "./wheel/formats";
 
 // Noms partagés avec src-tauri/src/app/wheel.rs
 export const WHEEL_OPEN_EVENT = "wheel://open";
@@ -124,8 +124,10 @@ export interface Settings {
   jpegQuality: number;
   webpQuality: number;
   avifQuality: number;
-  /** Ordre du clic au centre, et roues affichées ou non. */
-  modes: { id: Mode; enabled: boolean }[];
+  /** Roues de Rutile, affichées ou non. Leur ordre suit `wheelOrder`. */
+  modes: { id: BuiltinMode; enabled: boolean }[];
+  /** Ordre du clic au centre, roues personnalisées comprises. */
+  wheelOrder: Mode[];
   /** La roue se rouvre sur celle affichée à la fermeture, plutôt que sur la première. */
   rememberWheel: boolean;
   /** Millisecondes au centre, un fichier glissé, avant de basculer entre conversion et partage. */
@@ -139,7 +141,7 @@ export interface Settings {
   wheelGlass: boolean;
   /** Une capture rouvre la roue sur l'image, pour la convertir ou la partager. */
   captureReopen: boolean;
-  /** Roues faites par l'utilisateur, dans la part « Mes roues » de la roue Actions. */
+  /** Roues faites par l'utilisateur : elles prennent leur place parmi les autres. */
   customWheels: CustomWheel[];
   /** Ordre des parts de la roue Actions, et parts affichées ou non. */
   actionParts: PartEntry[];
@@ -183,6 +185,8 @@ export interface SettingsView {
   apps: (AppView | null)[];
   /** Destinations de la roue de partage, avec leurs icônes. */
   share: (ShareView | null)[];
+  /** Roues personnalisées, avec les icônes de leurs parts. */
+  custom: CustomWheelView[];
   /** Onglet demandé à l'ouverture (une part vide de la roue, par exemple). */
   tab: SettingsTab | null;
 }
@@ -190,14 +194,17 @@ export interface SettingsView {
 export type SettingsTab =
   | "general"
   | "wheels"
-  | "conversion"
-  | "colors"
-  | "actions"
+  | "custom"
   | "apps"
-  | "share";
+  | "share"
+  | "actions"
+  | "conversion"
+  | "colors";
 
 /** Onglet demandé alors que la fenêtre de réglages est déjà ouverte. */
 export const SETTINGS_TAB_EVENT = "settings://tab";
+/** Un logo de site vient d'arriver : les réglages relisent leurs icônes. */
+export const SETTINGS_REFRESH_EVENT = "settings://refresh";
 
 export const getSettings = () => invoke<SettingsView>("get_settings");
 /** Applique et enregistre ; rejette avec un message en français si une valeur est refusée. */
@@ -228,27 +235,45 @@ export interface AppSlot {
   kind: AppKind;
 }
 
-/** Ce que lance une action personnalisée : `value` est le nom du Raccourci (macOS), la commande
- * ou l'adresse. */
-export interface CustomAction {
+/** Ce que fait une part d'une roue personnalisée. `value` est alors le chemin de l'app ou du
+ * dossier, l'adresse du site, le format de la conversion, l'identifiant de l'action, le nom du
+ * Raccourci (macOS) ou la commande. */
+export type PartKind = "app" | "folder" | "url" | "convert" | "action" | "shortcut" | "command";
+
+export interface CustomPart {
+  /** Nom affiché ; celui d'une conversion ou d'une action vient de la roue. */
   name: string;
-  kind: "shortcut" | "command" | "url";
+  kind: PartKind;
   value: string;
 }
 
 export interface CustomWheel {
+  /** Identifiant stable, attribué par Rust quand il est vide. */
+  id: string;
   name: string;
-  actions: CustomAction[];
-  /** Extensions des fichiers pour lesquels la roue apparaît (`pdf`, `docx`) ; vide, tous. */
+  /** Affichée parmi les roues, au clic sur le centre. */
+  enabled: boolean;
+  parts: CustomPart[];
+  /** Extensions des fichiers pour lesquels la roue apparaît (`pdf`, `docx`) ; vide, toujours. */
   extensions: string[];
 }
 
-/** Roue personnalisée vue par la roue : le nom et le type des actions suffisent. */
-export type CustomWheelView = {
+/** Roue personnalisée telle qu'on l'affiche : ni commande, ni adresse. */
+export interface CustomWheelView {
+  id: string;
   name: string;
-  actions: { name: string; kind: CustomAction["kind"] }[];
+  parts: CustomPartView[];
   extensions: string[];
-};
+}
+
+export interface CustomPartView {
+  name: string;
+  kind: PartKind;
+  /** Format d'une conversion ou identifiant d'une action, `null` pour les autres parts. */
+  value: string | null;
+  /** Icône d'une app, d'un dossier ou d'un site, en data URL. */
+  icon: string | null;
+}
 
 /** Part d'une liste réglable de la roue Actions, à sa place, affichée ou non. */
 export interface PartEntry {
@@ -271,6 +296,7 @@ export type FileWheels = Record<FileKind, FileWheel>;
 
 /** Roues actives dans l'ordre du clic au centre, apps et destinations de partage des parts. */
 export interface WheelConfig {
+  /** Roues de Rutile et roues personnalisées (`custom:` puis leur identifiant). */
   modes: Mode[];
   /** Rouvrir sur la dernière roue affichée. */
   remember: boolean;
@@ -299,6 +325,16 @@ export const wheelConfig = () => invoke<WheelConfig>("wheel_config");
 export const pickApp = () => invoke<AppSlot | null>("pick_app");
 /** Sélecteur de dossier pour une part de la roue des apps. */
 export const pickAppFolder = () => invoke<AppSlot | null>("pick_app_folder");
+
+/** Nom et logo d'un site, lus sur le site lui-même. */
+export interface SitePreview {
+  name: string;
+  /** PNG en data URL ; `null` si le site n'a pas donné de logo. */
+  icon: string | null;
+}
+
+/** Demande au site son nom et son logo ; rejette si l'adresse n'est pas une adresse web. */
+export const sitePreview = (address: string) => invoke<SitePreview>("site_preview", { address });
 /** Pastilles de notifications des apps de la roue (macOS), dans l'ordre des parts. */
 export const appBadges = () => invoke<(string | null)[]>("app_badges");
 /** macOS : Rutile peut-il lire les pastilles du Dock, celles des apps fermées comprises ? */

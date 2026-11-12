@@ -1,23 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { FileInfo } from "../ipc";
+import type { CustomPartView, CustomWheelView, FileInfo, PartKind } from "../ipc";
 import {
   type ActionNode,
   DEFAULT_FILE_WHEELS,
   FILE_ACTIONS,
   actionCatalog,
+  actionChoices,
   actionParent,
   actionTree,
   actionsAt,
   arrange,
   colorizeActions,
+  customTree,
   disabledActions,
   fileKind,
   fileTree,
   filesFor,
   firstModeFor,
   opensOnDwell,
+  wheelModes,
 } from "./actions";
-import { ALL_MODES } from "./formats";
+import { ALL_MODES, type Mode, WEB_ICON } from "./formats";
 import { MAX_SECTORS } from "./geometry";
 
 const file = (name: string, format: FileInfo["format"] = null, video: FileInfo["video"] = null) => ({
@@ -26,7 +29,7 @@ const file = (name: string, format: FileInfo["format"] = null, video: FileInfo["
   format,
   video,
 });
-const tree = actionTree({ custom: [], windowLayout: true });
+const tree = actionTree({ windowLayout: true });
 const node = (id: string, nodes: readonly ActionNode[] = tree): ActionNode => {
   const found = nodes.find((item) => item.id === id);
   if (!found) throw new Error(`${id} introuvable`);
@@ -54,12 +57,12 @@ describe("actionTree", () => {
 
   it("a toujours quelque chose à faire au clic", () => {
     walk(tree, (item) =>
-      expect(item.run ?? item.convert ?? item.children ?? item.goesTo ?? item.setup).toBeDefined(),
+      expect(item.run ?? item.convert ?? item.children ?? item.goesTo).toBeDefined(),
     );
   });
 
   it("retire les fenêtres quand le système ne sait pas les ranger", () => {
-    const wayland = actionTree({ custom: [], windowLayout: false });
+    const wayland = actionTree({ windowLayout: false });
     expect(wayland.some((item) => item.id === "action-windows")).toBe(false);
   });
 
@@ -70,46 +73,186 @@ describe("actionTree", () => {
     expect(opensOnDwell(node("action-text"))).toBe(false);
   });
 
-  it("envoie vers les réglages tant qu'il n'y a pas de roue personnalisée", () => {
-    expect(node("action-custom").setup).toBe(true);
+  it("laisse les roues personnalisées à leur place, parmi les roues", () => {
+    expect(tree.some((item) => item.id === "action-custom")).toBe(false);
   });
+});
 
-  it("ouvre directement les actions d'une seule roue personnalisée", () => {
-    const custom = actionTree({
-      windowLayout: true,
-      custom: [{ name: "Dev", actions: [{ name: "Build", kind: "command" }], extensions: [] }],
-    });
-    const part = node("action-custom", custom);
-    expect(part.children?.map((item) => item.label)).toEqual(["Build"]);
-    expect(part.children?.[0].run).toEqual({ kind: "custom", wheel: 0, action: 0 });
-  });
+const part = (
+  kind: PartKind,
+  value: string | null = null,
+  name = "",
+  icon: string | null = null,
+): CustomPartView => ({ name, kind, value, icon });
+const wheel = (parts: CustomPartView[], extensions: string[] = [], id = "mix"): CustomWheelView => ({
+  id,
+  name: "Mix",
+  parts,
+  extensions,
+});
 
-  it("garde l'index d'origine d'une roue quand une roue vide la précède", () => {
-    const custom = actionTree({
-      windowLayout: true,
-      custom: [
-        { name: "Vide", actions: [], extensions: [] },
-        { name: "Dev", actions: [{ name: "Build", kind: "command" }], extensions: [] },
-      ],
-    });
-    expect(node("action-custom", custom).children?.[0].run).toEqual({
-      kind: "custom",
-      wheel: 1,
-      action: 0,
-    });
-  });
-
-  it("propose une roue par roue personnalisée s'il y en a plusieurs", () => {
-    const custom = actionTree({
+describe("roue personnalisée", () => {
+  const mixed = customTree(
+    {
       windowLayout: true,
       custom: [
-        { name: "Dev", actions: [{ name: "Build", kind: "command" }], extensions: [] },
-        { name: "Maison", actions: [{ name: "Lampe", kind: "url" }], extensions: [] },
+        wheel([
+          part("app", null, "Mail", "data:mail"),
+          part("folder", null, "Projets"),
+          part("url", null, "YouTube"),
+          part("convert", "png"),
+          part("convert", "mp3"),
+          part("action", "action-capture"),
+          part("action", "capture-zone"),
+          part("action", "image-fullHd"),
+          part("shortcut", null, "Ranger"),
+          part("command", null, "Build"),
+        ]),
       ],
+    },
+    0,
+  );
+
+  it("mélange apps, sites, conversions et actions sur une même roue", () => {
+    expect(mixed.map((item) => item.label)).toEqual([
+      "Mail",
+      "Projets",
+      "YouTube",
+      "PNG",
+      "MP3",
+      "Capture",
+      "Zone",
+      "1920",
+      "Ranger",
+      "Build",
+    ]);
+    const ids = mixed.map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const item of mixed) {
+      expect(
+        item.run ?? item.convert ?? item.convertImage ?? item.children,
+        item.label,
+      ).toBeDefined();
+    }
+  });
+
+  it("ouvre une app avec les fichiers de la roue, un dossier ou un site sans eux", () => {
+    const [mail, folder, site] = mixed;
+    const image = file("photo.png", "png");
+    expect(mail).toMatchObject({
+      icon: "data:mail",
+      opens: true,
+      action: "Ouvrir Mail",
+      dragAction: "Ouvrir avec Mail",
+      run: { kind: "custom", wheel: 0, action: 0 },
     });
-    const part = node("action-custom", custom);
-    expect(part.children?.map((item) => item.label)).toEqual(["Dev", "Maison"]);
-    expect(part.children?.[1].children?.[0].run).toEqual({ kind: "custom", wheel: 1, action: 0 });
+    expect(filesFor(mail, [image])).toEqual([image]);
+    expect(filesFor(folder, [image])).toEqual([]);
+    // Sans icône lisible, un dossier garde une pastille, un site son globe
+    expect(folder.glyph).toBe("files");
+    expect(site.icon).toBe(WEB_ICON);
+  });
+
+  it("reprend les conversions et les actions des roues de Rutile", () => {
+    const [, , , png, mp3, capture, zone, fullHd] = mixed;
+    expect(png).toMatchObject({ convertImage: "png", needs: "images", family: "png" });
+    expect(mp3).toMatchObject({ convert: "mp3", needs: "videos", action: "Extraire le son en MP3" });
+    // La part entière garde sa sous-roue, une action seule se lance au clic
+    expect(capture.children).toHaveLength(4);
+    expect(opensOnDwell(capture)).toBe(true);
+    expect(zone.run).toEqual({ kind: "capture", target: "zone", delay: 0 });
+    expect(zone.children).toBeUndefined();
+    expect(fullHd.run).toEqual({ kind: "retouch", retouch: "fullHd" });
+  });
+
+  it("prend la couleur réglée pour le format ou pour la part d'origine", () => {
+    const colored = colorizeActions(mixed, { png: "#111111", "action-capture": "#222222" });
+    const [, , , png, mp3, capture, zone, fullHd] = colored;
+    expect(png.color).toBe("#111111");
+    expect(mp3.color).toBe("#f97316");
+    expect(capture.color).toBe("#222222");
+    expect(zone.color).toBe("#222222");
+    expect(fullHd.color).toBe("#8b5cf6");
+  });
+
+  it("garde l'index d'origine d'une part quand une part inconnue la précède", () => {
+    const nodes = customTree(
+      {
+        windowLayout: true,
+        custom: [
+          wheel([]),
+          wheel([part("convert", "exe"), part("action", "disparue"), part("command", null, "Build")]),
+        ],
+      },
+      1,
+    );
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].run).toEqual({ kind: "custom", wheel: 1, action: 2 });
+    expect(nodes[0].hides).toBe(false);
+  });
+
+  it("retire une action que le système ne sait pas faire", () => {
+    const custom = [wheel([part("action", "windows-left")])];
+    expect(customTree({ windowLayout: true, custom }, 0)).toHaveLength(1);
+    expect(customTree({ windowLayout: false, custom }, 0)).toHaveLength(0);
+    expect(customTree({ windowLayout: true, custom }, 7)).toEqual([]);
+  });
+
+  it("grise une conversion sans fichier qui convienne, ou déjà dans ce format", () => {
+    const [mail, , , png, mp3] = mixed;
+    const nodes = [mail, png, mp3];
+    expect([...disabledActions(nodes, [file("clip.mov", null, "mov")])]).toEqual([png.id]);
+    expect([...disabledActions(nodes, [file("photo.jpg", "jpeg")])]).toEqual([mp3.id]);
+    expect([...disabledActions(nodes, [file("photo.png", "png")])]).toEqual([png.id, mp3.id]);
+    expect(disabledActions(nodes, []).size).toBe(0);
+  });
+
+  it("propose chaque action une seule fois, à la couleur de sa part", () => {
+    const choices = actionChoices({ windowLayout: true });
+    const all = choices.flatMap((choice) => choice.actions);
+    const ids = all.map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(choices.map((choice) => choice.group.id)).not.toContain("action-apps");
+    for (const item of all) expect(item.color, item.id).toBeDefined();
+    // Les actions que la roue Actions ne propose que pour un fichier y sont aussi
+    expect(ids).toEqual(expect.arrayContaining(["files-path", "pdf-text", "image-copy"]));
+    const files = choices.find((choice) => choice.group.id === "action-files")!;
+    expect(files.actions[0].id).toBe("action-files");
+    expect(files.actions.map((item) => item.id)).toContain("rename-date");
+  });
+});
+
+describe("roues affichées", () => {
+  const filled = [part("convert", "png")];
+  const config = {
+    windowLayout: true,
+    modes: ["apps", "custom:pdf", "image", "custom:vide", "custom:tous", "custom:disparue"] as Mode[],
+    custom: [wheel(filled, ["pdf"], "pdf"), wheel([], [], "vide"), wheel(filled, [], "tous")],
+  };
+
+  it("ne garde une roue réservée à des extensions que pour ces fichiers", () => {
+    expect(wheelModes(config, [file("contrat.pdf")])).toEqual([
+      "apps",
+      "custom:pdf",
+      "image",
+      "custom:tous",
+    ]);
+    expect(wheelModes(config, [file("lettre.docx")])).toEqual(["apps", "image", "custom:tous"]);
+    expect(wheelModes(config, [file("a.pdf"), file("b.docx")])).toEqual([
+      "apps",
+      "image",
+      "custom:tous",
+    ]);
+  });
+
+  it("les montre toutes sans fichier, sauf une roue vide ou disparue", () => {
+    expect(wheelModes(config, [])).toEqual(["apps", "custom:pdf", "image", "custom:tous"]);
+  });
+
+  it("peut ouvrir d'abord une roue personnalisée restée seule", () => {
+    const alone = { ...config, modes: ["custom:tous"] as Mode[] };
+    expect(wheelModes(alone, [])).toEqual(["custom:tous"]);
+    expect(firstModeFor([file("a.docx")], DEFAULT_FILE_WHEELS, wheelModes(alone, []))).toBeNull();
   });
 });
 
@@ -165,12 +308,11 @@ describe("fichiers", () => {
     expect(filesFor(node("files-zip", fichiers), mixed)).toEqual(mixed);
   });
 
-  it("passe tous les fichiers de la roue à une action personnalisée", () => {
-    const custom = actionTree({
-      windowLayout: true,
-      custom: [{ name: "Dev", actions: [{ name: "Build", kind: "command" }], extensions: [] }],
-    });
-    const build = node("action-custom", custom).children![0];
+  it("passe tous les fichiers de la roue à une commande personnalisée", () => {
+    const [build] = customTree(
+      { windowLayout: true, custom: [wheel([part("command", null, "Build")])] },
+      0,
+    );
     expect(filesFor(build, [image, pdf])).toEqual([image, pdf]);
     expect(filesFor(build, [])).toEqual([]);
   });
@@ -182,11 +324,10 @@ describe("fichiers", () => {
 });
 
 describe("ordre des parts", () => {
-  const catalog = actionCatalog({ custom: [], windowLayout: true });
+  const catalog = actionCatalog({ windowLayout: true });
 
   it("suit l'ordre des réglages, et masque les parts éteintes", () => {
     const ordered = actionTree({
-      custom: [],
       windowLayout: true,
       actionParts: [
         { id: "action-color", enabled: true },
@@ -214,7 +355,7 @@ describe("ordre des parts", () => {
 });
 
 describe("roue d'un fichier", () => {
-  const config = { custom: [], windowLayout: true, fileWheels: DEFAULT_FILE_WHEELS };
+  const config = { windowLayout: true, fileWheels: DEFAULT_FILE_WHEELS };
   const ids = (nodes: readonly ActionNode[]) => nodes.map((item) => item.id);
   const pdf = file("contrat.pdf");
   const image = file("photo.jpg", "jpeg");
@@ -266,16 +407,10 @@ describe("roue d'un fichier", () => {
 
   it("tient sur une roue pour chaque type", () => {
     for (const nodes of Object.values(FILE_ACTIONS)) {
-      expect(nodes.length).toBeLessThanOrEqual(MAX_SECTORS + 1);
-      walk(nodes, (item) =>
-        expect(item.run ?? item.convert ?? item.children ?? item.setup).toBeDefined(),
-      );
+      expect(nodes.length).toBeLessThanOrEqual(MAX_SECTORS);
+      walk(nodes, (item) => expect(item.run ?? item.convert ?? item.children).toBeDefined());
     }
-    const many = fileTree(
-      { ...config, custom: [{ name: "Dev", actions: [{ name: "Build", kind: "command" }], extensions: [] }] },
-      [image],
-    );
-    expect(many.length).toBeLessThanOrEqual(MAX_SECTORS);
+    expect(fileTree(config, [image]).length).toBeLessThanOrEqual(MAX_SECTORS);
   });
 
   it("suit l'ordre réglé pour le type", () => {
@@ -298,20 +433,7 @@ describe("roue d'un fichier", () => {
     expect(ids(tree)).toEqual(["files-rename", "files-path"]);
   });
 
-  it("ne montre que les roues personnalisées faites pour ces fichiers", () => {
-    const custom = [
-      { name: "Docs", actions: [{ name: "Imprimer", kind: "command" as const }], extensions: ["pdf"] },
-      { name: "Tous", actions: [{ name: "Copier", kind: "command" as const }], extensions: [] },
-    ];
-    const forPdf = node("action-custom", fileTree({ ...config, custom }, [pdf]));
-    expect(forPdf.children?.map((item) => item.label)).toEqual(["Docs", "Tous"]);
-    const forDoc = node("action-custom", fileTree({ ...config, custom }, [file("a.docx")]));
-    // Une seule roue convient : ses actions directement, avec son index d'origine
-    expect(forDoc.children?.map((item) => item.label)).toEqual(["Copier"]);
-    expect(forDoc.children?.[0].run).toEqual({ kind: "custom", wheel: 1, action: 0 });
-  });
-
-  it("n'invite pas à créer une roue personnalisée sur la roue d'un fichier", () => {
+  it("ne contient plus la part des roues personnalisées", () => {
     expect(ids(fileTree(config, [pdf]))).not.toContain("action-custom");
   });
 

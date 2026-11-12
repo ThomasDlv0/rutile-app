@@ -9,12 +9,9 @@ import {
 } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ActionsIcon } from "../ActionsIcon";
-import { AppsIcon } from "../AppsIcon";
-import { FilmIcon } from "../FilmIcon";
 import { GemIcon } from "../GemIcon";
-import { ShareIcon } from "../ShareIcon";
 import {
+  SETTINGS_REFRESH_EVENT,
   SETTINGS_TAB_EVENT,
   UPDATE_PROGRESS_EVENT,
   allowDockBadges,
@@ -24,17 +21,15 @@ import {
   installUpdate,
   openPermissionSettings,
   pickApp,
-  pickAppFolder,
   pickShareFolder,
   setLaunchAtLogin,
   shareChoices,
   updateSettings,
   videoSupport,
   type AppKind,
-  type AppSlot,
-  type CustomAction,
-  type CustomWheel,
+  type CustomPart,
   type FileKind,
+  type FileWheels,
   type FirstWheel,
   type PartEntry,
   type Settings,
@@ -47,7 +42,6 @@ import {
   type VideoSupport,
   type WheelBorder,
 } from "../ipc";
-import { ActionGlyph } from "../wheel/ActionGlyph";
 import {
   type ActionNode,
   type Arranged,
@@ -59,34 +53,41 @@ import {
   arrange,
   partEntries,
 } from "../wheel/actions";
-import { readableInk } from "../wheel/color";
 import { DEFAULT_ACCENT } from "../wheel/color";
 import {
+  type BuiltinMode,
   type Mode,
   OUTPUT_FORMATS,
   VIDEO_FORMATS,
+  WEB_ICON,
   type WheelItem,
   colorize,
+  customMode,
+  isCustomMode,
   shareIcon,
 } from "../wheel/formats";
-import { CENTER, MAX_SECTORS, SECTOR_COUNT, isInsideHub } from "../wheel/geometry";
-import { type Point, usableSector } from "../wheel/selection";
-import { Wheel } from "../wheel/Wheel";
+import { MAX_SECTORS, SECTOR_COUNT } from "../wheel/geometry";
+import { ModeIcon } from "../wheel/Wheel";
 import { recordShortcut } from "./accelerator";
-import { moved, type SortableRow, useSortable } from "./useSortable";
+import {
+  AddRow,
+  type Change,
+  DragHandle,
+  type Errors,
+  ItemIcon,
+  Row,
+  SLIDER_COMMIT_MS,
+  Section,
+  type SectionId,
+  Slider,
+  Toggle,
+} from "./controls";
+import { CustomTab } from "./CustomTab";
+import { PartPicker } from "./PartPicker";
+import { PartChip, viewsOf } from "./parts";
+import { moved, useSortable } from "./useSortable";
+import { WheelPreview } from "./WheelPreview";
 import "./settings.css";
-
-type SectionId =
-  | "wheels"
-  | "colors"
-  | "actions"
-  | "apps"
-  | "share"
-  | "shortcut"
-  | "shake"
-  | "quality"
-  | "startup"
-  | "updates";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "Général" },
@@ -96,23 +97,19 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: "actions", label: "Actions" },
   { id: "apps", label: "Apps" },
   { id: "share", label: "Partage" },
+  { id: "custom", label: "Mes roues" },
 ];
 
-const MODE_LABELS: Record<Mode, string> = {
+/** Dans l'onglet Actions : ce qu'ouvre un fichier selon son type. */
+const FILE_WHEELS_ANCHOR = "selon-le-fichier";
+
+const MODE_LABELS: Record<BuiltinMode, string> = {
   image: "Convertisseur d'images",
   video: "Convertisseur de vidéos",
   apps: "Applications",
   share: "Partage",
   actions: "Actions",
 };
-
-function ModeIcon({ mode }: { mode: Mode }) {
-  if (mode === "video") return <FilmIcon size={22} />;
-  if (mode === "apps") return <AppsIcon size={22} />;
-  if (mode === "share") return <ShareIcon size={22} />;
-  if (mode === "actions") return <ActionsIcon size={22} />;
-  return <GemIcon size={22} />;
-}
 
 const DIRECTIONS = [
   "En haut",
@@ -178,6 +175,7 @@ const PREVIEW: SettingsView = {
       { id: "share", enabled: true },
       { id: "actions", enabled: true },
     ],
+    wheelOrder: [],
     rememberWheel: false,
     dwellMs: 1000,
     formatColors: {},
@@ -190,7 +188,7 @@ const PREVIEW: SettingsView = {
     fileWheels: DEFAULT_FILE_WHEELS,
     apps: [
       { path: "/Applications/Finder.app", name: "Finder", kind: "app" },
-      null,
+      { path: "https://youtube.com/", name: "YouTube", kind: "url" },
       null,
       null,
       null,
@@ -208,16 +206,17 @@ const PREVIEW: SettingsView = {
   dockAccess: false,
   nativeGlass: true,
   platform: "macos",
-  version: "1.3.1",
+  version: "1.4.0",
   apps: [
     { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
-    null,
+    { path: "https://youtube.com/", name: "YouTube", kind: "url", icon: null },
     null,
     null,
     null,
     null,
   ],
   share: PREVIEW_SHARE,
+  custom: [],
   tab: null,
 };
 
@@ -227,9 +226,6 @@ const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, str
   notAsked: "Demandée à la première utilisation",
   unknown: "Inconnue",
 };
-
-/** Les curseurs n'enregistrent qu'une fois relâchés depuis un court instant. */
-const SLIDER_COMMIT_MS = 300;
 
 /** Destination à enregistrer, sans ce qui ne sert qu'à l'affichage. */
 function targetOf(view: ShareView): ShareTarget {
@@ -248,6 +244,8 @@ function targetOf(view: ShareView): ShareTarget {
 export function SettingsApp() {
   const [view, setView] = useState<SettingsView | null>(isTauri() ? null : PREVIEW);
   const [tab, setTab] = useState<SettingsTab>("general");
+  // Partie de l'onglet à montrer, quand on y arrive depuis un autre
+  const [anchor, setAnchor] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<SectionId, string>>>({});
 
   useEffect(() => {
@@ -257,14 +255,37 @@ export function SettingsApp() {
       if (loaded.tab) setTab(loaded.tab);
     });
     // Une part vide de la roue ramène la fenêtre déjà ouverte sur le bon onglet
-    const unlisten = listen<SettingsTab>(SETTINGS_TAB_EVENT, ({ payload }) => setTab(payload));
-    return () => void unlisten.then((stop) => stop());
+    const onTab = listen<SettingsTab>(SETTINGS_TAB_EVENT, ({ payload }) => setTab(payload));
+    // Le logo d'un site arrive après coup : les icônes sont relues
+    const onRefresh = listen(SETTINGS_REFRESH_EVENT, () => void getSettings().then(setView));
+    return () => {
+      void onTab.then((stop) => stop());
+      void onRefresh.then((stop) => stop());
+    };
   }, []);
+
+  const goTo = useCallback((next: SettingsTab, target?: string) => {
+    setTab(next);
+    setAnchor(target ?? null);
+  }, []);
+  useEffect(() => {
+    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    else window.scrollTo({ top: 0 });
+  }, [tab, anchor]);
 
   const save = useCallback(async (section: SectionId, settings: Settings) => {
     setErrors((current) => ({ ...current, [section]: undefined }));
     if (!isTauri()) {
-      setView((current) => current && { ...current, settings });
+      // Aperçu dans un navigateur : ce que Rust renverrait, les icônes en moins
+      setView(
+        (current) =>
+          current && {
+            ...current,
+            settings,
+            apps: settings.apps.map((slot) => slot && { ...slot, icon: null }),
+            share: settings.share.map((target) => target && { ...target, icon: null }),
+          },
+      );
       return;
     }
     try {
@@ -280,6 +301,8 @@ export function SettingsApp() {
   const { settings } = view;
   const change = (section: SectionId, patch: Partial<Settings>) =>
     void save(section, { ...settings, ...patch });
+  // Dans un navigateur, Rust n'est pas là pour décrire les roues personnalisées
+  const custom = isTauri() ? view.custom : viewsOf(settings.customWheels);
 
   return (
     <main className="settings-page">
@@ -299,7 +322,7 @@ export function SettingsApp() {
             role="tab"
             className="settings-tab"
             aria-selected={tab === id}
-            onClick={() => setTab(id)}
+            onClick={() => goTo(id)}
           >
             <TabIcon tab={id} />
             <span>{label}</span>
@@ -311,7 +334,9 @@ export function SettingsApp() {
         {tab === "general" && (
           <GeneralTab view={view} errors={errors} setErrors={setErrors} setView={setView} change={change} />
         )}
-        {tab === "wheels" && <WheelsTab settings={settings} error={errors.wheels} change={change} />}
+        {tab === "wheels" && (
+          <WheelsTab settings={settings} error={errors.wheels} change={change} goTo={goTo} />
+        )}
         {tab === "conversion" && (
           <ConversionTab settings={settings} error={errors.quality} change={change} />
         )}
@@ -326,13 +351,13 @@ export function SettingsApp() {
         )}
         {tab === "actions" && <ActionsTab view={view} errors={errors} change={change} />}
         {tab === "share" && <ShareTab view={view} errors={errors} change={change} />}
+        {tab === "custom" && (
+          <CustomTab view={view} custom={custom} error={errors.custom} change={change} />
+        )}
       </div>
     </main>
   );
 }
-
-type Change = (section: SectionId, patch: Partial<Settings>) => void;
-type Errors = Partial<Record<SectionId, string>>;
 
 /** Icônes des onglets, au trait, dans la couleur du texte. */
 function TabIcon({ tab }: { tab: SettingsTab }) {
@@ -382,6 +407,13 @@ function TabIcon({ tab }: { tab: SettingsTab }) {
       </>
     ),
     share: <path d="M7 8.5H5.5a1 1 0 0 0-1 1V16a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9.5a1 1 0 0 0-1-1H13M10 2.8V12M6.8 6 10 2.8 13.2 6" />,
+    custom: (
+      <>
+        <circle cx="9" cy="11" r="6.2" />
+        <circle cx="9" cy="11" r="2" />
+        <path d="M9 4.8V9M9 13v4.2M2.8 11H7M11 11h4.2M16 1.6v4.6M13.7 3.9h4.6" />
+      </>
+    ),
   };
   return (
     <svg className="tab-icon" width="22" height="22" viewBox="0 0 20 20" aria-hidden="true">
@@ -418,7 +450,11 @@ function GeneralTab({
 
   return (
     <>
-      <Section title="Ouvrir la roue" error={errors.shortcut}>
+      <Section
+        title="Ouvrir la roue"
+        error={errors.shortcut}
+        note="Dans la roue, ← et → choisissent une part, Entrée la lance ; les chiffres 1 à 9 (0 pour la dixième) la lancent directement. ↑ et ↓ changent de roue, Échap la ferme."
+      >
         {view.shortcutsSupported ? (
           <Row
             label="Raccourci clavier"
@@ -450,10 +486,6 @@ function GeneralTab({
             Raccourcis personnalisés.
           </p>
         )}
-        <p className="section-note">
-          Dans la roue, ← et → choisissent une part, Entrée la lance ; les chiffres 1 à 9 (0 pour
-          la dixième) la lancent directement. ↑ et ↓ changent de roue, Échap la ferme.
-        </p>
       </Section>
 
       <Section title="Secouer un fichier" error={errors.shake}>
@@ -521,46 +553,132 @@ function GeneralTab({
   );
 }
 
+/** Roues dans l'ordre du clic au centre : celui des réglages, puis celles qu'il ne cite pas
+ * encore (une roue tout juste créée). */
+function wheelKeys(settings: Settings): Mode[] {
+  const known: Mode[] = [
+    ...settings.modes.map((entry) => entry.id),
+    ...settings.customWheels.map((wheel) => customMode(wheel.id)),
+  ];
+  const ordered = settings.wheelOrder.filter(
+    (key, index, all) => known.includes(key) && all.indexOf(key) === index,
+  );
+  return [...ordered, ...known.filter((key) => !ordered.includes(key))];
+}
+
+/** Ce que fait chaque réglage « S'ouvre sur », en quelques mots. */
+const FIRST_WHEEL_NAMES: Record<FirstWheel, string> = {
+  convert: "convertisseur",
+  actions: "roue Actions",
+  share: "partage",
+  apps: "apps",
+  usual: "première roue",
+};
+
+/** « Images, Vidéos : convertisseur · PDF, Archives, Autres : roue Actions ». */
+function fileWheelsSummary(fileWheels: FileWheels): string {
+  const groups = new Map<FirstWheel, string[]>();
+  for (const kind of FILE_KINDS) {
+    const { first } = fileWheels[kind];
+    groups.set(first, [...(groups.get(first) ?? []), FILE_KIND_LABELS[kind]]);
+  }
+  return [...groups]
+    .map(([first, kinds]) => `${kinds.join(", ")} : ${FIRST_WHEEL_NAMES[first]}`)
+    .join(" · ");
+}
+
+/** Ligne de la liste des roues : une roue de Rutile ou une roue personnalisée. */
+type WheelRow = {
+  key: Mode;
+  label: string;
+  hint?: string;
+  custom: boolean;
+  enabled: boolean;
+  /** Affichée quels que soient les fichiers. */
+  always: boolean;
+  toggle: (next: boolean) => void;
+};
+
 function WheelsTab({
   settings,
   error,
   change,
+  goTo,
 }: {
   settings: Settings;
   error?: string;
   change: Change;
+  goTo: (tab: SettingsTab, anchor?: string) => void;
 }) {
-  const enabledCount = settings.modes.filter((entry) => entry.enabled).length;
-  const sortable = useSortable(settings.modes.length, (from, to) =>
-    change("wheels", { modes: moved(settings.modes, from, to) }),
+  const keys = wheelKeys(settings);
+  const sortable = useSortable(keys.length, (from, to) =>
+    change("wheels", { wheelOrder: moved(keys, from, to) }),
   );
+  const rows = keys.flatMap((key): WheelRow[] => {
+    if (!isCustomMode(key)) {
+      const enabled = settings.modes.some((entry) => entry.id === key && entry.enabled);
+      const toggle = (next: boolean) => change("wheels", { modes: withMode(settings, key, next) });
+      return [{ key, label: MODE_LABELS[key], hint: undefined, custom: false, enabled, always: enabled, toggle }];
+    }
+    const wheel = settings.customWheels.find((known) => customMode(known.id) === key);
+    if (!wheel) return [];
+    const count = wheel.parts.length;
+    const toggle = (next: boolean) =>
+      change("wheels", {
+        customWheels: settings.customWheels.map((known) =>
+          known === wheel ? { ...known, enabled: next } : known,
+        ),
+      });
+    return [
+      {
+        key,
+        label: wheel.name || "Roue sans nom",
+        hint:
+          count === 0
+            ? "Roue perso · vide, elle n'apparaît pas encore"
+            : `Roue perso · ${count} part${count > 1 ? "s" : ""}`,
+        custom: true,
+        enabled: wheel.enabled,
+        // Affichée quels que soient les fichiers : elle peut rester la seule roue
+        always: wheel.enabled && count > 0 && wheel.extensions.length === 0,
+        toggle,
+      },
+    ];
+  });
+  const alwaysShown = rows.filter((row) => row.always).length;
 
   return (
     <>
-      <Section title="Roues" error={error} sorting={sortable.sorting}>
-        {settings.modes.map((entry, index) => (
+      <Section
+        title="Roues"
+        error={error}
+        sorting={sortable.sorting}
+        note="Un clic au centre (ou ↓ au clavier) passe à la roue suivante, dans cet ordre. Glissez une ligne par sa poignée pour la déplacer."
+      >
+        {rows.map((row, index) => (
           <Row
-            key={entry.id}
-            label={MODE_LABELS[entry.id]}
-            icon={<ModeIcon mode={entry.id} />}
+            key={row.key}
+            label={row.label}
+            hint={row.hint}
+            icon={<ModeIcon mode={row.key} size={22} />}
             sortable={sortable.row(index)}
-            handle={<DragHandle label={MODE_LABELS[entry.id]} {...sortable.handle(index)} />}
+            handle={<DragHandle label={row.label} {...sortable.handle(index)} />}
           >
+            {row.custom && (
+              <button type="button" className="link-button" onClick={() => goTo("custom")}>
+                Modifier
+              </button>
+            )}
             <Toggle
-              checked={entry.enabled}
-              label={MODE_LABELS[entry.id]}
-              // La dernière roue active ne peut pas être désactivée
-              disabled={entry.enabled && enabledCount === 1}
-              onChange={(enabled) =>
-                change("wheels", { modes: withMode(settings, entry.id, enabled) })
-              }
+              checked={row.enabled}
+              label={row.label}
+              // La dernière roue toujours affichée ne peut pas être désactivée
+              disabled={row.always && alwaysShown === 1}
+              onChange={row.toggle}
             />
           </Row>
         ))}
-        <p className="section-note">
-          Un clic au centre (ou ↓ au clavier) passe à la roue suivante, dans cet ordre. Glissez
-          une ligne par sa poignée pour la déplacer.
-        </p>
+        <AddRow label="Créer ma propre roue…" onClick={() => goTo("custom")} />
       </Section>
 
       <Section title="Comportement">
@@ -593,17 +711,24 @@ function WheelsTab({
             onChange={(rememberWheel) => change("wheels", { rememberWheel })}
           />
         </Row>
-        <p className="section-note">
-          Un fichier ouvre d'abord la roue réglée pour son type dans l'onglet Actions : le
-          convertisseur pour une image ou une vidéo, la roue Actions pour le reste. En glissant
-          un fichier, restez au centre pour passer à la roue de partage.
-        </p>
+        <Row
+          label="Roue ouverte par un fichier"
+          hint={`${fileWheelsSummary(settings.fileWheels)}.`}
+        >
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => goTo("actions", FILE_WHEELS_ANCHOR)}
+          >
+            Régler…
+          </button>
+        </Row>
       </Section>
     </>
   );
 }
 
-function withMode(settings: Settings, mode: Mode, enabled: boolean): Settings["modes"] {
+function withMode(settings: Settings, mode: BuiltinMode, enabled: boolean): Settings["modes"] {
   return settings.modes.map((entry) => (entry.id === mode ? { ...entry, enabled } : entry));
 }
 
@@ -615,16 +740,22 @@ function WheelSwitch({
   change,
 }: {
   settings: Settings;
-  mode: Mode;
+  mode: BuiltinMode;
   label: string;
   change: Change;
 }) {
   const enabled = settings.modes.some((entry) => entry.id === mode && entry.enabled);
-  const onlyOne = settings.modes.filter((entry) => entry.enabled).length === 1;
+  // Une roue personnalisée toujours affichée peut rester la seule
+  const others =
+    settings.modes.filter((entry) => entry.enabled && entry.id !== mode).length +
+    settings.customWheels.filter(
+      (wheel) => wheel.enabled && wheel.parts.length > 0 && wheel.extensions.length === 0,
+    ).length;
+  const onlyOne = others === 0;
   return (
     <Row
       label={label}
-      icon={<ModeIcon mode={mode} />}
+      icon={<ModeIcon mode={mode} size={22} />}
       hint={enabled ? "Ordre et autres roues dans l'onglet Roues." : "Désactivée : elle n'apparaît pas au clic sur le centre."}
     >
       <Toggle
@@ -655,7 +786,11 @@ function ConversionTab({
 
   return (
     <>
-      <Section title="Qualité des formats avec perte" error={error}>
+      <Section
+        title="Qualité des formats avec perte"
+        error={error}
+        note="Plus la qualité est haute, plus le fichier est lourd."
+      >
         {(
           [
             ["JPEG", "jpegQuality"],
@@ -674,7 +809,6 @@ function ConversionTab({
             />
           </Row>
         ))}
-        <p className="section-note">Plus la qualité est haute, plus le fichier est lourd.</p>
       </Section>
 
       <Section title="Vectorisation">
@@ -710,16 +844,30 @@ function ConversionTab({
 
 type PreviewMode = "image" | "video" | "actions";
 
-/** Roues dont on règle les couleurs, avec les couleurs par défaut de leurs parts. */
-const COLOR_GROUPS: { mode: PreviewMode; title: string; parts: readonly WheelItem[] }[] = [
-  { mode: "image", title: "Images", parts: OUTPUT_FORMATS },
-  { mode: "video", title: "Vidéos", parts: VIDEO_FORMATS },
-  // Parts dans l'ordre réglé, calculées par l'onglet
-  { mode: "actions", title: "Actions", parts: [] },
+/** Roues dont on règle les couleurs. */
+const COLOR_GROUPS: { mode: PreviewMode; title: string }[] = [
+  { mode: "image", title: "Images" },
+  { mode: "video", title: "Vidéos" },
+  { mode: "actions", title: "Actions" },
 ];
 
-/** Échelle de l'aperçu de la roue dans les réglages. */
-const PREVIEW_SCALE = 0.6;
+/** Couleurs proposées d'un clic : celles d'origine des parts. Toute autre se choisit dans le
+ * sélecteur du système. */
+const PALETTE: { color: string; name: string }[] = [
+  { color: "#3b82f6", name: "Bleu" },
+  { color: "#0d9488", name: "Turquoise" },
+  { color: "#16a34a", name: "Vert" },
+  { color: "#f2b705", name: "Jaune" },
+  { color: "#f97316", name: "Orange" },
+  { color: "#e5484d", name: "Rouge" },
+  { color: "#ec4899", name: "Rose" },
+  { color: "#8b5cf6", name: "Violet" },
+  { color: "#64748b", name: "Ardoise" },
+  { color: "#6b7280", name: "Gris" },
+];
+
+/** Ce dont on règle la couleur quand ce n'est pas une part : la surbrillance. */
+const HIGHLIGHT = "highlight";
 
 type ColorDraft = {
   colors: Record<string, string>;
@@ -758,11 +906,12 @@ function ColorsTab({
   );
   const [previewMode, setPreviewMode] = useState<PreviewMode>("image");
   const actionParts = useMemo(
-    () => actionTree({ custom: [], windowLayout: true, actionParts: settings.actionParts }),
+    () => actionTree({ windowLayout: true, actionParts: settings.actionParts }),
     [settings.actionParts],
   );
-  const known = COLOR_GROUPS.find(({ mode }) => mode === previewMode) ?? COLOR_GROUPS[0];
-  const group = known.mode === "actions" ? { ...known, parts: actionParts } : known;
+  const partsOf = (mode: PreviewMode): readonly WheelItem[] =>
+    mode === "actions" ? actionParts : mode === "video" ? VIDEO_FORMATS : OUTPUT_FORMATS;
+  const parts = partsOf(previewMode);
 
   const update = (next: ColorDraft) => {
     setDraft(next);
@@ -778,45 +927,48 @@ function ColorsTab({
     );
   };
 
-  const setPartColor = (part: WheelItem, color: string) => {
+  // Ce dont on règle la couleur : une part de la roue affichée, choisie d'un clic sur
+  // l'aperçu, ou la surbrillance par son centre. La première part l'est d'emblée, pour que
+  // les couleurs proposées soient sous les yeux dès l'arrivée
+  const [target, setTarget] = useState<string>(OUTPUT_FORMATS[0].id);
+  const selected = target === HIGHLIGHT ? -1 : Math.max(parts.findIndex(({ id }) => id === target), 0);
+  const part = target === HIGHLIGHT ? null : parts[selected];
+  const original = part?.color ?? DEFAULT_ACCENT;
+  const current = part ? (draft.colors[part.id] ?? original) : (draft.highlight ?? DEFAULT_ACCENT);
+
+  const setHighlight = (color: string) =>
+    update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color });
+  const setColor = (color: string) => {
+    if (!part) {
+      setHighlight(color);
+      return;
+    }
     const colors = { ...draft.colors };
     // Revenir à la couleur d'origine retire le choix, plutôt que de l'enregistrer
-    if (color === part.color) delete colors[part.id];
+    if (color === original) delete colors[part.id];
     else colors[part.id] = color;
     update({ ...draft, colors });
   };
 
-  // Le sélecteur du système s'ouvre sur la part cliquée, ou le centre pour la surbrillance
-  const picker = useRef<HTMLInputElement>(null);
-  const [editing, setEditing] = useState<WheelItem | "highlight" | null>(null);
-  const editedColor = (target: WheelItem | "highlight") =>
-    target === "highlight"
-      ? (draft.highlight ?? DEFAULT_ACCENT)
-      : (draft.colors[target.id] ?? target.color ?? DEFAULT_ACCENT);
-  const edit = (target: WheelItem | "highlight") => {
-    setEditing(target);
-    if (!picker.current) return;
-    picker.current.value = editedColor(target);
-    picker.current.click();
-  };
-  const setHighlight = (color: string) =>
-    update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color });
-
   const customized =
     Object.keys(draft.colors).length > 0 || draft.highlight !== null || draft.border !== "light";
+  const title = part ? `Couleur de ${part.label}` : "Couleur de surbrillance";
 
   return (
     <>
-      <Section title="Aperçu">
+      <Section title="Couleurs des parts" error={error}>
         <div className="color-preview">
-          <div className="segmented" role="tablist" aria-label="Roue de l'aperçu">
+          <div className="segmented" role="tablist" aria-label="Roue affichée">
             {COLOR_GROUPS.map(({ mode, title }) => (
               <button
                 key={mode}
                 type="button"
                 role="tab"
                 aria-selected={previewMode === mode}
-                onClick={() => setPreviewMode(mode)}
+                onClick={() => {
+                  setPreviewMode(mode);
+                  setTarget(partsOf(mode)[0].id);
+                }}
               >
                 {title}
               </button>
@@ -824,29 +976,70 @@ function ColorsTab({
           </div>
           <WheelPreview
             mode={previewMode}
-            parts={group.parts}
-            colors={draft.colors}
-            highlight={draft.highlight}
+            items={colorize(parts, draft.colors)}
+            accent={draft.highlight}
             border={draft.border}
             glass={settings.wheelGlass}
-            onPart={edit}
-            onHub={() => edit("highlight")}
-          />
-          <input
-            ref={picker}
-            className="color-picker-input"
-            type="color"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(event) => {
-              const color = event.target.value.toLowerCase();
-              if (editing === "highlight") setHighlight(color);
-              else if (editing) setPartColor(editing, color);
-            }}
+            selected={part ? selected : null}
+            partLabel={(item) => `Couleur de ${item.label}`}
+            hubLabel="Couleur de surbrillance"
+            onPart={(index) => setTarget(parts[index].id)}
+            onHub={() => setTarget(HIGHLIGHT)}
           />
           <p className="row-hint">
-            Cliquez sur une part pour changer sa couleur, sur le centre pour la surbrillance.
+            Cliquez une part de la roue, ou son centre, puis choisissez sa couleur ci-dessous.
           </p>
+        </div>
+        <div className="color-inspector">
+          <div className="color-inspector-head">
+            <span className="color-well" style={{ background: current }} aria-hidden="true" />
+            <div className="row-text">
+              <span className="row-label">{title}</span>
+              <span className="row-hint">
+                {part
+                  ? previewMode === "actions"
+                    ? "La part, et les actions de sa sous-roue."
+                    : "La pastille de ce format, sur toutes les roues."
+                  : "La part survolée, et l'anneau autour du bouton visé."}
+              </span>
+            </div>
+            <span className="color-field-code">{current.toUpperCase()}</span>
+          </div>
+          <div className="swatches" role="radiogroup" aria-label={title}>
+            {PALETTE.map(({ color, name }) => (
+              <button
+                key={color}
+                type="button"
+                role="radio"
+                className="swatch"
+                aria-checked={current === color}
+                aria-label={name}
+                title={name}
+                style={{ background: color }}
+                onClick={() => setColor(color)}
+              />
+            ))}
+            <label
+              className="swatch swatch-custom"
+              title="Autre couleur…"
+              data-current={!PALETTE.some(({ color }) => color === current) || undefined}
+            >
+              <input
+                type="color"
+                aria-label="Autre couleur"
+                value={current}
+                onChange={(event) => setColor(event.target.value.toLowerCase())}
+              />
+            </label>
+            <button
+              type="button"
+              className="link-button swatches-reset"
+              disabled={current === original}
+              onClick={() => setColor(original)}
+            >
+              D'origine
+            </button>
+          </div>
         </div>
       </Section>
 
@@ -882,12 +1075,11 @@ function ColorsTab({
         </Row>
       </Section>
 
-      <Section title="Surbrillance" error={error}>
+      <Section title="Surbrillance">
         <Row label="Part survolée" hint="Secteur éclairé et anneau autour du bouton visé.">
           <ColorField
             label="Part survolée"
             value={draft.highlight ?? DEFAULT_ACCENT}
-            hideLabel
             onChange={setHighlight}
           />
         </Row>
@@ -910,12 +1102,10 @@ function ColorsTab({
 function ColorField({
   label,
   value,
-  hideLabel,
   onChange,
 }: {
   label: string;
   value: string;
-  hideLabel?: boolean;
   onChange: (color: string) => void;
 }) {
   return (
@@ -926,151 +1116,8 @@ function ColorField({
         value={value}
         onChange={(event) => onChange(event.target.value.toLowerCase())}
       />
-      {!hideLabel && <span className="color-field-label">{label}</span>}
       <span className="color-field-code">{value.toUpperCase()}</span>
     </label>
-  );
-}
-
-/** Roue réduite, aux couleurs en cours de réglage. Le survol y fonctionne comme sur la vraie,
- * et un clic choisit la couleur de ce qu'il touche. */
-function WheelPreview({
-  mode,
-  parts,
-  colors,
-  highlight,
-  border,
-  glass,
-  onPart,
-  onHub,
-}: {
-  mode: PreviewMode;
-  parts: readonly WheelItem[];
-  colors: Record<string, string>;
-  highlight: string | null;
-  border: WheelBorder;
-  glass: boolean;
-  onPart: (part: WheelItem) => void;
-  onHub: () => void;
-}) {
-  const [pointer, setPointer] = useState<Point | null>(null);
-  const items = colorize(parts, colors);
-  const highlighted = pointer && usableSector(...pointer, new Set(), items);
-  const hovered = highlighted === null ? null : items[highlighted];
-  const overHub = pointer !== null && isInsideHub(...pointer);
-  return (
-    <div
-      className="wheel-preview"
-      style={{ width: CENTER * 2 * PREVIEW_SCALE, height: CENTER * 2 * PREVIEW_SCALE }}
-    >
-      <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: "top left" }}>
-        <Wheel
-          phase="open"
-          mode={mode}
-          next={mode}
-          items={items}
-          disabled={new Set()}
-          highlighted={highlighted}
-          hub={
-            hovered
-              ? { label: `Couleur : ${hovered.label}`, tone: "action" }
-              : overHub
-                ? { label: "Couleur de surbrillance", tone: "action" }
-                : null
-          }
-          work={null}
-          dwelling={false}
-          dwellMs={1000}
-          accent={highlight}
-          border={border}
-          glass={glass ? "css" : "off"}
-          scale={PREVIEW_SCALE}
-          onPointer={setPointer}
-          onSelect={(index) => onPart(parts[index])}
-          onOutsideClick={() => {}}
-          onToggleMode={onHub}
-        />
-      </div>
-    </div>
-  );
-}
-
-const CUSTOM_KINDS: { id: CustomAction["kind"]; label: string; placeholder: string }[] = [
-  { id: "shortcut", label: "Raccourci", placeholder: "Nom dans l'app Raccourcis" },
-  { id: "command", label: "Commande", placeholder: "Commande (fichiers : $1, $2…)" },
-  { id: "url", label: "Site web", placeholder: "https://…" },
-];
-
-/** Ajout d'une action à une roue personnalisée. */
-function CustomActionForm({
-  platform,
-  onAdd,
-}: {
-  platform: string;
-  onAdd: (action: CustomAction) => void;
-}) {
-  const kinds = CUSTOM_KINDS.filter(({ id }) => id !== "shortcut" || platform === "macos");
-  const [kind, setKind] = useState(kinds[0].id);
-  const [name, setName] = useState("");
-  const [value, setValue] = useState("");
-  const url = kind === "url" ? webAddress(value) : null;
-  const ready = name.trim() !== "" && value.trim() !== "" && (kind !== "url" || url !== null);
-  return (
-    <form
-      className="custom-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!ready) return;
-        onAdd({ name: name.trim(), kind, value: url ?? value.trim() });
-        setName("");
-        setValue("");
-      }}
-    >
-      <input
-        className="text-input"
-        aria-label="Nom de l'action"
-        placeholder="Nom de l'action"
-        maxLength={40}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-      />
-      <select
-        className="text-input"
-        aria-label="Type d'action"
-        value={kind}
-        onChange={(event) => setKind(event.target.value as CustomAction["kind"])}
-      >
-        {kinds.map(({ id, label }) => (
-          <option key={id} value={id}>
-            {label}
-          </option>
-        ))}
-      </select>
-      <input
-        className="text-input custom-form-value"
-        aria-label="Ce que lance l'action"
-        placeholder={CUSTOM_KINDS.find(({ id }) => id === kind)?.placeholder}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-      />
-      <button type="submit" className="shortcut-button" disabled={!ready}>
-        Ajouter
-      </button>
-    </form>
-  );
-}
-
-/** Pastille d'une part de la roue Actions, à sa couleur. */
-function PartChip({ node, colors }: { node: ActionNode; colors: Record<string, string> }) {
-  const color =
-    colors[node.id] ?? (node.family !== undefined ? colors[node.family] : undefined) ?? node.color;
-  return (
-    <span
-      className="part-chip"
-      style={color ? { background: color, color: readableInk(color) } : undefined}
-    >
-      <ActionGlyph name={node.glyph} size={15} />
-    </span>
   );
 }
 
@@ -1089,7 +1136,7 @@ function usePartRows(
     <Row
       key={item.id}
       label={item.label}
-      hint={item.setup ? "Vos roues personnalisées, s'il y en a" : item.action}
+      hint={item.action}
       icon={<PartChip node={item} colors={colors} />}
       muted={!enabled}
       sortable={sortable.row(index)}
@@ -1113,7 +1160,9 @@ function usePartRows(
 const FILE_KINDS = Object.keys(FILE_KIND_LABELS) as FileKind[];
 
 /** Ce que propose le menu « S'ouvre sur », selon le type de fichier. */
-function firstChoices(kind: FileKind): { id: FirstWheel; label: string; mode: Mode | null }[] {
+function firstChoices(
+  kind: FileKind,
+): { id: FirstWheel; label: string; mode: BuiltinMode | null }[] {
   const convert =
     kind === "images"
       ? [{ id: "convert" as const, label: "Convertisseur d'images", mode: "image" as const }]
@@ -1136,13 +1185,9 @@ const fileManager = (platform: string) =>
 function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
   const colors = settings.formatColors;
-  const wheels = settings.customWheels;
-  const setWheels = (customWheels: CustomWheel[]) => change("actions", { customWheels });
-  const replace = (index: number, wheel: CustomWheel) =>
-    setWheels(wheels.map((known, i) => (i === index ? wheel : known)));
 
   const windowLayout = view.platform !== "linux" || !view.wayland;
-  const rootParts = arrange(actionCatalog({ custom: [], windowLayout }), settings.actionParts);
+  const rootParts = arrange(actionCatalog({ windowLayout }), settings.actionParts);
   const root = usePartRows(rootParts, colors, (actionParts) => change("actions", { actionParts }));
 
   const [kind, setKind] = useState<FileKind>("images");
@@ -1161,17 +1206,23 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
 
   return (
     <>
-      <Section title="Roue Actions" error={errors.wheels} sorting={root.sorting}>
+      <Section
+        title="Roue Actions"
+        error={errors.wheels}
+        sorting={root.sorting}
+        note="Glissez une part par sa poignée pour la déplacer : la première est en haut de la roue, les suivantes dans le sens des aiguilles d'une montre. Restez une seconde sur une part pour ouvrir ses options ; le centre ramène à la roue d'avant, comme Échap."
+      >
         <WheelSwitch settings={settings} mode="actions" label="Afficher la roue Actions" change={change} />
         {root.rows}
-        <p className="section-note">
-          Glissez une part par sa poignée pour la déplacer : la première est en haut de la roue,
-          les suivantes dans le sens des aiguilles d'une montre. Restez une seconde sur une part
-          pour ouvrir ses options ; le centre ramène à la roue d'avant, comme Échap.
-        </p>
       </Section>
 
-      <Section title="Selon le fichier" error={errors.actions} sorting={forFiles.sorting}>
+      <Section
+        id={FILE_WHEELS_ANCHOR}
+        title="Selon le fichier"
+        error={errors.actions}
+        sorting={forFiles.sorting}
+        note={`Un fichier secoué, glissé sur la roue ou sélectionné dans ${fileManager(view.platform)} ouvre la roue choisie. Sa roue Actions ne montre que ces actions, dans cet ordre, et seulement celles qui ont un sens (la fusion à partir de deux PDF) ; dix au plus. Plusieurs types mélangés comptent comme « Autres ».`}
+      >
         <div className="kind-switch">
           <div className="segmented segmented-fill" role="tablist" aria-label="Type de fichier">
             {FILE_KINDS.map((id) => (
@@ -1210,12 +1261,6 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
         </Row>
         {/* Remontées à chaque type : un interrupteur ne glisse pas d'un type à l'autre */}
         <Fragment key={kind}>{forFiles.rows}</Fragment>
-        <p className="section-note">
-          Un fichier secoué, glissé sur la roue ou sélectionné dans {fileManager(view.platform)}{" "}
-          ouvre la roue choisie. Sa roue Actions ne montre que ces actions, dans cet ordre, et
-          seulement celles qui ont un sens (la fusion à partir de deux PDF) ; dix au plus.
-          Plusieurs types mélangés comptent comme « Autres ».
-        </p>
       </Section>
 
       <Section title="Capture">
@@ -1252,135 +1297,8 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
         )}
       </Section>
 
-      <Section title="Mes roues" sorting={false}>
-        {wheels.map((wheel, index) => (
-          <CustomWheelEditor
-            key={index}
-            wheel={wheel}
-            platform={view.platform}
-            onChange={(next) => replace(index, next)}
-            onRemove={() => setWheels(wheels.filter((_, i) => i !== index))}
-          />
-        ))}
-        {wheels.length < MAX_SECTORS && (
-          <AddRow
-            label="Créer une roue"
-            onClick={() =>
-              setWheels([
-                ...wheels,
-                { name: `Roue ${wheels.length + 1}`, actions: [], extensions: [] },
-              ])
-            }
-          />
-        )}
-        <p className="section-note">
-          Vos roues s'ouvrent depuis la part « Mes roues » de la roue Actions. Une commande reçoit
-          les fichiers de la roue en arguments. Avec des extensions, une roue n'apparaît que pour
-          ces fichiers.
-        </p>
-      </Section>
     </>
   );
-}
-
-/** `.PDF, docx; txt` → `["pdf", "docx", "txt"]`. */
-function parseExtensions(text: string): string[] {
-  const extensions = text
-    .split(/[\s,;]+/)
-    .map((extension) => extension.replace(/^\.+/, "").toLowerCase())
-    .filter((extension) => /^[\p{L}\p{N}]{1,10}$/u.test(extension));
-  return [...new Set(extensions)];
-}
-
-/** Une roue personnalisée : son nom, les fichiers qu'elle concerne, ses actions dans l'ordre. */
-function CustomWheelEditor({
-  wheel,
-  platform,
-  onChange,
-  onRemove,
-}: {
-  wheel: CustomWheel;
-  platform: string;
-  onChange: (wheel: CustomWheel) => void;
-  onRemove: () => void;
-}) {
-  const sortable = useSortable(wheel.actions.length, (from, to) =>
-    onChange({ ...wheel, actions: moved(wheel.actions, from, to) }),
-  );
-  return (
-    <div className="custom-wheel" data-sorting={sortable.sorting || undefined}>
-      <div className="custom-wheel-head">
-        <input
-          className="text-input"
-          aria-label="Nom de la roue"
-          maxLength={30}
-          defaultValue={wheel.name}
-          onBlur={(event) => {
-            const name = event.target.value.trim();
-            if (name && name !== wheel.name) onChange({ ...wheel, name });
-          }}
-        />
-        <button type="button" className="link-button" onClick={onRemove}>
-          Supprimer
-        </button>
-      </div>
-      <div className="custom-wheel-extensions">
-        <input
-          className="text-input"
-          aria-label="Extensions des fichiers concernés"
-          placeholder="Pour tous les fichiers, ou : pdf, docx…"
-          defaultValue={wheel.extensions.join(", ")}
-          onBlur={(event) => {
-            const extensions = parseExtensions(event.target.value);
-            event.target.value = extensions.join(", ");
-            if (extensions.join() !== wheel.extensions.join()) onChange({ ...wheel, extensions });
-          }}
-        />
-      </div>
-      {wheel.actions.map((action, slot) => (
-        <Row
-          key={`${slot}-${action.name}`}
-          label={action.name}
-          hint={`${CUSTOM_KINDS.find(({ id }) => id === action.kind)?.label} : ${action.value}`}
-          sortable={sortable.row(slot)}
-          handle={<DragHandle label={action.name} {...sortable.handle(slot)} />}
-        >
-          <button
-            type="button"
-            className="link-button"
-            onClick={() =>
-              onChange({ ...wheel, actions: wheel.actions.filter((_, i) => i !== slot) })
-            }
-          >
-            Retirer
-          </button>
-        </Row>
-      ))}
-      {wheel.actions.length < MAX_SECTORS && (
-        <CustomActionForm
-          platform={platform}
-          onAdd={(action) => onChange({ ...wheel, actions: [...wheel.actions, action] })}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Adresse web complète, `https://` ajouté au besoin ; `null` si ce n'en est pas une. */
-function webAddress(text: string): string | null {
-  const value = text.trim();
-  const address = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-  try {
-    const url = new URL(address);
-    return url.hostname.includes(".") ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Nom court d'un site, tiré de son adresse. */
-function siteName(address: string): string {
-  return new URL(address).hostname.replace(/^www\./, "");
 }
 
 /** Ce que devient une part qui n'ouvre pas une app. */
@@ -1389,34 +1307,23 @@ const SLOT_KINDS: Record<Exclude<AppKind, "app">, string> = {
   url: "Site web",
 };
 
+/** Ce qu'on peut poser sur la roue des apps. */
+const APP_KINDS = ["app", "folder", "url"] as const;
+
 function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
   const count = settings.apps.length;
   const setApps = (apps: Settings["apps"]) => change("apps", { apps });
   const sortable = useSortable(count, (from, to) => setApps(moved(settings.apps, from, to)));
+  // Part dont on choisit le contenu ; égale au nombre de parts, elle s'ajoute à la roue
+  const [picking, setPicking] = useState<number | null>(null);
+  const free = settings.apps.indexOf(null);
 
-  // `slot` égal au nombre d'emplacements : ajoute une part à la roue
-  const chooseApp = async (slot: number) => {
-    const picked = isTauri() ? await pickApp() : null;
-    if (!picked) return;
+  const place = (slot: number, part: CustomPart) => {
     const apps = [...settings.apps];
-    apps[slot] = picked;
+    apps[slot] = { path: part.value, name: part.name, kind: part.kind as AppKind };
     setApps(apps);
   };
-
-  // Dans la première part libre, ou une part de plus
-  const place = (picked: AppSlot) => {
-    const free = settings.apps.indexOf(null);
-    const apps = [...settings.apps];
-    apps[free >= 0 ? free : count] = picked;
-    setApps(apps);
-  };
-  const chooseFolder = async () => {
-    const picked = isTauri() ? await pickAppFolder() : null;
-    if (picked) place(picked);
-  };
-  const [site, setSite] = useState<string | null>(null);
-  const siteAddress = site === null ? null : webAddress(site);
 
   // Au-delà de six parts, retirer une app retire sa part ; sinon la part reste, vide
   const remove = (slot: number) =>
@@ -1425,13 +1332,23 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
         ? settings.apps.filter((_, i) => i !== slot)
         : settings.apps.map((app, i) => (i === slot ? null : app)),
     );
+  const replaced = picking === null ? null : (settings.apps[picking] ?? null);
 
   return (
     <>
       <Section title="Roue des apps" error={errors.wheels}>
         <WheelSwitch settings={settings} mode="apps" label="Afficher la roue des apps" change={change} />
       </Section>
-      <Section title="Applications" error={errors.apps} sorting={sortable.sorting}>
+      <Section
+        title="Applications"
+        error={errors.apps}
+        sorting={sortable.sorting}
+        note={`Un clic sur une part lance l'application, ouvre le dossier ou le site ; un fichier déposé sur une application s'ouvre avec elle. La roue compte de ${SECTOR_COUNT} à ${MAX_SECTORS} parts.${
+          view.platform === "macos"
+            ? " Les pastilles de notifications du Dock s'affichent sur les icônes."
+            : ""
+        }`}
+      >
         {settings.apps.map((_, slot) => {
           const app = view.apps[slot];
           const position = slotPosition(slot, count);
@@ -1441,11 +1358,17 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
               label={app ? app.name : "Aucune application"}
               hint={app && app.kind !== "app" ? `${SLOT_KINDS[app.kind]} · ${position}` : position}
               muted={!app}
-              icon={<ItemIcon icon={app?.icon} name={app?.name} />}
+              // Un site dont le logo n'est pas (encore) connu garde le globe, comme sur la roue
+              icon={
+                <ItemIcon
+                  icon={app?.icon ?? (app?.kind === "url" ? WEB_ICON : undefined)}
+                  name={app?.name}
+                />
+              }
               sortable={sortable.row(slot)}
               handle={<DragHandle label={app?.name ?? position} {...sortable.handle(slot)} />}
             >
-              <button type="button" className="link-button" onClick={() => void chooseApp(slot)}>
+              <button type="button" className="link-button" onClick={() => setPicking(slot)}>
                 {app ? "Changer…" : "Choisir…"}
               </button>
               {(app || count > SECTOR_COUNT) && (
@@ -1456,48 +1379,29 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
             </Row>
           );
         })}
-        {count < MAX_SECTORS && (
-          <>
-            <AddRow label="Ajouter une app" onClick={() => void chooseApp(count)} />
-            <AddRow label="Ajouter un dossier" onClick={() => void chooseFolder()} />
-            {site === null ? (
-              <AddRow label="Ajouter un site web" onClick={() => setSite("")} />
-            ) : (
-              <form
-                className="custom-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (!siteAddress) return;
-                  place({ path: siteAddress, name: siteName(siteAddress), kind: "url" });
-                  setSite(null);
-                }}
-              >
-                <input
-                  className="text-input custom-form-value"
-                  aria-label="Adresse du site"
-                  placeholder="exemple.fr"
-                  autoFocus
-                  value={site}
-                  onChange={(event) => setSite(event.target.value)}
-                />
-                <button type="submit" className="shortcut-button" disabled={!siteAddress}>
-                  Ajouter
-                </button>
-              </form>
-            )}
-          </>
+        {(free >= 0 || count < MAX_SECTORS) && (
+          // Dans la première part libre, ou une part de plus
+          <AddRow label="Ajouter une part" onClick={() => setPicking(free >= 0 ? free : count)} />
         )}
-        <p className="section-note">
-          Un clic sur une part lance l'application ; un fichier déposé dessus s'ouvre avec elle.
-          La roue compte de {SECTOR_COUNT} à {MAX_SECTORS} parts.
-          {view.platform === "macos" &&
-            " Les pastilles de notifications du Dock s'affichent sur les icônes."}
-        </p>
       </Section>
       {view.dockAccess !== null && (
         <Section title="Pastilles de notifications">
           <DockBadgesRow allowed={view.dockAccess} />
         </Section>
+      )}
+      {picking !== null && (
+        <PartPicker
+          title={replaced ? `Changer ${replaced.name}` : "Nouvelle part"}
+          kinds={APP_KINDS}
+          current={replaced && { kind: replaced.kind, name: replaced.name, value: replaced.path }}
+          colors={settings.formatColors}
+          windowLayout
+          onPick={(part) => {
+            place(picking, part);
+            setPicking(null);
+          }}
+          onCancel={() => setPicking(null)}
+        />
       )}
     </>
   );
@@ -1589,7 +1493,16 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
           change={change}
         />
       </Section>
-      <Section title="Destinations" error={errors.share} sorting={sortable.sorting}>
+      <Section
+        title="Destinations"
+        error={errors.share}
+        sorting={sortable.sorting}
+        note={`${
+          view.platform === "macos"
+            ? "« Partager… » ouvre le menu de partage de macOS : choisissez l'app, puis le destinataire. AirDrop, Messages et Mail ouvrent directement leur fenêtre d'envoi. "
+            : ""
+        }Un dossier synchronisé (Google Drive, iCloud Drive…) reçoit une copie, que son app met en ligne. Pour Signal et les messageries sans partage, le fichier est copié puis l'app s'ouvre : collez-le avec ${paste} dans la conversation.`}
+      >
         {settings.share.map((_, slot) => {
           const target = view.share[slot];
           const position = slotPosition(slot, count);
@@ -1617,13 +1530,6 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
         {count < MAX_SECTORS && (
           <AddRow label="Ajouter une destination" onClick={() => setPicking(count)} />
         )}
-        <p className="section-note">
-          {view.platform === "macos" &&
-            "« Partager… » ouvre le menu de partage de macOS : choisissez l'app, puis le destinataire. AirDrop, Messages et Mail ouvrent directement leur fenêtre d'envoi. "}
-          Un dossier synchronisé (Google Drive, iCloud Drive…) reçoit une copie, que son app met
-          en ligne. Pour Signal et les messageries sans partage, le fichier est copié puis l'app
-          s'ouvre : collez-le avec {paste} dans la conversation.
-        </p>
       </Section>
       {picking !== null && (
         <SharePicker
@@ -1745,90 +1651,6 @@ function SharePicker({
   );
 }
 
-/** Icône d'app ou de destination, ou initiale (« + » pour une part vide). */
-function ItemIcon({
-  icon,
-  name,
-  small,
-}: {
-  icon?: string | null;
-  name?: string;
-  small?: boolean;
-}) {
-  if (icon) {
-    return <img className="settings-app-icon" data-small={small} src={icon} alt="" />;
-  }
-  return (
-    <span className="settings-app-placeholder" data-small={small} aria-hidden="true">
-      {name ? name.slice(0, 1) : "+"}
-    </span>
-  );
-}
-
-function Section({
-  title,
-  error,
-  sorting,
-  children,
-}: {
-  title: string;
-  error?: string;
-  /** Une ligne est en train d'être glissée : les autres s'écartent en douceur. */
-  sorting?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section className="settings-section">
-      <h2>{title}</h2>
-      <div className="settings-card" data-sorting={sorting || undefined}>
-        {children}
-      </div>
-      {error && (
-        <p className="section-error" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
-
-function Row({
-  label,
-  hint,
-  icon,
-  muted,
-  sortable,
-  handle,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  icon?: ReactNode;
-  muted?: boolean;
-  /** Ligne d'une liste qu'on réordonne en glissant, par sa poignée `handle`. */
-  sortable?: SortableRow;
-  handle?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className="settings-row"
-      data-muted={muted}
-      data-dragging={sortable?.dragging || undefined}
-      ref={sortable?.ref}
-      style={sortable?.style}
-    >
-      {handle}
-      {icon && <span className="row-icon">{icon}</span>}
-      <div className="row-text">
-        <span className="row-label">{label}</span>
-        {hint && <span className="row-hint">{hint}</span>}
-      </div>
-      <div className="row-control">{children}</div>
-    </div>
-  );
-}
-
 /** Où en est la recherche ou l'installation d'une mise à jour. */
 type UpdateState =
   | { step: "idle" }
@@ -1929,119 +1751,6 @@ function UpdatesSection({
         />
       </Row>
     </Section>
-  );
-}
-
-/** Poignée d'une ligne déplaçable : à glisser, ou flèches haut et bas au clavier. */
-function DragHandle({
-  label,
-  ...handle
-}: { label: string } & ReturnType<ReturnType<typeof useSortable>["handle"]>) {
-  return (
-    <button
-      type="button"
-      className="drag-handle"
-      aria-label={`Déplacer ${label}`}
-      title="Glisser pour déplacer"
-      {...handle}
-    >
-      <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
-        {[3, 8, 13].flatMap((y) =>
-          [2.5, 7.5].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.4" />),
-        )}
-      </svg>
-    </button>
-  );
-}
-
-/** Dernière ligne d'une liste : ajoute un élément. */
-function AddRow({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button type="button" className="settings-row add-row" onClick={onClick}>
-      <span className="add-row-icon" aria-hidden="true">
-        +
-      </span>
-      <span className="row-label">{label}</span>
-    </button>
-  );
-}
-
-function Toggle({
-  checked,
-  label,
-  disabled,
-  onChange,
-}: {
-  checked: boolean;
-  label: string;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      className="toggle"
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="toggle-knob" />
-    </button>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  disabled,
-  showValue,
-  formatValue = String,
-  ends,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  disabled?: boolean;
-  showValue?: boolean;
-  formatValue?: (value: number) => string;
-  ends?: [string, string];
-  onCommit: (value: number) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => setDraft(value), [value]);
-
-  const update = (next: number) => {
-    setDraft(next);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => onCommit(next), SLIDER_COMMIT_MS);
-  };
-
-  return (
-    <div className="slider" data-disabled={disabled}>
-      {ends && <span className="slider-end">{ends[0]}</span>}
-      <input
-        type="range"
-        aria-label={label}
-        min={min}
-        max={max}
-        step={step}
-        value={draft}
-        disabled={disabled}
-        style={{ "--fill": `${((draft - min) / (max - min)) * 100}%` } as React.CSSProperties}
-        onChange={(event) => update(Number(event.target.value))}
-      />
-      {ends && <span className="slider-end">{ends[1]}</span>}
-      {showValue && <span className="slider-value">{formatValue(draft)}</span>}
-    </div>
   );
 }
 

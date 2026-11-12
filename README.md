@@ -62,8 +62,9 @@ pour ce fichier (celui qu'il a déjà, par exemple) sont grisés.
   <img src="docs/screenshots/roues.gif" width="880" alt="Un clic au centre fait passer de la roue des images à celle des vidéos, puis au partage et aux apps">
 </p>
 
-**Images**, **vidéos**, **apps**, **partage** et **actions** : un clic au centre passe à la
-roue suivante. Chacune s'active ou se désactive, dans l'ordre de votre choix.
+**Images**, **vidéos**, **apps**, **partage**, **actions** et **vos propres roues** : un clic
+au centre passe à la roue suivante. Chacune s'active ou se désactive, dans l'ordre de votre
+choix.
 
 La roue s'adapte au fichier : une image ouvre la roue des images, une vidéo celle des vidéos,
 et tout autre fichier (PDF, ZIP, document…) la roue Actions, réduite à ce qui lui convient. La
@@ -86,7 +87,6 @@ ramène à la roue d'avant, comme <kbd>Échap</kbd>.
 | **Vidéo** | | alléger, tenir dans 10 ou 25 Mo, GIF, MP3, retirer le son |
 | **Fenêtres** | | moitié gauche, droite, haute ou basse, agrandir, centrer |
 | **Apps** | passe à la roue des apps | |
-| **Mes roues** | | vos propres actions : un Raccourci macOS, une commande ou un site |
 
 Les parts se réordonnent et se masquent dans les réglages. Un fichier déposé sur une action la
 lance sur ce fichier, et les actions se lancent aussi sur la sélection du Finder ou de
@@ -104,11 +104,26 @@ pour lui, directement sur la roue :
 | **Vidéos** | alléger, 10 ou 25 Mo, GIF, MP3, retirer le son |
 | **PDF** | fusionner (à partir de deux), copier le texte |
 | **Archives ZIP** | extraire |
-| **Tous** | ZIP, renommer, copier le chemin, et vos roues faites pour ces extensions |
+| **Tous** | ZIP, renommer, copier le chemin |
 
 Pour chaque type, l'onglet Actions des réglages choisit la roue qui s'ouvre d'abord (le
 convertisseur pour les images et les vidéos, la roue Actions pour le reste), ainsi que l'ordre
 des actions et celles qui s'affichent.
+
+### Vos propres roues
+
+Composez une roue avec ce que vous voulez, jusqu'à dix parts et autant de roues :
+
+- une **application**, qui ouvre aussi les fichiers déposés dessus, un **dossier** ou un
+  **site web**, avec son logo ;
+- une **conversion** reprise des roues Images et Vidéo (PNG, MP4, MP3…) ;
+- une **action** de la roue Actions : la part entière avec ses options (Capture), ou une seule
+  (capturer une fenêtre, alléger une image, copier le chemin…) ;
+- un **Raccourci** de l'app Raccourcis (macOS) ou une **commande**, qui reçoit les fichiers de
+  la roue en arguments.
+
+Chaque roue prend sa place parmi les autres, au clic sur le centre. Limitée à des extensions
+(`pdf`, `docx`…), elle n'apparaît que pour ces fichiers.
 
 ### Vidéos : changer de format, faire un GIF, garder le son
 
@@ -142,25 +157,28 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 Jusqu'à dix apps, une par part, avec leurs **pastilles de notifications** comme dans le Dock
 (macOS), y compris celles que le Dock garde pour une app fermée, comme Messages, si vous
 donnez à Rutile l'autorisation Accessibilité (Réglages → Apps). Un fichier lâché sur une app
-s'ouvre avec elle. Une part peut aussi ouvrir un dossier ou un site web.
+s'ouvre avec elle. Une part peut aussi ouvrir un dossier ou un site web, qui s'affiche avec
+son logo : Rutile le demande au site lui-même, une fois, sans passer par un autre service.
 
 ### À vos couleurs
 
 <img src="docs/screenshots/reglages.gif" align="right" width="300" alt="Fenêtre des réglages : onglets Général, Roues, Couleurs, Apps et Partage">
 
-Les réglages tiennent en sept onglets :
+Les réglages tiennent en huit onglets :
 
 - **Général** : raccourci, secouage et sa sensibilité, lancement à l'ouverture de session.
-- **Roues** : ordre des roues (en les glissant) et activation, temps de maintien, retour sur
-  la dernière roue utilisée.
+- **Roues** : ordre des roues (en les glissant) et activation, les vôtres comprises, temps de
+  maintien, retour sur la dernière roue utilisée.
 - **Conversion** : qualité JPEG, WebP et AVIF.
-- **Couleurs** : cliquez sur une part de l'aperçu pour changer sa couleur, sur le centre pour
-  celle de la surbrillance. Liquid Glass et contour de la roue (clair, noir ou aucun). Le
-  texte passe en clair ou en foncé pour rester lisible.
+- **Couleurs** : cliquez une part de l'aperçu, ou son centre pour la surbrillance, puis
+  choisissez sa couleur parmi celles proposées ou dans le sélecteur du système. Liquid Glass
+  et contour de la roue (clair, noir ou aucun). Le texte passe en clair ou en foncé pour
+  rester lisible.
 - **Actions** : ordre et affichage des parts, roue ouverte d'abord et actions proposées pour
-  chaque type de fichier, vos roues personnalisées (limitées ou non à certaines extensions),
-  et ce qui suit une capture.
+  chaque type de fichier, et ce qui suit une capture.
 - **Apps** et **Partage** : de six à dix parts chacune, à réordonner en les glissant.
+- **Mes roues** : vos propres roues, avec leur aperçu, leurs parts et les fichiers qu'elles
+  concernent.
 
 <br clear="right">
 

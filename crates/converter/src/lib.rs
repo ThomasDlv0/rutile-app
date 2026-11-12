@@ -10,6 +10,7 @@ mod format;
 mod output;
 pub mod retouch;
 pub mod self_test;
+mod site_icon;
 pub mod video;
 
 use std::fs::File;
@@ -19,6 +20,7 @@ use std::path::{Path, PathBuf};
 pub use encode::ICO_SIZES;
 pub use error::ConvertError;
 pub use format::{InputFormat, OutputFormat};
+pub use site_icon::site_tile;
 
 /// Qualité de 1 à 100 des formats avec perte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
