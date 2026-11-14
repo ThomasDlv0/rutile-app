@@ -10,6 +10,7 @@ import {
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { GemIcon } from "../GemIcon";
+import { WheelsIcon } from "../WheelsIcon";
 import {
   SETTINGS_REFRESH_EVENT,
   SETTINGS_TAB_EVENT,
@@ -28,6 +29,8 @@ import {
   videoSupport,
   type AppKind,
   type CustomPart,
+  type CustomWheel,
+  type CustomWheelView,
   type FileKind,
   type FileWheels,
   type FirstWheel,
@@ -51,6 +54,8 @@ import {
   actionCatalog,
   actionTree,
   arrange,
+  colorizeActions,
+  customTree,
   partEntries,
 } from "../wheel/actions";
 import { DEFAULT_ACCENT } from "../wheel/color";
@@ -69,6 +74,7 @@ import {
 import { MAX_SECTORS, SECTOR_COUNT } from "../wheel/geometry";
 import { ModeIcon } from "../wheel/Wheel";
 import { recordShortcut } from "./accelerator";
+import { BubbleGroup } from "./Bubble";
 import {
   AddRow,
   type Change,
@@ -180,10 +186,24 @@ const PREVIEW: SettingsView = {
     dwellMs: 1000,
     formatColors: {},
     highlightColor: null,
-    wheelBorder: "light",
+    wheelBorder: "none",
+    wheelBorderColor: null,
     wheelGlass: true,
     captureReopen: true,
-    customWheels: [],
+    customWheels: [
+      {
+        id: "r1",
+        name: "Boulot",
+        enabled: true,
+        parts: [
+          { name: "PNG", kind: "convert", value: "png" },
+          { name: "WebP", kind: "convert", value: "webp", color: "#ec4899" },
+          { name: "Capture", kind: "action", value: "action-capture" },
+          { name: "YouTube", kind: "url", value: "https://youtube.com/" },
+        ],
+        extensions: [],
+      },
+    ],
     actionParts: [],
     fileWheels: DEFAULT_FILE_WHEELS,
     apps: [
@@ -206,7 +226,7 @@ const PREVIEW: SettingsView = {
   dockAccess: false,
   nativeGlass: true,
   platform: "macos",
-  version: "1.4.0",
+  version: "1.5.0",
   apps: [
     { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
     { path: "https://youtube.com/", name: "YouTube", kind: "url", icon: null },
@@ -269,9 +289,19 @@ export function SettingsApp() {
     setAnchor(target ?? null);
   }, []);
   useEffect(() => {
-    if (anchor) document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    const target = anchor && document.getElementById(anchor);
+    if (target) target.scrollIntoView({ block: "start" });
     else window.scrollTo({ top: 0 });
   }, [tab, anchor]);
+
+  // Le nouvel onglet arrive du côté où il se trouve dans la barre
+  const shownTab = useRef(tab);
+  const direction = useRef<"forward" | "back">("forward");
+  if (shownTab.current !== tab) {
+    const index = (id: SettingsTab) => TABS.findIndex((known) => known.id === id);
+    direction.current = index(tab) > index(shownTab.current) ? "forward" : "back";
+    shownTab.current = tab;
+  }
 
   const save = useCallback(async (section: SectionId, settings: Settings) => {
     setErrors((current) => ({ ...current, [section]: undefined }));
@@ -314,7 +344,7 @@ export function SettingsApp() {
         </div>
       </header>
 
-      <nav className="settings-tabs" role="tablist" aria-label="Réglages">
+      <BubbleGroup as="nav" className="settings-tabs" role="tablist" label="Réglages" selected={tab}>
         {TABS.map(({ id, label }) => (
           <button
             key={id}
@@ -328,9 +358,15 @@ export function SettingsApp() {
             <span>{label}</span>
           </button>
         ))}
-      </nav>
+      </BubbleGroup>
 
-      <div role="tabpanel" aria-label={TABS.find(({ id }) => id === tab)?.label}>
+      <div
+        key={tab}
+        className="settings-panel"
+        data-direction={direction.current}
+        role="tabpanel"
+        aria-label={TABS.find(({ id }) => id === tab)?.label}
+      >
         {tab === "general" && (
           <GeneralTab view={view} errors={errors} setErrors={setErrors} setView={setView} change={change} />
         )}
@@ -342,17 +378,20 @@ export function SettingsApp() {
         )}
         {tab === "apps" && <AppsTab view={view} errors={errors} change={change} />}
         {tab === "colors" && (
-          <ColorsTab
-            settings={settings}
-            nativeGlass={view.nativeGlass}
-            error={errors.colors}
-            change={change}
-          />
+          <ColorsTab view={view} custom={custom} error={errors.colors} change={change} goTo={goTo} />
         )}
         {tab === "actions" && <ActionsTab view={view} errors={errors} change={change} />}
         {tab === "share" && <ShareTab view={view} errors={errors} change={change} />}
         {tab === "custom" && (
-          <CustomTab view={view} custom={custom} error={errors.custom} change={change} />
+          <CustomTab
+            // Arriver depuis « Modifier » ouvre directement cette roue
+            key={anchor ?? ""}
+            view={view}
+            custom={custom}
+            openWheel={anchor}
+            error={errors.custom}
+            change={change}
+          />
         )}
       </div>
     </main>
@@ -665,7 +704,11 @@ function WheelsTab({
             handle={<DragHandle label={row.label} {...sortable.handle(index)} />}
           >
             {row.custom && (
-              <button type="button" className="link-button" onClick={() => goTo("custom")}>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => goTo("custom", row.key.slice("custom:".length))}
+              >
                 Modifier
               </button>
             )}
@@ -842,14 +885,9 @@ function ConversionTab({
   );
 }
 
-type PreviewMode = "image" | "video" | "actions";
-
-/** Roues dont on règle les couleurs. */
-const COLOR_GROUPS: { mode: PreviewMode; title: string }[] = [
-  { mode: "image", title: "Images" },
-  { mode: "video", title: "Vidéos" },
-  { mode: "actions", title: "Actions" },
-];
+/** Roue dont on règle les couleurs : une roue de Rutile, ou une roue perso (`custom`, son
+ * rang dans les réglages). */
+type ColorWheel = { key: Mode; title: string; custom: number | null };
 
 /** Couleurs proposées d'un clic : celles d'origine des parts. Toute autre se choisit dans le
  * sélecteur du système. */
@@ -873,45 +911,69 @@ type ColorDraft = {
   colors: Record<string, string>;
   highlight: string | null;
   border: WheelBorder;
+  borderColor: string | null;
+  /** Couleur propre de chaque part des roues perso : par roue, dans l'ordre de ses parts. */
+  parts: Record<string, (string | null)[]>;
 };
 
+/** Couleurs propres des parts des roues perso, telles qu'enregistrées. */
+function partColors(wheels: readonly CustomWheel[]): ColorDraft["parts"] {
+  return Object.fromEntries(
+    wheels.map((wheel) => [wheel.id, wheel.parts.map((part) => part.color ?? null)]),
+  );
+}
+
+/** Les roues perso telles qu'on les affiche, avec les couleurs propres de `parts`. */
+function withPartColors(
+  custom: readonly CustomWheelView[],
+  parts: ColorDraft["parts"],
+): CustomWheelView[] {
+  return custom.map((wheel) => ({
+    ...wheel,
+    parts: wheel.parts.map((part, slot) => ({ ...part, color: parts[wheel.id]?.[slot] ?? null })),
+  }));
+}
+
+/** Rang d'une part de roue perso, d'après l'identifiant de sa part sur la roue. */
+const slotOf = (id: string) => Number(id.split("-")[2]);
+
 const BORDERS: { id: WheelBorder; label: string }[] = [
+  { id: "none", label: "Aucun" },
   { id: "light", label: "Clair" },
   { id: "dark", label: "Noir" },
-  { id: "none", label: "Aucun" },
+  { id: "color", label: "Couleur" },
 ];
 
 function ColorsTab({
-  settings,
-  nativeGlass,
+  view,
+  custom,
   error,
   change,
+  goTo,
 }: {
-  settings: Settings;
-  nativeGlass: boolean;
+  view: SettingsView;
+  /** Roues perso telles qu'elles s'affichent, avec les icônes de leurs parts. */
+  custom: readonly CustomWheelView[];
   error?: string;
   change: Change;
+  goTo: (tab: SettingsTab, anchor?: string) => void;
 }) {
+  const { settings } = view;
   // Les couleurs s'appliquent à l'aperçu tout de suite, et s'enregistrent un instant après
-  const { formatColors, highlightColor, wheelBorder } = settings;
-  const [draft, setDraft] = useState<ColorDraft>({
+  const { formatColors, highlightColor, wheelBorder, wheelBorderColor, customWheels } = settings;
+  const saved = (): ColorDraft => ({
     colors: formatColors,
     highlight: highlightColor,
     border: wheelBorder,
+    borderColor: wheelBorderColor,
+    parts: partColors(customWheels),
   });
+  const [draft, setDraft] = useState<ColorDraft>(saved);
   const timer = useRef<number | undefined>(undefined);
   useEffect(
-    () => setDraft({ colors: formatColors, highlight: highlightColor, border: wheelBorder }),
-    [formatColors, highlightColor, wheelBorder],
+    () => setDraft(saved()),
+    [formatColors, highlightColor, wheelBorder, wheelBorderColor, customWheels],
   );
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("image");
-  const actionParts = useMemo(
-    () => actionTree({ windowLayout: true, actionParts: settings.actionParts }),
-    [settings.actionParts],
-  );
-  const partsOf = (mode: PreviewMode): readonly WheelItem[] =>
-    mode === "actions" ? actionParts : mode === "video" ? VIDEO_FORMATS : OUTPUT_FORMATS;
-  const parts = partsOf(previewMode);
 
   const update = (next: ColorDraft) => {
     setDraft(next);
@@ -922,19 +984,62 @@ function ColorsTab({
           formatColors: next.colors,
           highlightColor: next.highlight,
           wheelBorder: next.border,
+          wheelBorderColor: next.borderColor,
+          customWheels: customWheels.map((wheel) => ({
+            ...wheel,
+            parts: wheel.parts.map((part, slot) => ({
+              ...part,
+              color: next.parts[wheel.id]?.[slot] ?? null,
+            })),
+          })),
         }),
       SLIDER_COMMIT_MS,
     );
   };
 
+  // Roues de Rutile qui ont des couleurs, puis celles de l'utilisateur, sous leur nom
+  const wheels: ColorWheel[] = [
+    { key: "image", title: "Images", custom: null },
+    { key: "video", title: "Vidéos", custom: null },
+    { key: "actions", title: "Actions", custom: null },
+    ...customWheels.map((wheel, index) => ({
+      key: customMode(wheel.id),
+      title: wheel.name || "Roue sans nom",
+      custom: index,
+    })),
+  ];
+  const [shown, setShown] = useState<Mode>("image");
+  const wheel = wheels.find(({ key }) => key === shown) ?? wheels[0];
+
+  const windowLayout = view.platform !== "linux" || !view.wayland;
+  const actionParts = useMemo(
+    () => actionTree({ windowLayout: true, actionParts: settings.actionParts }),
+    [settings.actionParts],
+  );
+  // Parts de la roue affichée telles qu'à l'origine, puis à leurs couleurs. L'origine d'une
+  // part perso est la couleur de son format ou de son action
+  const [original, items]: [readonly WheelItem[], readonly WheelItem[]] = (() => {
+    if (wheel.custom === null) {
+      const parts =
+        wheel.key === "actions" ? actionParts : wheel.key === "video" ? VIDEO_FORMATS : OUTPUT_FORMATS;
+      return [parts, colorize(parts, draft.colors)];
+    }
+    const tree = (wheels: CustomWheelView[]) =>
+      colorizeActions(customTree({ windowLayout, custom: wheels }, wheel.custom!), draft.colors);
+    return [tree(withPartColors(custom, {})), tree(withPartColors(custom, draft.parts))];
+  })();
+
   // Ce dont on règle la couleur : une part de la roue affichée, choisie d'un clic sur
   // l'aperçu, ou la surbrillance par son centre. La première part l'est d'emblée, pour que
   // les couleurs proposées soient sous les yeux dès l'arrivée
-  const [target, setTarget] = useState<string>(OUTPUT_FORMATS[0].id);
-  const selected = target === HIGHLIGHT ? -1 : Math.max(parts.findIndex(({ id }) => id === target), 0);
-  const part = target === HIGHLIGHT ? null : parts[selected];
-  const original = part?.color ?? DEFAULT_ACCENT;
-  const current = part ? (draft.colors[part.id] ?? original) : (draft.highlight ?? DEFAULT_ACCENT);
+  const [target, setTarget] = useState<string>("");
+  const selected =
+    target === HIGHLIGHT ? -1 : Math.max(items.findIndex(({ id }) => id === target), 0);
+  const part = target === HIGHLIGHT ? null : (items[selected] ?? null);
+  const origin = part ? (original[selected]?.color ?? DEFAULT_ACCENT) : DEFAULT_ACCENT;
+  const current = part ? (part.color ?? origin) : (draft.highlight ?? DEFAULT_ACCENT);
+  // Une app, un dossier ou un site montre son icône : sa couleur ne se verrait pas
+  const colorable = !part?.icon;
 
   const setHighlight = (color: string) =>
     update({ ...draft, highlight: color === DEFAULT_ACCENT ? null : color });
@@ -943,103 +1048,126 @@ function ColorsTab({
       setHighlight(color);
       return;
     }
-    const colors = { ...draft.colors };
     // Revenir à la couleur d'origine retire le choix, plutôt que de l'enregistrer
-    if (color === original) delete colors[part.id];
-    else colors[part.id] = color;
+    const chosen = color === origin ? null : color;
+    if (wheel.custom !== null) {
+      const id = customWheels[wheel.custom].id;
+      const colors = [...(draft.parts[id] ?? [])];
+      colors[slotOf(part.id)] = chosen;
+      update({ ...draft, parts: { ...draft.parts, [id]: colors } });
+      return;
+    }
+    const colors = { ...draft.colors };
+    if (chosen === null) delete colors[part.id];
+    else colors[part.id] = chosen;
     update({ ...draft, colors });
   };
 
+  const borderColor = draft.borderColor ?? draft.highlight ?? DEFAULT_ACCENT;
+  const setBorder = (border: WheelBorder) =>
+    // La couleur du contour part de celle de la surbrillance
+    update({ ...draft, border, borderColor: border === "color" ? borderColor : draft.borderColor });
   const customized =
-    Object.keys(draft.colors).length > 0 || draft.highlight !== null || draft.border !== "light";
+    Object.keys(draft.colors).length > 0 ||
+    draft.highlight !== null ||
+    draft.border !== "none" ||
+    Object.values(draft.parts).some((colors) => colors.some((color) => color !== null));
   const title = part ? `Couleur de ${part.label}` : "Couleur de surbrillance";
+  const hint = !part
+    ? "La part survolée, et l'anneau autour du bouton visé."
+    : !colorable
+      ? "Une app, un dossier ou un site garde son icône."
+      : wheel.custom !== null
+        ? `Cette part, sur cette roue seulement${(part as ActionNode).children ? " ; ses options en héritent" : ""}.`
+        : wheel.key === "actions"
+          ? "La part, et les actions de sa sous-roue."
+          : "La pastille de ce format, sur toutes les roues.";
+  const customId = wheel.custom === null ? null : customWheels[wheel.custom].id;
 
   return (
     <>
       <Section title="Couleurs des parts" error={error}>
         <div className="color-preview">
-          <div className="segmented" role="tablist" aria-label="Roue affichée">
-            {COLOR_GROUPS.map(({ mode, title }) => (
+          <BubbleGroup
+            className="chips"
+            role="tablist"
+            label="Roue affichée"
+            selected={`${wheel.key} ${wheels.map(({ title }) => title).join()}`}
+          >
+            {wheels.map(({ key, title }) => (
               <button
-                key={mode}
+                key={key}
                 type="button"
                 role="tab"
-                aria-selected={previewMode === mode}
+                className="chip"
+                aria-selected={key === wheel.key}
                 onClick={() => {
-                  setPreviewMode(mode);
-                  setTarget(partsOf(mode)[0].id);
+                  setShown(key);
+                  setTarget("");
                 }}
               >
-                {title}
+                <ModeIcon mode={key} size={14} />
+                <span>{title}</span>
               </button>
             ))}
-          </div>
-          <WheelPreview
-            mode={previewMode}
-            items={colorize(parts, draft.colors)}
-            accent={draft.highlight}
-            border={draft.border}
-            glass={settings.wheelGlass}
-            selected={part ? selected : null}
-            partLabel={(item) => `Couleur de ${item.label}`}
-            hubLabel="Couleur de surbrillance"
-            onPart={(index) => setTarget(parts[index].id)}
-            onHub={() => setTarget(HIGHLIGHT)}
-          />
-          <p className="row-hint">
-            Cliquez une part de la roue, ou son centre, puis choisissez sa couleur ci-dessous.
-          </p>
+          </BubbleGroup>
+          {items.length > 0 ? (
+            <>
+              <WheelPreview
+                // Une nouvelle roue s'affiche sans glisser depuis la précédente
+                key={wheel.key}
+                mode={wheel.key}
+                title={wheel.custom === null ? undefined : wheel.title}
+                items={items}
+                accent={draft.highlight}
+                border={draft.border}
+                borderColor={borderColor}
+                glass={settings.wheelGlass}
+                selected={part ? selected : null}
+                partLabel={(item) => `Couleur de ${item.label}`}
+                hubLabel="Couleur de surbrillance"
+                onPart={(index) => setTarget(items[index].id)}
+                onHub={() => setTarget(HIGHLIGHT)}
+              />
+              <p className="row-hint">
+                Cliquez une part de la roue, ou son centre, puis choisissez sa couleur ci-dessous.
+              </p>
+            </>
+          ) : (
+            <div className="color-empty">
+              <span className="color-empty-ring" aria-hidden="true">
+                <WheelsIcon size={34} />
+              </span>
+              <p>« {wheel.title} » n'a pas encore de parts.</p>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => customId && goTo("custom", customId)}
+              >
+                Ajouter des parts…
+              </button>
+            </div>
+          )}
         </div>
         <div className="color-inspector">
           <div className="color-inspector-head">
-            <span className="color-well" style={{ background: current }} aria-hidden="true" />
+            <span
+              className="color-well"
+              data-icon={!colorable || undefined}
+              style={colorable ? { background: current } : undefined}
+              aria-hidden="true"
+            >
+              {!colorable && part?.icon && <img src={part.icon} alt="" />}
+            </span>
             <div className="row-text">
               <span className="row-label">{title}</span>
-              <span className="row-hint">
-                {part
-                  ? previewMode === "actions"
-                    ? "La part, et les actions de sa sous-roue."
-                    : "La pastille de ce format, sur toutes les roues."
-                  : "La part survolée, et l'anneau autour du bouton visé."}
-              </span>
+              <span className="row-hint">{hint}</span>
             </div>
-            <span className="color-field-code">{current.toUpperCase()}</span>
+            {colorable && <span className="color-field-code">{current.toUpperCase()}</span>}
           </div>
-          <div className="swatches" role="radiogroup" aria-label={title}>
-            {PALETTE.map(({ color, name }) => (
-              <button
-                key={color}
-                type="button"
-                role="radio"
-                className="swatch"
-                aria-checked={current === color}
-                aria-label={name}
-                title={name}
-                style={{ background: color }}
-                onClick={() => setColor(color)}
-              />
-            ))}
-            <label
-              className="swatch swatch-custom"
-              title="Autre couleur…"
-              data-current={!PALETTE.some(({ color }) => color === current) || undefined}
-            >
-              <input
-                type="color"
-                aria-label="Autre couleur"
-                value={current}
-                onChange={(event) => setColor(event.target.value.toLowerCase())}
-              />
-            </label>
-            <button
-              type="button"
-              className="link-button swatches-reset"
-              disabled={current === original}
-              onClick={() => setColor(original)}
-            >
-              D'origine
-            </button>
-          </div>
+          {colorable && (
+            <Swatches label={title} current={current} original={origin} onPick={setColor} />
+          )}
         </div>
       </Section>
 
@@ -1047,7 +1175,7 @@ function ColorsTab({
         <Row
           label="Liquid Glass"
           hint={
-            nativeGlass
+            view.nativeGlass
               ? "Le verre de macOS : il réfracte et reflète ce qu'il y a derrière la roue."
               : "Une imitation : le vrai verre n'existe que sur macOS 26 ou plus récent."
           }
@@ -1058,20 +1186,42 @@ function ColorsTab({
             onChange={(wheelGlass) => change("colors", { wheelGlass })}
           />
         </Row>
-        <Row label="Contour de la roue" hint="Le trait qui entoure le disque.">
-          <div className="segmented" role="radiogroup" aria-label="Contour de la roue">
+        <Row stacked label="Contour de la roue" hint="Le trait qui entoure le disque.">
+          <BubbleGroup
+            className="segmented segmented-fill"
+            role="radiogroup"
+            label="Contour de la roue"
+            selected={draft.border}
+          >
             {BORDERS.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
                 role="radio"
                 aria-checked={draft.border === id}
-                onClick={() => update({ ...draft, border: id })}
+                onClick={() => setBorder(id)}
               >
+                {id === "none" ? (
+                  <span className="border-sample" data-border="none" aria-hidden="true" />
+                ) : (
+                  <span
+                    className="border-sample"
+                    data-border={id}
+                    style={id === "color" ? { borderColor } : undefined}
+                    aria-hidden="true"
+                  />
+                )}
                 {label}
               </button>
             ))}
-          </div>
+          </BubbleGroup>
+          {draft.border === "color" && (
+            <Swatches
+              label="Couleur du contour"
+              current={borderColor}
+              onPick={(color) => update({ ...draft, borderColor: color })}
+            />
+          )}
         </Row>
       </Section>
 
@@ -1083,18 +1233,85 @@ function ColorsTab({
             onChange={setHighlight}
           />
         </Row>
-        <Row label="Couleurs d'origine" hint="Le texte des boutons reste lisible : blanc ou foncé selon la couleur.">
+        <Row
+          label="Couleurs d'origine"
+          hint="Le texte des boutons reste lisible : blanc ou foncé selon la couleur."
+        >
           <button
             type="button"
             className="shortcut-button"
             disabled={!customized}
-            onClick={() => update({ colors: {}, highlight: null, border: "light" })}
+            onClick={() =>
+              update({
+                colors: {},
+                highlight: null,
+                border: "none",
+                borderColor: null,
+                parts: Object.fromEntries(
+                  Object.entries(draft.parts).map(([id, colors]) => [id, colors.map(() => null)]),
+                ),
+              })
+            }
           >
             Réinitialiser
           </button>
         </Row>
       </Section>
     </>
+  );
+}
+
+/** Pastilles de la palette, le sélecteur du système pour toute autre couleur, et le retour à
+ * la couleur d'origine quand il y en a une. */
+function Swatches({
+  label,
+  current,
+  original,
+  onPick,
+}: {
+  label: string;
+  current: string;
+  original?: string;
+  onPick: (color: string) => void;
+}) {
+  return (
+    <div className="swatches" role="radiogroup" aria-label={label}>
+      {PALETTE.map(({ color, name }) => (
+        <button
+          key={color}
+          type="button"
+          role="radio"
+          className="swatch"
+          aria-checked={current === color}
+          aria-label={name}
+          title={name}
+          style={{ background: color }}
+          onClick={() => onPick(color)}
+        />
+      ))}
+      <label
+        className="swatch swatch-custom"
+        title="Autre couleur…"
+        data-current={!PALETTE.some(({ color }) => color === current) || undefined}
+      >
+        <input
+          type="color"
+          aria-label="Autre couleur"
+          value={current}
+          onChange={(event) => onPick(event.target.value.toLowerCase())}
+        />
+      </label>
+      {original !== undefined && (
+        <button
+          type="button"
+          className="link-button swatches-reset"
+          disabled={current === original}
+          onClick={() => onPick(original)}
+        >
+          D'origine
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1224,7 +1441,12 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
         note={`Un fichier secoué, glissé sur la roue ou sélectionné dans ${fileManager(view.platform)} ouvre la roue choisie. Sa roue Actions ne montre que ces actions, dans cet ordre, et seulement celles qui ont un sens (la fusion à partir de deux PDF) ; dix au plus. Plusieurs types mélangés comptent comme « Autres ».`}
       >
         <div className="kind-switch">
-          <div className="segmented segmented-fill" role="tablist" aria-label="Type de fichier">
+          <BubbleGroup
+            className="segmented segmented-fill"
+            role="tablist"
+            label="Type de fichier"
+            selected={kind}
+          >
             {FILE_KINDS.map((id) => (
               <button
                 key={id}
@@ -1236,7 +1458,7 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
                 {FILE_KIND_LABELS[id]}
               </button>
             ))}
-          </div>
+          </BubbleGroup>
         </div>
         <Row
           label="S'ouvre sur"

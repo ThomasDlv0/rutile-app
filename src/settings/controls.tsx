@@ -89,12 +89,15 @@ export function Row({
   muted,
   sortable,
   handle,
+  stacked,
   children,
 }: {
   label: string;
   hint?: string;
   icon?: ReactNode;
   muted?: boolean;
+  /** Le réglage passe sous son nom, sur toute la largeur. */
+  stacked?: boolean;
   /** Ligne d'une liste qu'on réordonne en glissant, par sa poignée `handle`. */
   sortable?: SortableRow;
   handle?: ReactNode;
@@ -104,6 +107,7 @@ export function Row({
     <div
       className="settings-row"
       data-muted={muted}
+      data-stacked={stacked || undefined}
       data-dragging={sortable?.dragging || undefined}
       ref={sortable?.ref}
       style={sortable?.style}

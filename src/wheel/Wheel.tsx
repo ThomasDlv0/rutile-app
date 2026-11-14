@@ -23,7 +23,7 @@ import {
   sectorPath,
   separatorAngles,
 } from "./geometry";
-import { glow } from "./color";
+import { DEFAULT_ACCENT, glow } from "./color";
 import { type HubText, type Point, digitSector, stepSector, usableSector } from "./selection";
 
 export type Phase = "open" | "closing" | "closed";
@@ -61,6 +61,8 @@ interface WheelProps {
   /** Couleur de la part survolée, choisie dans les réglages ; le bleu d'origine sinon. */
   accent?: string | null;
   border?: WheelBorder;
+  /** Couleur du contour « color » ; le bleu d'origine sinon. */
+  borderColor?: string | null;
   glass?: WheelConfig["glass"];
   /** Échelle d'affichage, pour l'aperçu réduit des réglages. */
   scale?: number;
@@ -255,7 +257,8 @@ export function Wheel({
   dwellPart = null,
   back = false,
   accent,
-  border = "light",
+  border = "none",
+  borderColor = null,
   glass = "off",
   scale = 1,
   keyboard = false,
@@ -306,13 +309,14 @@ export function Wheel({
     if (index !== null) onSelect(index);
   };
 
-  const colors = accent
-    ? ({
-        "--accent": accent,
-        "--accent-glow": glow(accent),
-        "--accent-ring": glow(accent, 0.6),
-      } as CSSProperties)
-    : undefined;
+  const colors = {
+    ...(accent && {
+      "--accent": accent,
+      "--accent-glow": glow(accent),
+      "--accent-ring": glow(accent, 0.6),
+    }),
+    ...(border === "color" && { "--disk-border": borderColor ?? accent ?? DEFAULT_ACCENT }),
+  } as CSSProperties;
 
   return (
     <div

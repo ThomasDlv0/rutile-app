@@ -1,23 +1,74 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="fond" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2a2a2e"/>
-      <stop offset="1" stop-color="#0e0e10"/>
+    <linearGradient id="c-fond" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#ffc85c"/>
+      <stop offset="0.5" stop-color="#ff8a3a"/>
+      <stop offset="1" stop-color="#e2452f"/>
     </linearGradient>
-    <linearGradient id="table" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffe6c2"/>
-      <stop offset="1" stop-color="#f2ab5f"/>
+    <radialGradient id="c-reflet" cx="340" cy="130" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="c-blanc" x1="0" y1="180" x2="0" y2="840" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe9dc"/>
     </linearGradient>
+    <radialGradient id="c-creux" cx="512" cy="512" r="332" gradientUnits="userSpaceOnUse">
+      <stop offset="0.5" stop-color="#e2603a" stop-opacity="0.22"/>
+      <stop offset="0.7" stop-color="#e2603a" stop-opacity="0"/>
+      <stop offset="1" stop-color="#e2603a" stop-opacity="0.12"/>
+    </radialGradient>
+    <linearGradient id="c-allume" x1="560" y1="190" x2="830" y2="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff7a5c"/>
+      <stop offset="1" stop-color="#c8261d"/>
+    </linearGradient>
+    <linearGradient id="c-moyeu" x1="0" y1="370" x2="0" y2="660" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffe6d6"/>
+    </linearGradient>
+    <linearGradient id="c-table" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#ffb79c"/>
+      <stop offset="1" stop-color="#d4412a"/>
+    </linearGradient>
+    <filter id="c-ombre" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <clipPath id="c-carre"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <mask id="c-forme" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <g fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round">
+    <path d="M362.16,222.47 A326,326 0 0 1 661.84,222.47 L586.69,352.63 A176,176 0 0 0 437.31,352.63 Z"/>
+    <path d="M687.82,237.47 A326,326 0 0 1 837.65,497.00 L687.36,497.00 A176,176 0 0 0 612.67,367.63 Z"/>
+    <path d="M837.65,527.00 A326,326 0 0 1 687.82,786.53 L612.67,656.37 A176,176 0 0 0 687.36,527.00 Z"/>
+    <path d="M661.84,801.53 A326,326 0 0 1 362.16,801.53 L437.31,671.37 A176,176 0 0 0 586.69,671.37 Z"/>
+    <path d="M336.18,786.53 A326,326 0 0 1 186.35,527.00 L336.64,527.00 A176,176 0 0 0 411.33,656.37 Z"/>
+    <path d="M186.35,497.00 A326,326 0 0 1 336.18,237.47 L411.33,367.63 A176,176 0 0 0 336.64,497.00 Z"/>
+      </g>
+    </mask>
   </defs>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#fond)"/>
-  <rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
-  <g stroke="#2b1306" stroke-opacity="0.35" stroke-width="5" stroke-linejoin="round">
-    <polygon points="512,232 754.5,372 615.9,452 512,392" fill="#f5b468"/>
-    <polygon points="754.5,372 754.5,652 615.9,572 615.9,452" fill="#d27a35"/>
-    <polygon points="754.5,652 512,792 512,632 615.9,572" fill="#8f4320"/>
-    <polygon points="512,792 269.5,652 408.1,572 512,632" fill="#b65f2a"/>
-    <polygon points="269.5,652 269.5,372 408.1,452 408.1,572" fill="#e99a52"/>
-    <polygon points="269.5,372 512,232 512,392 408.1,452" fill="#ffd7a1"/>
-    <polygon points="512,392 615.9,452 615.9,572 512,632 408.1,572 408.1,452" fill="url(#table)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#c-fond)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#c-reflet)"/>
+  <g clip-path="url(#c-carre)">
+    <g fill="#8a1d06" stroke="#8a1d06" stroke-width="14" stroke-linejoin="round" opacity="0.38" filter="url(#c-ombre)" transform="translate(0 22)">
+    <path d="M362.16,222.47 A326,326 0 0 1 661.84,222.47 L586.69,352.63 A176,176 0 0 0 437.31,352.63 Z"/>
+    <path d="M687.82,237.47 A326,326 0 0 1 837.65,497.00 L687.36,497.00 A176,176 0 0 0 612.67,367.63 Z"/>
+    <path d="M837.65,527.00 A326,326 0 0 1 687.82,786.53 L612.67,656.37 A176,176 0 0 0 687.36,527.00 Z"/>
+    <path d="M661.84,801.53 A326,326 0 0 1 362.16,801.53 L437.31,671.37 A176,176 0 0 0 586.69,671.37 Z"/>
+    <path d="M336.18,786.53 A326,326 0 0 1 186.35,527.00 L336.64,527.00 A176,176 0 0 0 411.33,656.37 Z"/>
+    <path d="M186.35,497.00 A326,326 0 0 1 336.18,237.47 L411.33,367.63 A176,176 0 0 0 336.64,497.00 Z"/>
+    </g>
   </g>
+  <g fill="url(#c-blanc)" stroke="url(#c-blanc)" stroke-width="14" stroke-linejoin="round">
+    <path d="M362.16,222.47 A326,326 0 0 1 661.84,222.47 L586.69,352.63 A176,176 0 0 0 437.31,352.63 Z"/>
+    <path d="M687.82,237.47 A326,326 0 0 1 837.65,497.00 L687.36,497.00 A176,176 0 0 0 612.67,367.63 Z"/>
+    <path d="M837.65,527.00 A326,326 0 0 1 687.82,786.53 L612.67,656.37 A176,176 0 0 0 687.36,527.00 Z"/>
+    <path d="M661.84,801.53 A326,326 0 0 1 362.16,801.53 L437.31,671.37 A176,176 0 0 0 586.69,671.37 Z"/>
+    <path d="M336.18,786.53 A326,326 0 0 1 186.35,527.00 L336.64,527.00 A176,176 0 0 0 411.33,656.37 Z"/>
+    <path d="M186.35,497.00 A326,326 0 0 1 336.18,237.47 L411.33,367.63 A176,176 0 0 0 336.64,497.00 Z"/>
+  </g>
+  <rect x="100" y="100" width="824" height="824" fill="url(#c-creux)" mask="url(#c-forme)"/>
+  <path d="M687.82,237.47 A326,326 0 0 1 837.65,497.00 L687.36,497.00 A176,176 0 0 0 612.67,367.63 Z" fill="url(#c-allume)" stroke="url(#c-allume)" stroke-width="14" stroke-linejoin="round"/>
+  <circle cx="512" cy="534" r="132" fill="#8a1d06" opacity="0.38" filter="url(#c-ombre)"/>
+  <circle cx="512" cy="512" r="136" fill="url(#c-moyeu)"/>
+  <g stroke="#2a0602" stroke-opacity="0.3" stroke-width="2" stroke-linejoin="round"><polygon points="512.00,412.00 598.60,462.00 560.50,484.00 512.00,456.00" fill="#af5d48"/><polygon points="598.60,462.00 598.60,562.00 560.50,540.00 560.50,484.00" fill="#671c10"/><polygon points="598.60,562.00 512.00,612.00 512.00,568.00 560.50,540.00" fill="#5f1509"/><polygon points="512.00,612.00 425.40,562.00 463.50,540.00 512.00,568.00" fill="#984836"/><polygon points="425.40,562.00 425.40,462.00 463.50,484.00 463.50,540.00" fill="#eb9377"/><polygon points="425.40,462.00 512.00,412.00 512.00,456.00 463.50,484.00" fill="#f89e81"/><polygon points="512.00,456.00 560.50,484.00 560.50,540.00 512.00,568.00 463.50,540.00 463.50,484.00" fill="url(#c-table)"/></g>
+  <path d="M490,462 Q493.2,478.8 510,482 Q493.2,485.2 490,502 Q486.8,485.2 470,482 Q486.8,478.8 490,462 Z" fill="#fff" opacity="0.9"/>
 </svg>

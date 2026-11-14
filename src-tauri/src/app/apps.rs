@@ -146,6 +146,8 @@ pub struct WheelConfig {
     colors: BTreeMap<String, String>,
     highlight: Option<String>,
     border: WheelBorder,
+    /// Couleur du contour « color ».
+    border_color: Option<String>,
     /// Matière du disque : le vrai Liquid Glass, son imitation, ou le disque d'origine.
     glass: &'static str,
     /// Les fenêtres se rangent sur ce système.
@@ -177,6 +179,8 @@ struct CustomPartView {
     value: Option<String>,
     /// Icône d'une app, d'un dossier ou d'un site, en data URL.
     icon: Option<String>,
+    /// Couleur choisie pour la part.
+    color: Option<String>,
 }
 
 pub fn custom_views<R: Runtime>(
@@ -201,6 +205,7 @@ pub fn custom_views<R: Runtime>(
                         PartKind::Url => sites::icon(app, &part.value),
                         _ => None,
                     },
+                    color: part.color.clone(),
                 })
                 .collect(),
             extensions: wheel.extensions.clone(),
@@ -218,6 +223,7 @@ pub fn wheel_config<R: Runtime>(app: AppHandle<R>) -> WheelConfig {
         colors: settings.format_colors.clone(),
         highlight: settings.highlight_color.clone(),
         border: settings.wheel_border,
+        border_color: settings.wheel_border_color.clone(),
         glass: match (settings.wheel_glass, glass::available()) {
             (false, _) => "off",
             (true, true) => "native",

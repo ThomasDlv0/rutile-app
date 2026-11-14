@@ -56,9 +56,15 @@ fi
 notes="$(awk 'NF { started = 1 } started && !NF { exit } started' "$notes_file" |
   tr '\n' ' ' | sed -e 's/\*\*//g' -e 's/  */ /g' -e 's/ $//')"
 
+# Les notes en Markdown, jusqu'aux fichiers à télécharger (inutiles pour une mise à jour),
+# pour la fenêtre de mise à jour des versions 1.5 et suivantes ; les précédentes ne lisent
+# que `notes`
+details="$(awk '/^## Fichiers/ { exit } { print }' "$notes_file")"
+
 jq -n \
   --arg version "$version" \
   --arg notes "$notes" \
+  --arg details "$details" \
   --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --argjson platforms "$platforms" \
-  '{version: $version, notes: $notes, pub_date: $date, platforms: $platforms}'
+  '{version: $version, notes: $notes, details: $details, pub_date: $date, platforms: $platforms}'

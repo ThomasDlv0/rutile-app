@@ -114,8 +114,8 @@ export interface VideoSupport {
 
 export const videoSupport = () => invoke<VideoSupport>("video_support");
 
-/** Contour du disque de la roue : le trait clair d'origine, noir, ou aucun. */
-export type WheelBorder = "light" | "dark" | "none";
+/** Contour du disque de la roue : aucun (par défaut), le trait clair, noir, ou une couleur. */
+export type WheelBorder = "none" | "light" | "dark" | "color";
 
 export interface Settings {
   shortcut: string;
@@ -137,6 +137,8 @@ export interface Settings {
   /** Couleur de la part survolée ; `null` pour le bleu d'origine. */
   highlightColor: string | null;
   wheelBorder: WheelBorder;
+  /** Couleur du contour « color » ; `null` pour celle de la surbrillance. */
+  wheelBorderColor: string | null;
   /** Liquid Glass sur le disque de la roue. */
   wheelGlass: boolean;
   /** Une capture rouvre la roue sur l'image, pour la convertir ou la partager. */
@@ -245,6 +247,8 @@ export interface CustomPart {
   name: string;
   kind: PartKind;
   value: string;
+  /** Couleur choisie pour la part ; absente, celle de son format ou de son action. */
+  color?: string | null;
 }
 
 export interface CustomWheel {
@@ -273,6 +277,8 @@ export interface CustomPartView {
   value: string | null;
   /** Icône d'une app, d'un dossier ou d'un site, en data URL. */
   icon: string | null;
+  /** Couleur choisie pour la part. */
+  color?: string | null;
 }
 
 /** Part d'une liste réglable de la roue Actions, à sa place, affichée ou non. */
@@ -306,6 +312,8 @@ export interface WheelConfig {
   colors: Record<string, string>;
   highlight: string | null;
   border: WheelBorder;
+  /** Couleur du contour « color ». */
+  borderColor: string | null;
   /** Matière du disque : le vrai Liquid Glass, son imitation, ou le disque sombre d'origine. */
   glass: "native" | "css" | "off";
   /** Les fenêtres se rangent sur ce système (pas sous Wayland). */

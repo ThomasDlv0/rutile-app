@@ -130,7 +130,8 @@ const PREVIEW_CONFIG: WheelConfig = {
   dwellMs: 1000,
   colors: {},
   highlight: null,
-  border: "light",
+  border: "none",
+  borderColor: null,
   glass: "css",
   windowLayout: true,
   custom: [
@@ -938,6 +939,7 @@ export function WheelApp() {
       back={parent !== null}
       accent={config.highlight}
       border={config.border}
+      borderColor={config.borderColor ?? config.highlight}
       glass={config.glass}
       scale={fit}
       keyboard

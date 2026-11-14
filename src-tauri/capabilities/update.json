@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "update",
+  "description": "Permissions de la fenêtre de mise à jour : sa barre de titre dessinée par la page se glisse",
+  "windows": ["update"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

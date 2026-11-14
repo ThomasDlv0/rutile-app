@@ -18,8 +18,10 @@ export function WheelPreview({
   items,
   accent,
   border,
+  borderColor = null,
   glass,
   selected = null,
+  scale = PREVIEW_SCALE,
   partLabel,
   hubLabel,
   onPart,
@@ -32,7 +34,11 @@ export function WheelPreview({
   items: readonly WheelItem[];
   accent: string | null;
   border: WheelBorder;
+  /** Couleur du contour « color ». */
+  borderColor?: string | null;
   glass: boolean;
+  /** Taille par rapport à la vraie roue. */
+  scale?: number;
   /** Part gardée éclairée quand la souris est ailleurs. */
   selected?: number | null;
   /** Ce qu'annonce le centre au survol d'une part. */
@@ -49,9 +55,9 @@ export function WheelPreview({
   return (
     <div
       className="wheel-preview"
-      style={{ width: CENTER * 2 * PREVIEW_SCALE, height: CENTER * 2 * PREVIEW_SCALE }}
+      style={{ width: CENTER * 2 * scale, height: CENTER * 2 * scale }}
     >
-      <div style={{ transform: `scale(${PREVIEW_SCALE})`, transformOrigin: "top left" }}>
+      <div style={{ transform: `scale(${scale})`, transformOrigin: "top left" }}>
         <Wheel
           phase="open"
           mode={mode}
@@ -73,8 +79,9 @@ export function WheelPreview({
           dwellMs={1000}
           accent={accent}
           border={border}
+          borderColor={borderColor}
           glass={glass ? "css" : "off"}
-          scale={PREVIEW_SCALE}
+          scale={scale}
           onPointer={setPointer}
           onSelect={onPart}
           onOutsideClick={() => {}}

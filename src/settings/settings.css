@@ -1113,3 +1113,419 @@ html.settings #root {
 .wheel-builder .row-hint {
   text-align: center;
 }
+
+/* Bulle de sélection : elle glisse d'un onglet ou d'un bouton à l'autre (Bubble.tsx) */
+.bubble-group {
+  position: relative;
+}
+
+.bubble-group > :not(.bubble) {
+  position: relative;
+  z-index: 1;
+}
+
+.bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  --bubble-ease: cubic-bezier(0.34, 1.3, 0.64, 1);
+  transition:
+    transform 360ms var(--bubble-ease),
+    width 360ms var(--bubble-ease),
+    height 360ms var(--bubble-ease),
+    opacity 120ms ease-out;
+}
+
+.settings-tabs > .bubble {
+  border-radius: 8px;
+  background: var(--control);
+}
+
+.settings-tabs.bubble-group > .settings-tab[aria-selected="true"] {
+  background: none;
+}
+
+.segmented > .bubble {
+  border-radius: 6px;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.segmented.bubble-group > button[aria-selected="true"],
+.segmented.bubble-group > button[aria-checked="true"] {
+  background: none;
+  box-shadow: none;
+}
+
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: color 160ms ease-out;
+}
+
+/* Roue dont on règle les couleurs : une pastille par roue, qui passe à la ligne au besoin */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 150px;
+  padding: 0 11px 0 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 13px;
+  background: none;
+  color: var(--hint);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+.chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip svg {
+  flex-shrink: 0;
+}
+
+.chip:hover {
+  color: var(--label);
+}
+
+.chip[aria-selected="true"] {
+  border-color: transparent;
+  color: var(--label);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chips > .bubble {
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Le nouvel onglet entre du côté où il se trouve ; la page ne déborde pas pendant ce temps */
+.settings-page {
+  overflow-x: clip;
+}
+
+.settings-panel {
+  animation: panel-in 280ms var(--ease-out) backwards;
+}
+
+.settings-panel[data-direction="back"],
+.subpage[data-direction="back"] {
+  animation-name: panel-in-back;
+}
+
+.subpage[data-direction] {
+  animation: panel-in 260ms var(--ease-out) backwards;
+}
+
+.subpage[data-direction="back"] {
+  animation-name: panel-in-back;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+
+@keyframes panel-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-panel,
+  .subpage[data-direction] {
+    animation: none;
+  }
+
+  .bubble {
+    transition: opacity 120ms ease-out;
+  }
+}
+
+/* Réglage sous son nom, sur toute la largeur */
+.settings-row[data-stacked] {
+  flex-wrap: wrap;
+  row-gap: 10px;
+  padding-top: 10px;
+  padding-bottom: 12px;
+}
+
+.settings-row[data-stacked] .row-text,
+.settings-row[data-stacked] .row-control {
+  flex-basis: 100%;
+}
+
+.settings-row[data-stacked] .row-control {
+  flex-direction: column;
+  flex-shrink: 1;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* Aperçu du contour dans son choix */
+.border-sample {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid transparent;
+  border-radius: 50%;
+  background: #2c2c2e;
+}
+
+.border-sample[data-border="light"] {
+  border-color: rgba(190, 190, 196, 0.95);
+}
+
+.border-sample[data-border="dark"] {
+  border-color: #000000;
+}
+
+/* Roue perso encore vide, dans l'onglet Couleurs */
+.color-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 0 4px;
+  color: var(--hint);
+  text-align: center;
+}
+
+.color-empty-ring {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  height: 128px;
+  border: 1.5px dashed var(--hint);
+  border-radius: 50%;
+}
+
+.color-empty p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.color-well[data-icon] {
+  overflow: hidden;
+  border-radius: 7px;
+  background: none;
+  box-shadow: none;
+}
+
+.color-well img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Mes roues : la galerie */
+.wheel-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.wheel-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 6px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--page);
+  color: var(--label);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    transform 180ms var(--spring),
+    border-color 140ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.wheel-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.wheel-tile:active {
+  transform: scale(0.98);
+}
+
+.wheel-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.wheel-tile-disk {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 108px;
+  height: 108px;
+  margin-bottom: 6px;
+}
+
+.wheel-tile-empty,
+.wheel-tile-plus {
+  border: 1.5px dashed var(--hint);
+  border-radius: 50%;
+  color: var(--hint);
+}
+
+.wheel-tile-plus {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  color: var(--accent);
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.wheel-tile-new {
+  border-style: dashed;
+  background: none;
+}
+
+.wheel-tile-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wheel-tile-meta {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--hint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wheel-tile-badge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--hint);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.wheel-tile[data-off] .wheel-tile-disk {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+/* Mes roues : l'éditeur d'une roue, avec le retour à la galerie */
+.editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px 0 12px;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.back-button:hover {
+  background: var(--control);
+}
+
+.back-button svg,
+.step-button svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.editor-steps {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--control);
+}
+
+.step-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--label);
+  cursor: pointer;
+}
+
+.step-button:hover:not(:disabled) {
+  background: var(--card);
+}
+
+.step-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.editor-count {
+  min-width: 40px;
+  color: var(--hint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

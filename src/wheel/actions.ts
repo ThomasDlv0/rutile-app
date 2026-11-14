@@ -561,6 +561,18 @@ function partNode(
   slot: number,
   actions: readonly ActionNode[],
 ): ActionNode | null {
+  const node = basePartNode(part, wheel, slot, actions);
+  // Une couleur choisie pour la part passe avant celle de son format ou de son action, et
+  // ses options en héritent
+  return node && part.color ? { ...node, color: part.color, family: undefined } : node;
+}
+
+function basePartNode(
+  part: CustomPartView,
+  wheel: number,
+  slot: number,
+  actions: readonly ActionNode[],
+): ActionNode | null {
   const id = `custom-${wheel}-${slot}`;
   const run: ActionRequest = { kind: "custom", wheel, action: slot };
   switch (part.kind) {

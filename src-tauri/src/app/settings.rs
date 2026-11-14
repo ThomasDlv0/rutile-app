@@ -100,14 +100,18 @@ impl WheelMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WheelBorder {
+    /// Le trait gris clair, le choix par défaut jusqu'à la 1.4.
+    Light,
     Dark,
-    None,
-    /// Le trait gris clair d'origine. Une valeur inconnue (version plus récente, fichier
-    /// modifié à la main) se lit comme lui, sans faire perdre les autres réglages ; serde
-    /// veut cette variante en dernier.
+    /// À la couleur `wheel_border_color`. Les versions d'avant la 1.5 le lisent comme le
+    /// contour clair.
+    Color,
+    /// Aucun trait, par défaut. Une valeur inconnue (version plus récente, fichier modifié à
+    /// la main) se lit comme lui, sans faire perdre les autres réglages ; serde veut cette
+    /// variante en dernier.
     #[default]
     #[serde(other)]
-    Light,
+    None,
 }
 
 /// Ce que fait une part d'une roue personnalisée.
@@ -145,6 +149,10 @@ pub struct CustomPart {
     pub kind: PartKind,
     /// Chemin, adresse, format, identifiant d'action, nom du raccourci ou commande.
     pub value: String,
+    /// Couleur choisie pour la part, en « #rrggbb » ; absente, celle de son format ou de son
+    /// action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 impl CustomPart {
@@ -380,6 +388,8 @@ pub struct Settings {
     /// Couleur de la part survolée ; absente, le bleu d'origine.
     pub highlight_color: Option<String>,
     pub wheel_border: WheelBorder,
+    /// Couleur du contour « color » ; absente, celle de la surbrillance.
+    pub wheel_border_color: Option<String>,
     /// Liquid Glass sur le disque de la roue.
     pub wheel_glass: bool,
     /// Une capture rouvre la roue sur l'image, pour la convertir ou la partager.
@@ -418,7 +428,8 @@ impl Default for Settings {
             dwell_ms: DEFAULT_DWELL_MS,
             format_colors: BTreeMap::new(),
             highlight_color: None,
-            wheel_border: WheelBorder::Light,
+            wheel_border: WheelBorder::None,
+            wheel_border_color: None,
             wheel_glass: true,
             capture_reopen: true,
             custom_wheels: Vec::new(),
@@ -467,6 +478,9 @@ impl Settings {
                 .take()
                 .unwrap_or_else(|| std::mem::take(&mut wheel.actions));
             parts.retain(CustomPart::valid);
+            for part in &mut parts {
+                part.color = part.color.as_deref().and_then(hex_color);
+            }
             parts.truncate(MAX_CUSTOM);
             wheel.actions = parts
                 .iter()
@@ -550,6 +564,7 @@ impl Settings {
             .filter_map(|(format, color)| Some((format, hex_color(&color)?)))
             .collect();
         self.highlight_color = self.highlight_color.as_deref().and_then(hex_color);
+        self.wheel_border_color = self.wheel_border_color.as_deref().and_then(hex_color);
         self
     }
 
@@ -765,6 +780,7 @@ pub fn update_settings<R: Runtime>(
         || applied.format_colors != previous.format_colors
         || applied.highlight_color != previous.highlight_color
         || applied.wheel_border != previous.wheel_border
+        || applied.wheel_border_color != previous.wheel_border_color
         || applied.wheel_glass != previous.wheel_glass
         || applied.custom_wheels != previous.custom_wheels
         || applied.action_parts != previous.action_parts
@@ -876,6 +892,7 @@ mod tests {
             name: name.into(),
             kind,
             value: value.into(),
+            color: None,
         }
     }
 
@@ -1306,16 +1323,44 @@ mod tests {
     }
 
     #[test]
-    fn un_contour_inconnu_redevient_le_contour_clair() {
+    fn un_contour_inconnu_redevient_le_contour_par_defaut() {
         let read = |json: &str| serde_json::from_str::<Settings>(json).unwrap();
         let settings = read(r#"{ "wheelBorder": "dark", "jpegQuality": 75 }"#);
         assert_eq!(settings.wheel_border, WheelBorder::Dark);
+        let settings = read(r#"{ "wheelBorder": "light" }"#);
+        assert_eq!(settings.wheel_border, WheelBorder::Light, "le choix d'avant la 1.5 reste");
         let settings = read(r#"{ "wheelBorder": "arc-en-ciel", "jpegQuality": 75 }"#);
-        assert_eq!(settings.wheel_border, WheelBorder::Light);
+        assert_eq!(settings.wheel_border, WheelBorder::None);
         assert_eq!(settings.jpeg_quality, 75);
+        assert_eq!(Settings::default().wheel_border, WheelBorder::None);
         assert_eq!(
-            serde_json::to_value(WheelBorder::None).unwrap(),
-            serde_json::json!("none")
+            serde_json::to_value(WheelBorder::Color).unwrap(),
+            serde_json::json!("color")
         );
+    }
+
+    #[test]
+    fn les_couleurs_du_contour_et_des_parts_sont_verifiees() {
+        let settings: Settings = serde_json::from_str(
+            r##"{ "wheelBorder": "color", "wheelBorderColor": "#E5484D",
+                 "customWheels": [{ "name": "Docs", "parts": [
+                   { "name": "PNG", "kind": "convert", "value": "png", "color": "#16A34A" },
+                   { "name": "WebP", "kind": "convert", "value": "webp", "color": "vert" },
+                   { "name": "AVIF", "kind": "convert", "value": "avif" }
+                 ] }] }"##,
+        )
+        .unwrap();
+        let settings = settings.sanitized();
+        assert_eq!(settings.wheel_border, WheelBorder::Color);
+        assert_eq!(settings.wheel_border_color.as_deref(), Some("#e5484d"));
+        let colors: Vec<_> = settings.custom_wheels[0]
+            .parts()
+            .iter()
+            .map(|part| part.color.as_deref())
+            .collect();
+        assert_eq!(colors, [Some("#16a34a"), None, None]);
+        // Une part sans couleur n'écrit rien : les versions d'avant la 1.5 relisent la même part
+        let saved = serde_json::to_value(&settings.custom_wheels[0].parts()[2]).unwrap();
+        assert!(saved.get("color").is_none());
     }
 }

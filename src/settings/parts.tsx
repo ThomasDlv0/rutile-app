@@ -71,6 +71,7 @@ export function viewsOf(wheels: readonly CustomWheel[]): CustomWheelView[] {
       kind: part.kind,
       value: part.kind === "convert" || part.kind === "action" ? part.value : null,
       icon: null,
+      color: part.color ?? null,
     })),
   }));
 }
