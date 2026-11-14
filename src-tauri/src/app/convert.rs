@@ -108,7 +108,7 @@ pub async fn convert_videos<R: Runtime>(
 pub struct VideoSupport {
     available: bool,
     /// Commande d'installation de FFmpeg pour ce système.
-    install_hint: &'static str,
+    install_hint: String,
 }
 
 #[tauri::command]
@@ -131,12 +131,25 @@ enum Kind {
 }
 
 impl Kind {
-    /// Singulier en début de titre, pluriel, singulier en milieu de phrase.
-    fn nouns(self) -> (&'static str, &'static str, &'static str) {
+    /// Titre de `count` fichiers convertis en `format`, sans échec : « 2 images converties en WebP ».
+    fn title(self, count: usize, format: &str) -> String {
+        let args: &[(&str, &dyn std::fmt::Display)] = &[("format", &format)];
+        let count = count as u64;
         match self {
-            Kind::Image => ("Image convertie", "images converties", "image convertie"),
-            Kind::Video => ("Vidéo convertie", "vidéos converties", "vidéo convertie"),
-            Kind::Sound => ("Son extrait", "sons extraits", "son extrait"),
+            Kind::Image => i18n::tn("convert.image.title", count, args),
+            Kind::Video => i18n::tn("convert.video.title", count, args),
+            Kind::Sound => i18n::tn("convert.sound.title", count, args),
+        }
+    }
+
+    /// Même chose avec le nombre toujours écrit, pour les titres où des fichiers ont échoué.
+    fn count(self, count: usize, format: &str) -> String {
+        let args: &[(&str, &dyn std::fmt::Display)] = &[("format", &format)];
+        let count = count as u64;
+        match self {
+            Kind::Image => i18n::tn("convert.image.count", count, args),
+            Kind::Video => i18n::tn("convert.video.count", count, args),
+            Kind::Sound => i18n::tn("convert.sound.count", count, args),
         }
     }
 }
@@ -200,44 +213,43 @@ impl Report {
 
     fn message(&self) -> Message {
         let format = self.label;
-        let (one, many, one_lower) = self.kind.nouns();
         let done = self.converted.len();
         let failed = self.failed.len();
 
         let title = match (done, failed) {
-            (0, 0) => "Rien à convertir".to_string(),
-            (0, 1) => "Conversion impossible".to_string(),
-            (0, _) => format!("Conversion impossible pour {failed} fichiers"),
-            (1, 0) => format!("{one} en {format}"),
-            (_, 0) => format!("{done} {many} en {format}"),
-            _ => format!(
-                "{done} {} en {format}, {failed} {}",
-                plural(done, one_lower, many),
-                plural(failed, "échec", "échecs")
+            (0, 0) => i18n::t("convert.nothing"),
+            (0, 1) => i18n::t("convert.failedOne"),
+            (0, _) => i18n::tn("convert.failedMany", failed as u64, &[]),
+            (_, 0) => self.kind.title(done, format),
+            _ => i18n::tf(
+                "convert.mixed",
+                &[
+                    ("done", &self.kind.count(done, format)),
+                    ("failed", &i18n::tn("convert.failures", failed as u64, &[])),
+                ],
             ),
         };
 
         let mut lines = Vec::new();
         if let Some((name, err)) = self.failed.first() {
-            lines.push(format!("{name} : {err}"));
+            lines.push(i18n::tf(
+                "files.failureLine",
+                &[("name", name), ("reason", err)],
+            ));
             if failed > 1 {
-                lines.push(format!("… et {} autre(s).", failed - 1));
+                lines.push(i18n::tn("convert.moreFailures", failed as u64 - 1, &[]));
             }
         } else if done > 0 {
             lines.push(list_names(&self.converted));
         }
         if self.converted.iter().any(|(_, approximate)| *approximate) {
-            lines.push("Vectorisation approximative de l'image d'origine.".into());
+            lines.push(i18n::t("convert.approximate"));
         }
         if self.skipped > 0 {
-            lines.push(format!(
-                "{} déjà en {format}, {}.",
-                plural(
-                    self.skipped,
-                    "1 fichier",
-                    &format!("{} fichiers", self.skipped)
-                ),
-                plural(self.skipped, "ignoré", "ignorés")
+            lines.push(i18n::tn(
+                "convert.skipped",
+                self.skipped as u64,
+                &[("format", &format)],
             ));
         }
 
@@ -267,12 +279,12 @@ fn list_names(converted: &[(PathBuf, bool)]) -> String {
     if rest == 0 {
         names.join(", ")
     } else {
-        format!("{} et {rest} autre(s)", names.join(", "))
+        i18n::tn(
+            "files.andMore",
+            rest as u64,
+            &[("names", &names.join(", "))],
+        )
     }
-}
-
-fn plural<'a>(count: usize, one: &'a str, many: &'a str) -> &'a str {
-    if count > 1 { many } else { one }
 }
 
 fn file_name(path: &Path) -> String {
@@ -332,7 +344,7 @@ mod tests {
         assert_eq!(message.title, "4 images converties en WebP");
         assert_eq!(
             message.body,
-            "a.webp, b.webp, c.webp et 1 autre(s)\n2 fichiers déjà en WebP, ignorés."
+            "a.webp, b.webp, c.webp et 1 autre\n2 fichiers déjà en WebP, ignorés."
         );
     }
 
@@ -353,7 +365,7 @@ mod tests {
         let message = report(vec![done("a.webp")], 0, vec!["x.txt", "y.txt"]).message();
         assert_eq!(message.title, "1 image convertie en WebP, 2 échecs");
         assert!(message.body.starts_with("x.txt : "));
-        assert!(message.body.ends_with("… et 1 autre(s)."));
+        assert!(message.body.ends_with("… et 1 autre."));
         assert!(matches!(message.action, Some(Action::Reveal(paths)) if paths.len() == 1));
     }
 

@@ -1,0 +1,13 @@
+[package]
+name = "rutile-i18n"
+version = "0.1.0"
+description = "Langues de Rutile : les textes traduits, partagés avec l'interface"
+edition = "2024"
+publish = false
+
+[lib]
+name = "i18n"
+
+[dependencies]
+serde_json = "1.0.154"
+sys-locale = "0.3"

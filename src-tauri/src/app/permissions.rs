@@ -36,11 +36,8 @@ pub fn selection_denied<R: Runtime>(app: &AppHandle<R>) {
         notify::show(
             app,
             Message {
-                title: "Autorisation nécessaire".into(),
-                body:
-                    "Pour convertir le fichier sélectionné dans le Finder, autorisez Rutile dans \
-                       Réglages Système → Confidentialité et sécurité → Automatisation."
-                        .into(),
+                title: i18n::t("permissions.title"),
+                body: i18n::t("permissions.finderBody"),
                 action: Some(Action::OpenUrl(AUTOMATION_SETTINGS_URL.into())),
             },
         );

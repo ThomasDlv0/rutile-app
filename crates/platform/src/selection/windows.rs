@@ -113,7 +113,7 @@ fn window_browser(top: HWND) -> Result<IShellBrowser, SelectionError> {
             None => return Ok(browser),
         }
     }
-    fallback.ok_or_else(|| failed("fenêtre de l'Explorateur introuvable"))
+    fallback.ok_or_else(|| failed(i18n::t("selection.explorerMissing")))
 }
 
 fn desktop_browser() -> Result<IShellBrowser, SelectionError> {

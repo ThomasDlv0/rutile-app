@@ -63,6 +63,7 @@ pub fn run() {
             app::settings::get_settings,
             app::settings::update_settings,
             app::settings::set_launch_at_login,
+            app::settings::app_language,
             app::settings::open_permission_settings,
             app::apps::wheel_config,
             app::apps::pick_app,
@@ -101,7 +102,7 @@ pub fn run() {
                 app::notify::show(
                     app.handle(),
                     app::notify::Message {
-                        title: "Secouage indisponible".into(),
+                        title: i18n::t("shake.unavailable"),
                         body: err,
                         action: None,
                     },

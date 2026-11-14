@@ -42,7 +42,7 @@ pub fn share(id: &str, files: &[PathBuf]) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (id, files);
-        Err("Les services de partage n'existent que sur macOS.".into())
+        Err(i18n::t("share.macosOnly"))
     }
 }
 
@@ -170,7 +170,7 @@ pub fn copy_files(files: &[PathBuf]) -> Result<(), String> {
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     {
         let _ = files;
-        Err("système non pris en charge".into())
+        Err(i18n::t("errors.unsupportedSystem"))
     }
 }
 

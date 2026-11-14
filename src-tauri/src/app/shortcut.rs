@@ -31,12 +31,10 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, accelerator: &str) {
         notify::show(
             app,
             Message {
-                title: "Raccourci indisponible".into(),
-                body: format!(
-                    "{} est sans doute déjà utilisé par une autre app. \
-                     La roue reste accessible depuis l'icône de Rutile, et un autre \
-                     raccourci peut être choisi dans les réglages.",
-                    label(accelerator)
+                title: i18n::t("shortcut.unavailable"),
+                body: i18n::tf(
+                    "shortcut.unavailableBody",
+                    &[("shortcut", &label(accelerator))],
                 ),
                 action: None,
             },
@@ -49,20 +47,19 @@ pub fn register<R: Runtime>(app: &AppHandle<R>, accelerator: &str) {
 /// macOS ne refuse pas un raccourci déjà pris par une autre app : il le lui laisse.
 pub fn replace<R: Runtime>(app: &AppHandle<R>, old: &str, new: &str) -> Result<(), String> {
     if !platform::session::global_shortcuts_supported() {
-        return Err(
-            "Les raccourcis globaux n'existent pas sous Wayland : liez `rutile --open` \
-                    à un raccourci du système."
-                .into(),
-        );
+        return Err(i18n::t("shortcut.noWayland"));
     }
     let shortcut: Shortcut = new
         .parse()
-        .map_err(|_| format!("« {new} » n'est pas un raccourci valide."))?;
+        .map_err(|_| i18n::tf("shortcut.invalid", &[("shortcut", &new)]))?;
     let shortcuts = app.global_shortcut();
     let _ = shortcuts.unregister(old);
     if let Err(err) = shortcuts.register(shortcut) {
         let _ = shortcuts.register(old);
-        return Err(format!("{} est refusé par le système ({err}).", label(new)));
+        return Err(i18n::tf(
+            "shortcut.refused",
+            &[("shortcut", &label(new)), ("reason", &err)],
+        ));
     }
     Ok(())
 }

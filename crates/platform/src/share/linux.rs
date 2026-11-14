@@ -20,7 +20,7 @@ pub fn copy_files(files: &[PathBuf]) -> Result<(), String> {
         .args(args)
         .stdin(Stdio::piped())
         .spawn()
-        .map_err(|_| format!("Copier des fichiers demande « {program} », introuvable."))?;
+        .map_err(|_| i18n::tf("share.toolMissing", &[("program", &program)]))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin
             .write_all(uris.as_bytes())
@@ -32,9 +32,7 @@ pub fn copy_files(files: &[PathBuf]) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "« {program} » n'a pas pu remplir le presse-papiers."
-        ))
+        Err(i18n::tf("share.toolFailed", &[("program", &program)]))
     }
 }
 

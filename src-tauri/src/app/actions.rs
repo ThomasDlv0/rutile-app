@@ -105,12 +105,17 @@ pub async fn run_action<R: Runtime>(
 /// Résultat d'une action : son annonce, ou rien si elle a été annulée.
 type Done = Result<Option<Message>, Message>;
 
-fn failure(title: &str, reason: impl Into<String>) -> Message {
+fn failure(title: impl Into<String>, reason: impl Into<String>) -> Message {
     Message {
         title: title.into(),
         body: reason.into(),
         action: None,
     }
+}
+
+/// Raison donnée quand le travail s'est arrêté avant la fin.
+fn interrupted() -> String {
+    i18n::t("actions.interrupted")
 }
 
 /// Le travail se fait hors du thread principal.
@@ -129,7 +134,11 @@ async fn perform<R: Runtime>(
         ActionRequest::Color { format } => pick_color(app, format).await,
         ActionRequest::Zip => {
             let output = blocking(move || files::zip_files(&paths)).await;
-            one_file("Archive créée", "Archive impossible", output)
+            one_file(
+                i18n::t("actions.zip.done"),
+                i18n::t("actions.zip.failed"),
+                output,
+            )
         }
         ActionRequest::Extract => extract(paths).await,
         ActionRequest::PdfText => pdf_text(paths).await,
@@ -138,11 +147,19 @@ async fn perform<R: Runtime>(
         ActionRequest::CopyPaths => copy_paths(&paths),
         ActionRequest::ImagesToPdf => {
             let output = blocking(move || files::images_to_pdf(&paths)).await;
-            one_file("PDF créé", "PDF impossible", output)
+            one_file(
+                i18n::t("actions.imagesToPdf.done"),
+                i18n::t("actions.imagesToPdf.failed"),
+                output,
+            )
         }
         ActionRequest::MergePdfs => {
             let output = blocking(move || files::merge_pdfs(&paths)).await;
-            one_file("PDF fusionnés", "Fusion impossible", output)
+            one_file(
+                i18n::t("actions.mergePdfs.done"),
+                i18n::t("actions.mergePdfs.failed"),
+                output,
+            )
         }
         ActionRequest::Rename { style } => rename(paths, style).await,
         ActionRequest::Retouch { retouch } => retouch_images(app, paths, retouch).await,
@@ -159,26 +176,25 @@ fn file_name(path: &Path) -> String {
 }
 
 fn one_file(
-    title: &str,
-    failed: &str,
+    title: String,
+    failed: String,
     output: Option<Result<PathBuf, converter::ConvertError>>,
 ) -> Done {
     match output {
         Some(Ok(path)) => Ok(Some(Message {
-            title: title.into(),
+            title,
             body: file_name(&path),
             action: Some(Action::Reveal(vec![path])),
         })),
         Some(Err(err)) => Err(failure(failed, err.to_string())),
-        None => Err(failure(failed, "Action interrompue.")),
+        None => Err(failure(failed, interrupted())),
     }
 }
 
 /// Bilan d'une action appliquée fichier par fichier.
 fn summary(
-    one: &str,
-    many: impl FnOnce(usize) -> String,
-    failed_title: &str,
+    title: impl FnOnce(u64) -> String,
+    failed_title: String,
     done: Vec<PathBuf>,
     failed: Vec<String>,
 ) -> Done {
@@ -186,21 +202,26 @@ fn summary(
         let reason = failed
             .into_iter()
             .next()
-            .unwrap_or_else(|| "Aucun fichier à traiter.".into());
+            .unwrap_or_else(|| i18n::t("errors.noFiles"));
         return Err(failure(failed_title, reason));
     }
-    let title = if done.len() == 1 {
-        one.to_string()
-    } else {
-        many(done.len())
-    };
+    let title = title(done.len() as u64);
     let mut body = if done.len() == 1 {
         file_name(&done[0])
     } else {
-        format!("{} et {} autre(s)", file_name(&done[0]), done.len() - 1)
+        i18n::tn(
+            "files.andMore",
+            done.len() as u64 - 1,
+            &[("names", &file_name(&done[0]))],
+        )
     };
     if let Some(reason) = failed.first() {
-        body = format!("{body}\n{} échec(s) : {reason}", failed.len());
+        let line = i18n::tn(
+            "actions.failures",
+            failed.len() as u64,
+            &[("reason", reason)],
+        );
+        body = format!("{body}\n{line}");
     }
     Ok(Some(Message {
         title,
@@ -212,14 +233,13 @@ fn summary(
 async fn rename(paths: Vec<PathBuf>, style: RenameStyle) -> Done {
     match blocking(move || files::rename_files(&paths, style)).await {
         Some(Ok(done)) => summary(
-            "Fichier renommé",
-            |count| format!("{count} fichiers renommés"),
-            "Renommage impossible",
+            |count| i18n::tn("actions.rename.done", count, &[]),
+            i18n::t("actions.rename.failed"),
             done,
             Vec::new(),
         ),
-        Some(Err(err)) => Err(failure("Renommage impossible", err.to_string())),
-        None => Err(failure("Renommage impossible", "Action interrompue.")),
+        Some(Err(err)) => Err(failure(i18n::t("actions.rename.failed"), err.to_string())),
+        None => Err(failure(i18n::t("actions.rename.failed"), interrupted())),
     }
 }
 
@@ -230,7 +250,10 @@ async fn extract(paths: Vec<PathBuf>) -> Done {
         for path in &paths {
             match files::extract_zip(path) {
                 Ok(output) => done.push(output),
-                Err(err) => failed.push(format!("{} : {err}", file_name(path))),
+                Err(err) => failed.push(i18n::tf(
+                    "files.failureLine",
+                    &[("name", &file_name(path)), ("reason", &err)],
+                )),
             }
         }
         (done, failed)
@@ -238,24 +261,19 @@ async fn extract(paths: Vec<PathBuf>) -> Done {
     .await
     .unwrap_or_default();
     summary(
-        "Archive décompressée",
-        |count| format!("{count} archives décompressées"),
-        "Décompression impossible",
+        |count| i18n::tn("actions.extract.done", count, &[]),
+        i18n::t("actions.extract.failed"),
         results.0,
         results.1,
     )
 }
 
 async fn pdf_text(paths: Vec<PathBuf>) -> Done {
-    const TITLE: &str = "Lecture impossible";
+    let title = i18n::t("actions.read.failed");
     match blocking(move || files::pdf_text(&paths)).await {
-        Some(Ok(text)) => copy_found(
-            TITLE,
-            &text,
-            "Aucun texte dans ce PDF : c'est peut-être un scan.",
-        ),
-        Some(Err(err)) => Err(failure(TITLE, err.to_string())),
-        None => Err(failure(TITLE, "Action interrompue.")),
+        Some(Ok(text)) => copy_found(title, &text, i18n::t("actions.read.noTextPdf")),
+        Some(Err(err)) => Err(failure(title, err.to_string())),
+        None => Err(failure(title, interrupted())),
     }
 }
 
@@ -270,7 +288,12 @@ fn with_png<T>(
     purpose: &str,
     use_png: impl FnOnce(&Path) -> Result<T, String>,
 ) -> Result<T, String> {
-    let png = converter::to_png(path).map_err(|err| format!("{} : {err}", file_name(path)))?;
+    let png = converter::to_png(path).map_err(|err| {
+        i18n::tf(
+            "files.failureLine",
+            &[("name", &file_name(path)), ("reason", &err)],
+        )
+    })?;
     let temporary = temporary_png(purpose);
     std::fs::write(&temporary, png).map_err(|err| err.to_string())?;
     let result = use_png(&temporary);
@@ -279,7 +302,7 @@ fn with_png<T>(
 }
 
 async fn read_images_text(paths: Vec<PathBuf>) -> Done {
-    const TITLE: &str = "Lecture impossible";
+    let title = i18n::t("actions.read.failed");
     let texts = blocking(move || {
         paths
             .iter()
@@ -287,51 +310,47 @@ async fn read_images_text(paths: Vec<PathBuf>) -> Done {
             .collect::<Result<Vec<_>, _>>()
     })
     .await
-    .unwrap_or_else(|| Err("Action interrompue.".into()))
-    .map_err(|err| failure(TITLE, err))?;
+    .unwrap_or_else(|| Err(interrupted()))
+    .map_err(|err| failure(title.as_str(), err))?;
     let text = texts
         .iter()
         .map(|text| text.trim())
         .filter(|text| !text.is_empty())
         .collect::<Vec<_>>()
         .join("\n\n");
-    copy_found(TITLE, &text, "Aucun texte trouvé dans l'image.")
+    copy_found(title, &text, i18n::t("actions.read.noTextImage"))
 }
 
 async fn copy_image_file(paths: Vec<PathBuf>) -> Done {
-    const TITLE: &str = "Copie impossible";
+    let title = i18n::t("actions.copy.failed");
     let Some(path) = paths.into_iter().next() else {
-        return Err(failure(TITLE, "Aucune image à copier."));
+        return Err(failure(title, i18n::t("actions.copy.noImage")));
     };
     let name = file_name(&path);
     blocking(move || with_png(&path, "copie", capture::copy_image))
         .await
-        .unwrap_or_else(|| Err("Action interrompue.".into()))
-        .map_err(|err| failure(TITLE, err))?;
+        .unwrap_or_else(|| Err(interrupted()))
+        .map_err(|err| failure(title, err))?;
     Ok(Some(Message {
-        title: "Image copiée".into(),
+        title: i18n::t("actions.copy.imageDone"),
         body: name,
         action: None,
     }))
 }
 
 fn copy_paths(paths: &[PathBuf]) -> Done {
-    const TITLE: &str = "Copie impossible";
+    let title = i18n::t("actions.copy.failed");
     if paths.is_empty() {
-        return Err(failure(TITLE, "Aucun fichier à traiter."));
+        return Err(failure(title, i18n::t("errors.noFiles")));
     }
     let text = paths
         .iter()
         .map(|path| path.display().to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    capture::copy_text(&text).map_err(|err| failure(TITLE, err))?;
-    let title = match paths.len() {
-        1 => "Chemin copié".to_string(),
-        count => format!("{count} chemins copiés"),
-    };
+    capture::copy_text(&text).map_err(|err| failure(title, err))?;
     Ok(Some(Message {
-        title,
+        title: i18n::tn("actions.copy.pathsDone", paths.len() as u64, &[]),
         body: preview(&text),
         action: None,
     }))
@@ -343,21 +362,18 @@ async fn retouch_images<R: Runtime>(
     action: Retouch,
 ) -> Done {
     let quality = settings::current(app).quality();
-    let (one, many, failed_title): (&str, fn(usize) -> String, &str) = match action {
+    let (title, failed_title): (fn(u64) -> String, String) = match action {
         Retouch::Half | Retouch::FullHd => (
-            "Image réduite",
-            |count| format!("{count} images réduites"),
-            "Réduction impossible",
+            |count| i18n::tn("actions.shrink.done", count, &[]),
+            i18n::t("actions.shrink.failed"),
         ),
         Retouch::Compress => (
-            "Image compressée",
-            |count| format!("{count} images compressées"),
-            "Compression impossible",
+            |count| i18n::tn("actions.compress.done", count, &[]),
+            i18n::t("actions.compress.failed"),
         ),
         Retouch::StripMetadata => (
-            "Métadonnées retirées",
-            |count| format!("Métadonnées retirées de {count} images"),
-            "Retrait impossible",
+            |count| i18n::tn("actions.strip.done", count, &[]),
+            i18n::t("actions.strip.failed"),
         ),
     };
     let results = blocking(move || {
@@ -366,14 +382,17 @@ async fn retouch_images<R: Runtime>(
         for path in &paths {
             match retouch::retouch(path, action, &quality) {
                 Ok(output) => done.push(output),
-                Err(err) => failed.push(format!("{} : {err}", file_name(path))),
+                Err(err) => failed.push(i18n::tf(
+                    "files.failureLine",
+                    &[("name", &file_name(path)), ("reason", &err)],
+                )),
             }
         }
         (done, failed)
     })
     .await
     .unwrap_or_default();
-    summary(one, many, failed_title, results.0, results.1)
+    summary(title, failed_title, results.0, results.1)
 }
 
 async fn rework_videos<R: Runtime>(
@@ -393,22 +412,21 @@ async fn rework_videos<R: Runtime>(
             };
             match video::rework_video(path, rework, progress) {
                 Ok(output) => done.push(output),
-                Err(err) => failed.push(format!("{} : {err}", file_name(path))),
+                Err(err) => failed.push(i18n::tf(
+                    "files.failureLine",
+                    &[("name", &file_name(path)), ("reason", &err)],
+                )),
             }
         }
         (done, failed)
     })
     .await
     .unwrap_or_default();
-    let (one, many): (&str, fn(usize) -> String) = match rework {
-        VideoRework::Mute => ("Son retiré", |count| {
-            format!("Son retiré de {count} vidéos")
-        }),
-        _ => ("Vidéo compressée", |count| {
-            format!("{count} vidéos compressées")
-        }),
+    let title: fn(u64) -> String = match rework {
+        VideoRework::Mute => |count| i18n::tn("actions.mute.done", count, &[]),
+        _ => |count| i18n::tn("actions.videoCompress.done", count, &[]),
     };
-    summary(one, many, "Vidéo impossible", results.0, results.1)
+    summary(title, i18n::t("actions.video.failed"), results.0, results.1)
 }
 
 /// `Capture 2026-11-06 à 10.12.33.png`, dans un dossier « Rutile » des images.
@@ -419,13 +437,20 @@ fn capture_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
         .map_err(|err| err.to_string())?
         .join("Rutile");
     std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-    let now = chrono::Local::now().format("%Y-%m-%d à %H.%M.%S");
-    Ok(dir.join(format!("Capture {now}.png")))
+    let now = chrono::Local::now();
+    let name = i18n::tf(
+        "capture.fileName",
+        &[
+            ("date", &now.format("%Y-%m-%d")),
+            ("time", &now.format("%H.%M.%S")),
+        ],
+    );
+    Ok(dir.join(format!("{name}.png")))
 }
 
 fn capture_failure(err: CaptureError) -> Message {
     match err {
-        CaptureError::Failed(reason) => failure("Capture impossible", reason),
+        CaptureError::Failed(reason) => failure(i18n::t("capture.failed"), reason),
         CaptureError::Permission => permission_message(),
     }
 }
@@ -433,23 +458,26 @@ fn capture_failure(err: CaptureError) -> Message {
 #[cfg(target_os = "macos")]
 fn permission_message() -> Message {
     Message {
-        title: "Autorisation nécessaire".into(),
-        body: "Activez Rutile dans « Enregistrement de l'écran », puis relancez-le.".into(),
+        title: i18n::t("permissions.title"),
+        body: i18n::t("capture.permissionBody"),
         action: Some(Action::OpenUrl(capture::SCREEN_SETTINGS_URL.into())),
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn permission_message() -> Message {
-    failure("Capture impossible", "Autorisation refusée par le système.")
+    failure(
+        i18n::t("capture.failed"),
+        i18n::t("capture.permissionDenied"),
+    )
 }
 
 async fn capture_screen<R: Runtime>(app: &AppHandle<R>, target: CaptureTarget, delay: u32) -> Done {
-    let output = capture_path(app).map_err(|err| failure("Capture impossible", err))?;
+    let output = capture_path(app).map_err(|err| failure(i18n::t("capture.failed"), err))?;
     let path = output.clone();
     let taken = blocking(move || capture::capture(target, delay, &path))
         .await
-        .unwrap_or_else(|| Err(CaptureError::Failed("capture interrompue".into())));
+        .unwrap_or_else(|| Err(CaptureError::Failed(i18n::t("capture.interrupted"))));
     if !taken.map_err(capture_failure)? {
         return Ok(None);
     }
@@ -464,11 +492,11 @@ async fn capture_screen<R: Runtime>(app: &AppHandle<R>, target: CaptureTarget, d
         });
     }
     let body = match copied {
-        Some(Ok(())) => format!("{}, aussi dans le presse-papiers", file_name(&output)),
+        Some(Ok(())) => i18n::tf("capture.alsoCopied", &[("name", &file_name(&output))]),
         _ => file_name(&output),
     };
     Ok(Some(Message {
-        title: "Capture enregistrée".into(),
+        title: i18n::t("capture.saved"),
         body,
         action: Some(Action::Reveal(vec![output])),
     }))
@@ -485,7 +513,7 @@ fn preview(text: &str) -> String {
 }
 
 async fn capture_text() -> Done {
-    const TITLE: &str = "Lecture impossible";
+    let title = i18n::t("actions.read.failed");
     let path = temporary_png("texte");
     let image = path.clone();
     let result = blocking(move || {
@@ -495,26 +523,26 @@ async fn capture_text() -> Done {
         }
         capture::read_text(&image)
             .map(Some)
-            .map_err(|err| failure(TITLE, err))
+            .map_err(|err| failure(i18n::t("actions.read.failed"), err))
     })
     .await
-    .unwrap_or_else(|| Err(failure(TITLE, "Action interrompue.")));
+    .unwrap_or_else(|| Err(failure(i18n::t("actions.read.failed"), interrupted())));
     let _ = std::fs::remove_file(&path);
 
     let Some(text) = result? else {
         return Ok(None);
     };
-    copy_found(TITLE, &text, "Aucun texte trouvé dans cette zone.")
+    copy_found(title, &text, i18n::t("actions.read.noTextZone"))
 }
 
 /// Copie le texte trouvé, annoncé par ses premiers mots ; `nothing` s'il n'y en a pas.
-fn copy_found(title: &str, text: &str, nothing: &str) -> Done {
+fn copy_found(title: String, text: &str, nothing: String) -> Done {
     if text.trim().is_empty() {
         return Err(failure(title, nothing));
     }
     capture::copy_text(text).map_err(|err| failure(title, err))?;
     Ok(Some(Message {
-        title: "Texte copié".into(),
+        title: i18n::t("actions.read.copied"),
         body: preview(text),
         action: None,
     }))
@@ -557,14 +585,14 @@ fn hsl(red: u8, green: u8, blue: u8) -> (u32, u32, u32) {
 }
 
 async fn pick_color<R: Runtime>(app: &AppHandle<R>, format: ColorFormat) -> Done {
-    const TITLE: &str = "Pipette impossible";
+    let title = i18n::t("actions.color.failed");
     let (sender, receiver) = mpsc::channel();
     app.run_on_main_thread(move || {
         capture::pick_color(move |color| {
             let _ = sender.send(color);
         });
     })
-    .map_err(|err| failure(TITLE, err.to_string()))?;
+    .map_err(|err| failure(title.as_str(), err.to_string()))?;
     let picked = blocking(move || receiver.recv().ok().flatten())
         .await
         .flatten();
@@ -572,38 +600,38 @@ async fn pick_color<R: Runtime>(app: &AppHandle<R>, format: ColorFormat) -> Done
         return Ok(None);
     };
     let text = color_text(color, format);
-    capture::copy_text(&text).map_err(|err| failure(TITLE, err))?;
+    capture::copy_text(&text).map_err(|err| failure(title, err))?;
     Ok(Some(Message {
-        title: "Couleur copiée".into(),
+        title: i18n::t("actions.color.copied"),
         body: text,
         action: None,
     }))
 }
 
 async fn place_window<R: Runtime>(app: &AppHandle<R>, layout: Layout) -> Done {
-    const TITLE: &str = "Fenêtre impossible à ranger";
+    let title = i18n::t("actions.place.failed");
     let (sender, receiver) = mpsc::channel();
     app.run_on_main_thread(move || {
         let _ = sender.send(placement::place(layout));
     })
-    .map_err(|err| failure(TITLE, err.to_string()))?;
+    .map_err(|err| failure(title.as_str(), err.to_string()))?;
     let placed = blocking(move || receiver.recv()).await.and_then(Result::ok);
     match placed {
         Some(Ok(())) => Ok(None),
         Some(Err(PlacementError::NoWindow)) => {
-            Err(failure(TITLE, "Aucune fenêtre active à ranger."))
+            Err(failure(title, i18n::t("actions.place.noWindow")))
         }
-        Some(Err(PlacementError::Failed(reason))) => Err(failure(TITLE, reason)),
+        Some(Err(PlacementError::Failed(reason))) => Err(failure(title, reason)),
         Some(Err(PlacementError::Permission)) => Err(accessibility_message()),
-        None => Err(failure(TITLE, "Action interrompue.")),
+        None => Err(failure(title.as_str(), interrupted())),
     }
 }
 
 #[cfg(target_os = "macos")]
 fn accessibility_message() -> Message {
     Message {
-        title: "Autorisation nécessaire".into(),
-        body: "Activez Rutile dans « Accessibilité » pour ranger les fenêtres.".into(),
+        title: i18n::t("permissions.title"),
+        body: i18n::t("actions.place.permissionBody"),
         action: Some(Action::OpenUrl(
             platform::apps::ACCESSIBILITY_SETTINGS_URL.into(),
         )),
@@ -612,7 +640,10 @@ fn accessibility_message() -> Message {
 
 #[cfg(not(target_os = "macos"))]
 fn accessibility_message() -> Message {
-    failure("Fenêtre impossible à ranger", "Autorisation refusée.")
+    failure(
+        i18n::t("actions.place.failed"),
+        i18n::t("actions.place.permissionDenied"),
+    )
 }
 
 /// Sous Windows, une console s'ouvrirait le temps de la commande sans ce réglage.
@@ -662,27 +693,27 @@ async fn run_custom<R: Runtime>(
     action: usize,
     paths: Vec<PathBuf>,
 ) -> Done {
-    const TITLE: &str = "Action impossible";
+    let title = i18n::t("actions.custom.failed");
     let chosen = settings::current(app)
         .custom_wheels
         .get(wheel)
         .and_then(|wheel| wheel.parts().get(action))
         .cloned()
-        .ok_or_else(|| failure(TITLE, "Cette part n'existe plus."))?;
+        .ok_or_else(|| failure(title.as_str(), i18n::t("actions.custom.gone")))?;
     match chosen.kind {
         PartKind::Url => {
             if !settings::web_address(&chosen.value) {
-                return Err(failure(TITLE, "Seules les adresses web s'ouvrent."));
+                return Err(failure(title, i18n::t("apps.onlyWebAddresses")));
             }
             app.opener()
                 .open_url(chosen.value.trim(), None::<&str>)
-                .map_err(|err| failure(TITLE, err.to_string()))?;
+                .map_err(|err| failure(title.as_str(), err.to_string()))?;
             return Ok(None);
         }
         PartKind::Folder => {
             app.opener()
                 .open_path(chosen.value.as_str(), None::<&str>)
-                .map_err(|err| failure(TITLE, err.to_string()))?;
+                .map_err(|err| failure(title.as_str(), err.to_string()))?;
             return Ok(None);
         }
         // Comme sur la roue des apps : les fichiers de la roue s'ouvrent avec elle
@@ -692,13 +723,16 @@ async fn run_custom<R: Runtime>(
                 .await
             {
                 Some(Ok(())) => Ok(None),
-                Some(Err(err)) => Err(failure(TITLE, format!("{name} : {err}"))),
-                None => Err(failure(TITLE, "Action interrompue.")),
+                Some(Err(err)) => Err(failure(
+                    title,
+                    i18n::tf("files.failureLine", &[("name", &name), ("reason", &err)]),
+                )),
+                None => Err(failure(title.as_str(), interrupted())),
             };
         }
         // L'interface les lance elle-même, comme sur les roues de Rutile
         PartKind::Convert | PartKind::Action => {
-            return Err(failure(TITLE, "Cette part se lance depuis la roue."));
+            return Err(failure(title, i18n::t("actions.custom.fromWheel")));
         }
         PartKind::Shortcut | PartKind::Command => {}
     }
@@ -712,16 +746,25 @@ async fn run_custom<R: Runtime>(
     match output {
         Some(Ok(output)) if output.status.success() => Ok(Some(Message {
             title: name,
-            body: "Terminé.".into(),
+            body: i18n::t("actions.custom.done"),
             action: None,
         })),
         Some(Ok(output)) => {
             let errors = String::from_utf8_lossy(&output.stderr);
-            let reason = errors.lines().last().unwrap_or("échec de la commande");
-            Err(failure(TITLE, format!("{name} : {reason}")))
+            let reason = errors
+                .lines()
+                .last()
+                .map_or_else(|| i18n::t("actions.custom.commandFailed"), str::to_owned);
+            Err(failure(
+                title,
+                i18n::tf("files.failureLine", &[("name", &name), ("reason", &reason)]),
+            ))
         }
-        Some(Err(err)) => Err(failure(TITLE, format!("{name} : {err}"))),
-        None => Err(failure(TITLE, "Action interrompue.")),
+        Some(Err(err)) => Err(failure(
+            title,
+            i18n::tf("files.failureLine", &[("name", &name), ("reason", &err)]),
+        )),
+        None => Err(failure(title.as_str(), interrupted())),
     }
 }
 

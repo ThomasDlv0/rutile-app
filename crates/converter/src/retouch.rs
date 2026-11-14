@@ -69,7 +69,10 @@ pub fn retouch(input: &Path, retouch: Retouch, quality: &Quality) -> Result<Path
                 (height / 2).max(1),
                 FilterType::Lanczos3,
             );
-            (encode::encode(&half, format, quality)?, "-reduite")
+            (
+                encode::encode(&half, format, quality)?,
+                i18n::t("files.suffix.shrunk"),
+            )
         }
         Retouch::FullHd => {
             let image = image()?;
@@ -78,21 +81,24 @@ pub fn retouch(input: &Path, retouch: Retouch, quality: &Quality) -> Result<Path
                 return Err(ConvertError::AlreadySmall);
             }
             let smaller = image.resize(FULL_HD_SIDE, FULL_HD_SIDE, FilterType::Lanczos3);
-            (encode::encode(&smaller, format, quality)?, "-1920")
+            (
+                encode::encode(&smaller, format, quality)?,
+                "-1920".to_string(),
+            )
         }
         Retouch::Compress => {
             let encoded = compress(&image()?, format, quality)?;
             if encoded.len() >= bytes.len() {
                 return Err(ConvertError::NotSmaller);
             }
-            (encoded, "-compressee")
+            (encoded, i18n::t("files.suffix.compressed"))
         }
         Retouch::StripMetadata => (
             strip_metadata(&bytes, source, format, quality)?,
-            "-sans-metadonnees",
+            i18n::t("files.suffix.noMetadata"),
         ),
     };
-    let target = output::sibling(input, &output::suffixed(input, suffix));
+    let target = output::sibling(input, &output::suffixed(input, &suffix));
     output::write_unique(&target, format.extension(), &encoded)
 }
 

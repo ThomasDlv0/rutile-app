@@ -63,6 +63,8 @@ const DEFAULT_DWELL_MS: u32 = 1000;
 const DWELL_RANGE_MS: (u32, u32) = (400, 2500);
 /// Onglet à afficher, quand la fenêtre de réglages est déjà ouverte.
 const TAB_EVENT: &str = "settings://tab";
+/// Langue changée dans les réglages : chaque fenêtre la reçoit et se traduit.
+pub const LANGUAGE_EVENT: &str = "app://language";
 
 /// Les roues entre lesquelles le clic au centre fait passer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -407,6 +409,8 @@ pub struct Settings {
     pub share: Vec<Option<ShareTarget>>,
     /// Chercher les nouvelles versions au lancement puis régulièrement, et les proposer.
     pub auto_update: bool,
+    /// Langue de Rutile (« fr », « en »…) ; absente, celle du système.
+    pub language: Option<String>,
 }
 
 impl Default for Settings {
@@ -438,6 +442,7 @@ impl Default for Settings {
             apps: vec![None; MIN_SLOTS],
             share: Vec::new(),
             auto_update: true,
+            language: None,
         }
     }
 }
@@ -565,6 +570,11 @@ impl Settings {
             .collect();
         self.highlight_color = self.highlight_color.as_deref().and_then(hex_color);
         self.wheel_border_color = self.wheel_border_color.as_deref().and_then(hex_color);
+        self.language = self
+            .language
+            .as_deref()
+            .and_then(i18n::supported)
+            .map(str::to_owned);
         self
     }
 
@@ -648,6 +658,7 @@ pub fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
         settings.share = share::suggestions(app);
     }
     let settings = settings.sanitized();
+    i18n::set(i18n::resolve(settings.language.as_deref()));
     app.manage(SettingsState(Mutex::new(settings.clone())));
     settings
 }
@@ -657,7 +668,7 @@ pub fn current<R: Runtime>(app: &AppHandle<R>) -> Settings {
 }
 
 fn save<R: Runtime>(app: &AppHandle<R>, settings: &Settings) -> Result<(), String> {
-    let path = file(app).ok_or("dossier de configuration introuvable")?;
+    let path = file(app).ok_or_else(|| i18n::t("settings.noConfigDir"))?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
     }
@@ -694,6 +705,9 @@ pub struct SettingsView {
     custom: Vec<CustomWheelView>,
     /// Onglet demandé à l'ouverture de la fenêtre (une part vide de la roue, par exemple).
     tab: Option<String>,
+    /// Langue employée, et celle du système (proposée par défaut).
+    language: &'static str,
+    system_language: &'static str,
 }
 
 fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
@@ -714,6 +728,8 @@ fn view<R: Runtime>(app: &AppHandle<R>) -> SettingsView {
         native_glass: super::glass::available(),
         platform: std::env::consts::OS,
         version: app.package_info().version.to_string(),
+        language: i18n::current(),
+        system_language: i18n::system(),
     }
 }
 
@@ -770,6 +786,22 @@ pub fn update_settings<R: Runtime>(
 
     *app.state::<SettingsState>().0.lock().unwrap() = applied.clone();
     save(&app, &applied)?;
+    let language_changed = applied.language != previous.language;
+    if language_changed {
+        i18n::set(i18n::resolve(applied.language.as_deref()));
+        tray::translate(&app);
+        super::notify::translate(&app);
+        // Les fenêtres ouvertes prennent aussi le titre de la nouvelle langue
+        for (label, title) in [
+            (SETTINGS_LABEL, "settings.windowTitle"),
+            (super::updates::UPDATE_LABEL, "update.windowTitle"),
+        ] {
+            if let Some(window) = app.get_webview_window(label) {
+                let _ = window.set_title(&i18n::t(title));
+            }
+        }
+        let _ = app.emit(LANGUAGE_EVENT, i18n::current());
+    }
     if applied.wheel_glass != previous.wheel_glass {
         super::glass::apply(&app, applied.wheel_glass);
     }
@@ -787,6 +819,7 @@ pub fn update_settings<R: Runtime>(
         || applied.file_wheels != previous.file_wheels
         || applied.apps != previous.apps
         || applied.share != previous.share
+        || language_changed
     {
         apps::config_changed(&app);
     }
@@ -794,6 +827,12 @@ pub fn update_settings<R: Runtime>(
         Some(err) => Err(err),
         None => Ok(view(&app)),
     }
+}
+
+/// Langue employée par Rutile, pour chaque fenêtre à son ouverture.
+#[tauri::command]
+pub fn app_language() -> &'static str {
+    i18n::current()
 }
 
 #[tauri::command]
@@ -866,7 +905,7 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, tab: Option<&str>) {
     *app.state::<PendingTab>().0.lock().unwrap() = tab.map(str::to_owned);
     let built =
         WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Réglages de Rutile")
+            .title(i18n::t("settings.windowTitle"))
             .inner_size(480.0, 640.0)
             .resizable(false)
             .maximizable(false)
@@ -1328,7 +1367,11 @@ mod tests {
         let settings = read(r#"{ "wheelBorder": "dark", "jpegQuality": 75 }"#);
         assert_eq!(settings.wheel_border, WheelBorder::Dark);
         let settings = read(r#"{ "wheelBorder": "light" }"#);
-        assert_eq!(settings.wheel_border, WheelBorder::Light, "le choix d'avant la 1.5 reste");
+        assert_eq!(
+            settings.wheel_border,
+            WheelBorder::Light,
+            "le choix d'avant la 1.5 reste"
+        );
         let settings = read(r#"{ "wheelBorder": "arc-en-ciel", "jpegQuality": 75 }"#);
         assert_eq!(settings.wheel_border, WheelBorder::None);
         assert_eq!(settings.jpeg_quality, 75);
@@ -1336,6 +1379,21 @@ mod tests {
         assert_eq!(
             serde_json::to_value(WheelBorder::Color).unwrap(),
             serde_json::json!("color")
+        );
+    }
+
+    #[test]
+    fn seule_une_langue_connue_est_gardee() {
+        let read = |json: &str| serde_json::from_str::<Settings>(json).unwrap().sanitized();
+        assert_eq!(
+            read(r#"{ "language": "de-DE" }"#).language.as_deref(),
+            Some("de")
+        );
+        assert_eq!(read(r#"{ "language": "klingon" }"#).language, None);
+        assert_eq!(
+            read("{}").language,
+            None,
+            "par défaut, la langue du système"
         );
     }
 

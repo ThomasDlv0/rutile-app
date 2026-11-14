@@ -5,9 +5,25 @@
   <!-- App d'arrière-plan : ni icône dans le Dock, ni barre des menus -->
   <key>LSUIElement</key>
   <true/>
-  <!-- App en français : noms d'apps traduits par le Finder, dialogues du système en français -->
+  <!-- Langues de Rutile : noms d'apps traduits par le Finder et dialogues du système dans la
+       langue du système quand Rutile la connaît, en français sinon -->
   <key>CFBundleDevelopmentRegion</key>
   <string>fr</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>fr</string>
+    <string>en</string>
+    <string>es</string>
+    <string>de</string>
+    <string>it</string>
+    <string>pt</string>
+    <string>zh-Hans</string>
+    <string>ja</string>
+    <string>ko</string>
+    <string>ru</string>
+  </array>
+  <key>CFBundleAllowMixedLocalizations</key>
+  <true/>
   <!-- Texte de la demande d'autorisation macOS pour lire la sélection du Finder -->
   <key>NSAppleEventsUsageDescription</key>
   <string>Rutile lit les fichiers sélectionnés dans le Finder pour les convertir ou les partager.</string>

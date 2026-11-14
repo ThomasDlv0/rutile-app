@@ -12,30 +12,41 @@ const SETTINGS: &str = "settings";
 const UPDATES: &str = "updates";
 const QUIT: &str = "quit";
 
-/// Entrée « Ouvrir la roue », gardée pour y afficher le raccourci choisi.
-struct OpenItem<R: Runtime>(MenuItem<R>);
+/// Entrées du menu, gardées pour y afficher le raccourci choisi et les traduire quand la
+/// langue change.
+struct Items<R: Runtime> {
+    open: MenuItem<R>,
+    settings: MenuItem<R>,
+    updates: MenuItem<R>,
+    quit: MenuItem<R>,
+}
+
+/// Textes du menu dans la langue en cours.
+pub fn translate<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(items) = app.try_state::<Items<R>>() {
+        let _ = items.open.set_text(i18n::t("tray.open"));
+        let _ = items.settings.set_text(i18n::t("tray.settings"));
+        let _ = items.updates.set_text(i18n::t("tray.updates"));
+        let _ = items.quit.set_text(i18n::t("tray.quit"));
+    }
+}
 
 /// Le menu rappelle le raccourci, sauf là où il n'existe pas (Wayland).
 pub fn show_shortcut<R: Runtime>(app: &AppHandle<R>, accelerator: &str) {
     if !platform::session::global_shortcuts_supported() {
         return;
     }
-    if let Some(item) = app.try_state::<OpenItem<R>>() {
-        let _ = item.0.set_accelerator(Some(accelerator));
+    if let Some(items) = app.try_state::<Items<R>>() {
+        let _ = items.open.set_accelerator(Some(accelerator));
     }
 }
 
 pub fn setup<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, OPEN, "Ouvrir la roue", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, SETTINGS, "Réglages…", true, None::<&str>)?;
-    let updates = MenuItem::with_id(
-        app,
-        UPDATES,
-        "Rechercher les mises à jour…",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, QUIT, "Quitter Rutile", true, None::<&str>)?;
+    let item = |id: &str, key: &str| MenuItem::with_id(app, id, i18n::t(key), true, None::<&str>);
+    let open = item(OPEN, "tray.open")?;
+    let settings = item(SETTINGS, "tray.settings")?;
+    let updates = item(UPDATES, "tray.updates")?;
+    let quit = item(QUIT, "tray.quit")?;
     let menu = Menu::with_items(
         app,
         &[
@@ -89,7 +100,12 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>, shortcut: &str) -> tauri::Result<()
     };
 
     builder.build(app)?;
-    app.manage(OpenItem(open));
+    app.manage(Items {
+        open,
+        settings,
+        updates,
+        quit,
+    });
     // Windows note l'icône dans le registre peu après sa création
     #[cfg(windows)]
     std::thread::spawn(|| {

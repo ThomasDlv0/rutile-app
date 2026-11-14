@@ -89,7 +89,7 @@ pub fn watch(on_motion: impl FnMut(Motion) + Send + 'static) -> Result<Watcher, 
             evdev::spawn(on_motion, stop.clone())?;
         } else {
             let x11 = x11::X11::connect()
-                .ok_or_else(|| WatchError::Unsupported("serveur X11 injoignable".into()))?;
+                .ok_or_else(|| WatchError::Unsupported(i18n::t("mouse.x11Unreachable")))?;
             poll::spawn(move || x11.pointer(), on_motion, stop.clone());
         }
         Ok(Watcher { stop })
@@ -98,7 +98,7 @@ pub fn watch(on_motion: impl FnMut(Motion) + Send + 'static) -> Result<Watcher, 
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     {
         let _ = (on_motion, stop);
-        Err(WatchError::Unsupported("système non pris en charge".into()))
+        Err(WatchError::Unsupported(i18n::t("errors.unsupportedSystem")))
     }
 }
 

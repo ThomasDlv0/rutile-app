@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Rutile {version} 现已可用",
+  "update.available.footnote": "更新安装完成后，Rutile 将重新启动。",
+  "update.downloading.title": "正在下载 Rutile {version}",
+  "update.downloading.label": "正在下载…",
+  "update.downloading.percent": "{percent}%",
+  "update.downloading.footnote": "更新安装完成后，Rutile 会自动重新启动。你可以先关闭此窗口。",
+  "update.installing.title": "正在安装 Rutile {version}",
+  "update.installing.label": "已验证 · Rutile 即将重新启动…",
+  "update.uptodate.title": "Rutile 已是最新版本",
+  "update.uptodate.subtitle": "你使用的已是最新版本 {current}。",
+  "update.failed.title": "无法更新",
+  "update.button.later": "稍后",
+  "update.button.install": "更新",
+  "update.button.hide": "隐藏",
+  "update.button.ok": "好",
+  "update.button.close": "关闭",
+  "update.button.releases": "版本页面",
+  "update.close.hideTitle": "隐藏（下载将继续）",
+  "update.notes.label": "新功能"
+}

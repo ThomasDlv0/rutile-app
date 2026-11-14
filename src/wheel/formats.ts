@@ -2,6 +2,7 @@ import type { AppView, ShareView } from "../ipc";
 import type { GlyphName } from "./ActionGlyph";
 import { readableInk } from "./color";
 import { MAX_SECTORS, SECTOR_COUNT } from "./geometry";
+import { t } from "../i18n";
 
 // Couleurs par défaut des formats, comme des icônes de fichiers ; elles se changent dans
 // les réglages
@@ -28,7 +29,14 @@ export const VIDEO_FORMATS = [
   { id: "mov", label: "MOV", color: GRAY },
   { id: "mkv", label: "MKV", color: VIOLET },
   { id: "gif", label: "GIF", color: PINK },
-  { id: "mp3", label: "MP3", color: ORANGE, action: "Extraire le son en MP3" },
+  {
+    id: "mp3",
+    label: "MP3",
+    color: ORANGE,
+    get action() {
+      return t("wheel.actions.video.mp3.action");
+    },
+  },
 ] as const;
 
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number]["id"];
@@ -122,11 +130,11 @@ export function appItems(
 ): WheelItem[] {
   return Array.from({ length: slotCount(apps) }, (_, index) => {
     const app = apps[index];
-    if (!app) return { id: `app-${index}`, label: "+", action: "Ajouter une app", empty: true };
+    if (!app) return { id: `app-${index}`, label: "+", action: t("wheel.addApp"), empty: true };
     return {
       id: `app-${index}`,
       label: app.name,
-      action: `Ouvrir ${app.name}`,
+      action: t("wheel.open", { name: app.name }),
       icon: app.icon ?? (app.kind === "url" ? WEB_ICON : undefined),
       badge: badges[index] ?? undefined,
     };
@@ -137,13 +145,13 @@ export function appItems(
 export function shareAction(target: ShareView): string {
   switch (target.kind) {
     case "service":
-      return `Envoyer par ${target.name}`;
+      return t("wheel.share.sendVia", { name: target.name });
     case "folder":
-      return `Copier dans ${target.name}`;
+      return t("wheel.share.copyTo", { name: target.name });
     case "app":
-      return `Copier pour ${target.name}`;
+      return t("wheel.share.copyFor", { name: target.name });
     case "system":
-      return "Partager avec…";
+      return t("wheel.share.system");
   }
 }
 
@@ -171,7 +179,7 @@ export function shareItems(targets: readonly (ShareView | null)[]): WheelItem[] 
   return Array.from({ length: slotCount(targets) }, (_, index) => {
     const target = targets[index];
     const id = `share-${index}`;
-    if (!target) return { id, label: "+", action: "Ajouter un partage", empty: true };
+    if (!target) return { id, label: "+", action: t("wheel.addShare"), empty: true };
     return { id, label: target.name, action: shareAction(target), icon: shareIcon(target) };
   });
 }

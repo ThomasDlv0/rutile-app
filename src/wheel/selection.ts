@@ -1,7 +1,6 @@
 import type { FileInfo } from "../ipc";
 import { shortenMiddle } from "./fileName";
 import {
-  type BuiltinMode,
   type Mode,
   type WheelItem,
   formatsFor,
@@ -9,6 +8,7 @@ import {
   isTreeMode,
 } from "./formats";
 import { isInsideHub, sectorAt } from "./geometry";
+import { t, tn } from "../i18n";
 
 export type Point = [number, number];
 
@@ -16,18 +16,12 @@ export type Point = [number, number];
 const VIDEO_ON_WHEEL = new Set(["mp4", "webm", "mov", "mkv"]);
 
 /** Ce qu'annonce le centre au survol : la roue suivante dans l'ordre des réglages. */
-const SWITCH_LABELS: Record<BuiltinMode, string> = {
-  image: "Passer aux images",
-  video: "Passer en vidéo",
-  apps: "Passer aux apps",
-  share: "Passer au partage",
-  actions: "Passer aux actions",
-};
-
 /** Annonce du passage à la roue `mode` ; `name` est le nom d'une roue personnalisée. */
 export function switchLabel(mode: Mode, name?: string): string {
-  if (isCustomMode(mode)) return name ? `Passer à ${name}` : "Passer à ma roue";
-  return SWITCH_LABELS[mode];
+  if (isCustomMode(mode)) {
+    return name ? t("wheel.switch.custom", { name }) : t("wheel.switch.customUnnamed");
+  }
+  return t(`wheel.switch.${mode}`);
 }
 
 /** Les roues de conversion, seules à griser des formats. */
@@ -134,15 +128,15 @@ export function hubText(files: FileInfo[], mode: Mode): HubText | null {
   const unsupported = !files.some((file) => convertible(file, mode));
   const hint = unsupported
     ? mode === "image"
-      ? "Format non pris en charge"
-      : "Ce n'est pas une vidéo"
+      ? t("wheel.hub.unsupportedFormat")
+      : t("wheel.hub.notVideo")
     : undefined;
   if (files.length === 1) {
     const { name } = files[0];
     return { label: shortenMiddle(name, unsupported ? 18 : 22), tone: "file", title: name, hint };
   }
   return {
-    label: `${files.length} fichiers`,
+    label: tn("wheel.hub.files", files.length),
     tone: "file",
     title: files.map((file) => file.name).join("\n"),
     hint,
@@ -152,8 +146,8 @@ export function hubText(files: FileInfo[], mode: Mode): HubText | null {
 /** Texte du survol d'une part : convertir, ouvrir une app, ou en ajouter une. */
 function itemAction(item: WheelItem, dragging: boolean, mode: Mode): string {
   if (dragging && item.dragAction) return item.dragAction;
-  if (mode === "apps" && !item.empty && dragging) return `Ouvrir avec ${item.label}`;
-  return item.action ?? `Convertir en ${item.label}`;
+  if (mode === "apps" && !item.empty && dragging) return t("wheel.openWith", { name: item.label });
+  return item.action ?? t("wheel.convertTo", { format: item.label });
 }
 
 /** Le centre décrit ce que fera la roue à l'endroit pointé, sinon le fichier en cours.
@@ -178,20 +172,22 @@ export function hubFor(
       if (!disabled.has(item.id)) {
         return { label: itemAction(item, dragging, mode), tone: "action", hint: item.hint };
       }
-      if (isTreeMode(mode)) return { label: "Pas pour ces fichiers", tone: "muted" };
+      if (isTreeMode(mode)) return { label: t("wheel.hub.notForFiles"), tone: "muted" };
       const nothingConvertible = disabled.size === items.length;
       return {
-        label: nothingConvertible ? "Format non pris en charge" : `Déjà en ${item.label}`,
+        label: nothingConvertible
+          ? t("wheel.hub.unsupportedFormat")
+          : t("wheel.hub.alreadyIn", { format: item.label }),
         tone: "muted",
       };
     }
     if (isInsideHub(...pointer)) {
       if (dragging && dwellTarget) {
-        const label = dwellTarget === "share" ? "Restez pour partager" : "Restez pour convertir";
-        return { label, tone: "action", hint: "Relâchez pour annuler" };
+        const label = dwellTarget === "share" ? t("wheel.hub.dwellShare") : t("wheel.hub.dwellConvert");
+        return { label, tone: "action", hint: t("wheel.hub.releaseToCancel") };
       }
-      if (dragging) return { label: "Relâcher ici pour annuler", tone: "muted" };
-      if (back) return { label: "Retour", tone: "action" };
+      if (dragging) return { label: t("wheel.hub.releaseHereToCancel"), tone: "muted" };
+      if (back) return { label: t("wheel.hub.backLabel"), tone: "action" };
       if (next) return { label: switchLabel(next, nextName), tone: "action" };
     }
   }

@@ -808,14 +808,21 @@ html.settings #root {
   outline-offset: 2px;
 }
 
-/* Huit onglets : chacun prend la largeur de son nom */
+/* Huit onglets : chacun prend la largeur de son nom ; un nom trop long pour la police du
+   système se coupe plutôt que de chevaucher son voisin */
 .settings-tab {
   flex: 1 1 auto;
   min-width: 0;
   max-width: none;
-  padding: 6px 5px 5px;
+  padding: 6px 4px 5px;
   font-size: 11px;
   white-space: nowrap;
+}
+
+.settings-tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row-control .text-input {
@@ -1528,4 +1535,20 @@ html.settings #root {
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   text-align: center;
+}
+
+/* Le menu des langues montre « Langue du système (…) » en entier */
+.row-control .language-select {
+  width: auto;
+  max-width: 240px;
+}
+
+/* Barre d'onglets resserrée, quand un nom ne tient pas dans cette langue */
+.settings-tabs[data-compact] {
+  gap: 0;
+}
+
+.settings-tabs[data-compact] .settings-tab {
+  padding-inline: 2px;
+  font-size: 10px;
 }

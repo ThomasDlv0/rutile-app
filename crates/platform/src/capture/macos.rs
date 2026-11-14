@@ -68,7 +68,9 @@ fn refused(errors: &str) -> bool {
 
 /// Vision, le moteur de Live Text, reconnaît les lignes dans l'ordre de lecture.
 pub fn read_text(image: &Path) -> Result<String, String> {
-    let path = image.to_str().ok_or("chemin illisible")?;
+    let path = image
+        .to_str()
+        .ok_or_else(|| i18n::t("capture.unreadablePath"))?;
     let url = NSURL::fileURLWithPath(&NSString::from_str(path));
     let options = NSDictionary::new();
     // SAFETY : un dictionnaire vide ne contient aucune option à interpréter

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/converter", "crates/platform", "crates/shake_detector"]
+members = ["src-tauri", "crates/converter", "crates/i18n", "crates/platform", "crates/shake_detector"]
 
 # Les codecs d'image sont très lents sans optimisation, même en développement et en test
 [profile.dev.package."*"]

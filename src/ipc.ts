@@ -155,6 +155,8 @@ export interface Settings {
   share: (ShareTarget | null)[];
   /** Chercher les nouvelles versions au lancement puis régulièrement, et les proposer. */
   autoUpdate: boolean;
+  /** Langue de Rutile (« fr », « en »…) ; `null` pour celle du système. */
+  language: string | null;
 }
 
 /** Version installée, et version publiée plus récente s'il y en a une. */
@@ -191,6 +193,9 @@ export interface SettingsView {
   custom: CustomWheelView[];
   /** Onglet demandé à l'ouverture (une part vide de la roue, par exemple). */
   tab: SettingsTab | null;
+  /** Langue employée, et celle du système, proposée par défaut. */
+  language: string;
+  systemLanguage: string;
 }
 
 export type SettingsTab =

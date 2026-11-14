@@ -104,7 +104,10 @@ fn combined_name(paths: &[PathBuf], fallback: &str) -> Result<PathBuf, ConvertEr
 
 /// Rassemble fichiers et dossiers dans un ZIP, à côté du premier.
 pub fn zip_files(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
-    let (output, file) = output::reserve(&combined_name(paths, "Archive")?, "zip")?;
+    let (output, file) = output::reserve(
+        &combined_name(paths, &i18n::t("files.name.archive"))?,
+        "zip",
+    )?;
     let result = write_zip(paths, file);
     if result.is_err() {
         let _ = fs::remove_file(&output);
@@ -119,7 +122,7 @@ fn write_zip(paths: &[PathBuf], file: File) -> Result<(), ConvertError> {
         let name = path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "fichier".into());
+            .unwrap_or_else(|| i18n::t("files.name.file"));
         add_to_zip(&mut archive, path, &name, options)?;
     }
     archive
@@ -369,7 +372,7 @@ fn pdf_image(bytes: &[u8], format: InputFormat) -> Result<(Stream, u32, u32), Co
 
 /// Assemble des images en un PDF d'une page par image, dans l'ordre de leurs noms.
 pub fn images_to_pdf(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
-    let target = combined_name(paths, "Images")?;
+    let target = combined_name(paths, &i18n::t("files.name.images"))?;
     let mut document = Document::with_version("1.5");
     let pages_id = document.new_object_id();
     let mut kids = Vec::new();
@@ -482,7 +485,7 @@ fn tidy_text(text: &str) -> String {
 
 /// Fusionne des PDF dans l'ordre de leurs noms, à côté du premier.
 pub fn merge_pdfs(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
-    let target = combined_name(paths, "PDF fusionnés")?;
+    let target = combined_name(paths, &i18n::t("files.name.mergedPdf"))?;
     let mut merged = Document::with_version("1.5");
     let mut objects = BTreeMap::new();
     let mut pages: Vec<(ObjectId, lopdf::Dictionary)> = Vec::new();
@@ -503,7 +506,7 @@ pub fn merge_pdfs(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
         objects.append(&mut document.objects);
     }
     if pages.is_empty() {
-        return Err(ConvertError::Pdf("aucune page".into()));
+        return Err(ConvertError::Pdf(i18n::t("errors.noPage")));
     }
 
     // Tout sauf l'ancienne structure : pages, arbres de pages, catalogues et signets
@@ -581,7 +584,7 @@ fn clean_stem(stem: &str) -> String {
     }
     let trimmed = clean.trim_matches('-');
     if trimmed.is_empty() {
-        "fichier".into()
+        i18n::t("files.name.file")
     } else {
         trimmed.into()
     }

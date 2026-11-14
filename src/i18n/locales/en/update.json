@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Rutile {version} is available",
+  "update.available.footnote": "Rutile will restart once the update is installed.",
+  "update.downloading.title": "Downloading Rutile {version}",
+  "update.downloading.label": "Downloading…",
+  "update.downloading.percent": "{percent}%",
+  "update.downloading.footnote": "Rutile will restart on its own once the update is installed. You can close this window in the meantime.",
+  "update.installing.title": "Installing Rutile {version}",
+  "update.installing.label": "Verified · Rutile will restart…",
+  "update.uptodate.title": "Rutile is up to date",
+  "update.uptodate.subtitle": "You have the latest version, {current}.",
+  "update.failed.title": "Update failed",
+  "update.button.later": "Later",
+  "update.button.install": "Update",
+  "update.button.hide": "Hide",
+  "update.button.ok": "OK",
+  "update.button.close": "Close",
+  "update.button.releases": "Releases Page",
+  "update.close.hideTitle": "Hide (the download continues)",
+  "update.notes.label": "What’s New"
+}

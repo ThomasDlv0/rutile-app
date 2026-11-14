@@ -3,67 +3,64 @@ use std::path::PathBuf;
 
 use crate::OutputFormat;
 
-/// Erreurs affichées telles quelles à l'utilisateur, d'où les messages en français.
+/// Erreurs affichées telles quelles à l'utilisateur, d'où les messages traduits.
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
-    #[error("Impossible de lire « {} » : {}", .path.display(), io_reason(.source))]
+    #[error("{}", i18n::tf("errors.read", &[("path", &.path.display()), ("reason", &io_reason(.source))]))]
     Read { path: PathBuf, source: io::Error },
 
-    #[error(
-        "Ce fichier n'est pas une image prise en charge \
-         (PNG, JPEG, WebP, AVIF, GIF, BMP, TIFF, ICO ou SVG)."
-    )]
+    #[error("{}", i18n::t("errors.unsupportedFormat"))]
     UnsupportedFormat,
 
-    #[error("Le fichier est déjà au format {0}.")]
+    #[error("{}", i18n::tf("errors.sameFormat", &[("format", .0)]))]
     SameFormat(OutputFormat),
 
-    #[error("Image illisible ou endommagée ({0}).")]
+    #[error("{}", i18n::tf("errors.decode", &[("reason", .0)]))]
     Decode(String),
 
-    #[error("Image trop grande pour être convertie.")]
+    #[error("{}", i18n::t("errors.tooLarge"))]
     TooLarge,
 
-    #[error("Échec de l'encodage en {format} ({message}).")]
+    #[error("{}", i18n::tf("errors.encode", &[("format", .format), ("message", .message)]))]
     Encode {
         format: OutputFormat,
         message: String,
     },
 
-    #[error("Impossible d'écrire dans « {} » : {}", .dir.display(), io_reason(.source))]
+    #[error("{}", i18n::tf("errors.write", &[("dir", &.dir.display()), ("reason", &io_reason(.source))]))]
     Write { dir: PathBuf, source: io::Error },
 
-    #[error("Cette action ne s'applique pas aux images SVG et ICO.")]
+    #[error("{}", i18n::t("errors.notRaster"))]
     NotRaster,
 
-    #[error("Cette image est déjà assez petite.")]
+    #[error("{}", i18n::t("errors.alreadySmall"))]
     AlreadySmall,
 
-    #[error("Impossible de compresser davantage cette image.")]
+    #[error("{}", i18n::t("errors.notSmaller"))]
     NotSmaller,
 
-    #[error("Aucun fichier à traiter.")]
+    #[error("{}", i18n::t("errors.noFiles"))]
     NoFiles,
 
-    #[error("PDF illisible ou endommagé ({0}).")]
+    #[error("{}", i18n::tf("errors.pdf", &[("reason", .0)]))]
     Pdf(String),
 
-    #[error("Ce PDF est protégé par un mot de passe.")]
+    #[error("{}", i18n::t("errors.protectedPdf"))]
     ProtectedPdf,
 
-    #[error("Échec de la création de l'archive ({0}).")]
+    #[error("{}", i18n::tf("errors.archive", &[("reason", .0)]))]
     Archive(String),
 
-    #[error("Archive illisible ou endommagée ({0}).")]
+    #[error("{}", i18n::tf("errors.badArchive", &[("reason", .0)]))]
     BadArchive(String),
 
-    #[error("Cette archive est protégée par un mot de passe.")]
+    #[error("{}", i18n::t("errors.protectedArchive"))]
     ProtectedArchive,
 
-    #[error("Archive trop volumineuse une fois décompressée.")]
+    #[error("{}", i18n::t("errors.archiveTooLarge"))]
     ArchiveTooLarge,
 
-    #[error("L'archive est vide.")]
+    #[error("{}", i18n::t("errors.emptyArchive"))]
     EmptyArchive,
 }
 
@@ -85,11 +82,11 @@ impl ConvertError {
 
 fn io_reason(error: &io::Error) -> String {
     match error.kind() {
-        io::ErrorKind::NotFound => "fichier ou dossier introuvable".into(),
-        io::ErrorKind::PermissionDenied => "accès refusé".into(),
-        io::ErrorKind::StorageFull => "disque plein".into(),
-        io::ErrorKind::ReadOnlyFilesystem => "disque en lecture seule".into(),
-        io::ErrorKind::IsADirectory => "c'est un dossier, pas une image".into(),
+        io::ErrorKind::NotFound => i18n::t("errors.io.notFound"),
+        io::ErrorKind::PermissionDenied => i18n::t("errors.io.denied"),
+        io::ErrorKind::StorageFull => i18n::t("errors.io.full"),
+        io::ErrorKind::ReadOnlyFilesystem => i18n::t("errors.io.readOnly"),
+        io::ErrorKind::IsADirectory => i18n::t("errors.io.directory"),
         _ => error.to_string(),
     }
 }

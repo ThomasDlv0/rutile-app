@@ -31,15 +31,16 @@ pub fn capture(target: CaptureTarget, delay: u32, output: &Path) -> Result<bool,
         Ok(screenshot) => screenshot,
         Err(ashpd::Error::Response(_)) => return Ok(false),
         Err(err) => {
-            return Err(CaptureError::Failed(format!(
-                "portail du bureau indisponible ({err})"
+            return Err(CaptureError::Failed(i18n::tf(
+                "capture.portalUnavailable",
+                &[("reason", &err)],
             )));
         }
     };
     let source = screenshot
         .uri()
         .to_file_path()
-        .map_err(|()| CaptureError::Failed("capture introuvable".into()))?;
+        .map_err(|()| CaptureError::Failed(i18n::t("capture.notFound")))?;
     let result = std::fs::copy(&source, output);
     let _ = std::fs::remove_file(&source);
     result
@@ -47,22 +48,45 @@ pub fn capture(target: CaptureTarget, delay: u32, output: &Path) -> Result<bool,
         .map_err(|err| CaptureError::Failed(err.to_string()))
 }
 
-/// Linux n'a pas de moteur intégré : Tesseract, s'il est installé.
+/// Paquet de langue de Tesseract pour la langue de Rutile, avec l'anglais en plus.
+fn tesseract_languages() -> String {
+    let pack = match i18n::current() {
+        "fr" => "fra",
+        "es" => "spa",
+        "de" => "deu",
+        "it" => "ita",
+        "pt" => "por",
+        "zh" => "chi_sim",
+        "ja" => "jpn",
+        "ko" => "kor",
+        "ru" => "rus",
+        _ => return "eng".into(),
+    };
+    format!("{pack}+eng")
+}
+
+/// Linux n'a pas de moteur intégré : Tesseract, s'il est installé. Le texte est lu dans la
+/// langue de Rutile et en anglais ; sans le paquet de cette langue, en anglais seulement.
 pub fn read_text(image: &Path) -> Result<String, String> {
-    let output = Command::new("tesseract")
-        .arg(image)
-        .args(["stdout", "-l", "fra+eng"])
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|_| {
-            "Installez Tesseract (paquet tesseract-ocr) pour lire le texte.".to_string()
-        })?;
+    let run = |languages: &str| {
+        Command::new("tesseract")
+            .arg(image)
+            .args(["stdout", "-l", languages])
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|_| i18n::t("capture.tesseractMissing"))
+    };
+    let languages = tesseract_languages();
+    let mut output = run(&languages)?;
+    if !output.status.success() && languages != "eng" {
+        output = run("eng")?;
+    }
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
-    Err(format!(
-        "Échec de Tesseract ({}). Le paquet de la langue française est-il installé ?",
-        String::from_utf8_lossy(&output.stderr).trim()
+    Err(i18n::tf(
+        "capture.tesseractFailed",
+        &[("reason", &String::from_utf8_lossy(&output.stderr).trim())],
     ))
 }
 

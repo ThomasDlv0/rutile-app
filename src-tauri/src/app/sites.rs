@@ -158,10 +158,10 @@ pub async fn site_preview<R: Runtime>(
 ) -> Result<SitePreview, String> {
     let address = address.trim().to_owned();
     if !settings::web_address(&address) {
-        return Err("Ce n'est pas une adresse web.".into());
+        return Err(i18n::t("sites.notWebAddress"));
     }
     let Some(site) = fetch(&address).await else {
-        return Err("Adresse illisible.".into());
+        return Err(i18n::t("sites.unreadable"));
     };
     let icons = state(&app);
     let mut known = icons.0.lock().unwrap();

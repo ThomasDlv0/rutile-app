@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type { CustomPart, CustomWheel, CustomWheelView } from "../ipc";
 import { ActionGlyph } from "../wheel/ActionGlyph";
 import type { ActionNode } from "../wheel/actions";
@@ -43,19 +44,24 @@ export function PartIcon({ item }: { item: WheelItem }) {
 export function partHint(part: CustomPart, node: ActionNode | undefined): string {
   switch (part.kind) {
     case "app":
-      return "Application";
+      return t("settings.kind.app");
     case "folder":
-      return "Dossier";
+      return t("settings.kind.folder");
     case "url":
-      return `Site web · ${part.value.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, "")}`;
+      return t("settings.parts.site", {
+        site: part.value.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/$/, ""),
+      });
     case "convert":
-      return node?.action ?? "Conversion";
+      return node?.action ?? t("settings.kind.convert");
     case "action":
-      return node ? `${node.action}${node.children ? " · avec ses options" : ""}` : "Action";
+      if (!node) return t("settings.kind.action");
+      return node.children
+        ? t("settings.parts.withOptions", { action: node.action ?? "" })
+        : (node.action ?? "");
     case "shortcut":
-      return `Raccourci · ${part.value}`;
+      return t("settings.parts.shortcut", { value: part.value });
     case "command":
-      return `Commande · ${part.value}`;
+      return t("settings.parts.command", { value: part.value });
   }
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { GemIcon } from "../GemIcon";
+import { t, useLanguage } from "../i18n";
 import {
   UPDATE_PROMPT_EVENT,
   acceptUpdate,
@@ -51,6 +52,7 @@ function previewView(): UpdateView {
 }
 
 export function UpdateApp() {
+  useLanguage();
   const [view, setView] = useState<UpdateView | null>(isTauri() ? null : previewView);
   const page = useRef<HTMLDivElement>(null);
 
@@ -129,8 +131,8 @@ export function UpdateApp() {
           <button
             type="button"
             className="update-close"
-            aria-label={busy ? "Masquer" : "Fermer"}
-            title={busy ? "Masquer (le téléchargement continue)" : "Fermer"}
+            aria-label={busy ? t("update.button.hide") : t("update.button.close")}
+            title={busy ? t("update.close.hideTitle") : t("update.button.close")}
             onClick={later}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -158,7 +160,7 @@ function PromptView({
       return (
         <>
           <Hero
-            title={`Rutile ${prompt.version} est disponible`}
+            title={t("update.available.title", { version: prompt.version })}
             subtitle={
               <span className="update-versions">
                 <span className="version-pill">{prompt.current}</span>
@@ -172,13 +174,13 @@ function PromptView({
             }
           />
           {prompt.notes && <Notes markdown={prompt.notes} />}
-          <p className="update-footnote">Rutile redémarrera une fois la mise à jour installée.</p>
+          <p className="update-footnote">{t("update.available.footnote")}</p>
           <div className="update-actions">
             <button type="button" className="update-button" onClick={onLater}>
-              Plus tard
+              {t("update.button.later")}
             </button>
             <button type="button" className="update-button" data-primary onClick={onAccept}>
-              Mettre à jour
+              {t("update.button.install")}
             </button>
           </div>
         </>
@@ -187,15 +189,16 @@ function PromptView({
       const percent = prompt.progress === null ? null : Math.round(prompt.progress * 100);
       return (
         <>
-          <Hero badge="busy" title={`Téléchargement de Rutile ${prompt.version}`} />
-          <Progress value={prompt.progress} label={percent === null ? "Téléchargement…" : `${percent} %`} />
-          <p className="update-footnote">
-            Rutile redémarrera tout seul une fois la mise à jour installée. Vous pouvez fermer cette
-            fenêtre en attendant.
-          </p>
+          <Hero badge="busy" title={t("update.downloading.title", { version: prompt.version })} />
+          <Progress value={prompt.progress} label={
+              percent === null
+                ? t("update.downloading.label")
+                : t("update.downloading.percent", { percent })
+            } />
+          <p className="update-footnote">{t("update.downloading.footnote")}</p>
           <div className="update-actions">
             <button type="button" className="update-button" onClick={onLater}>
-              Masquer
+              {t("update.button.hide")}
             </button>
           </div>
         </>
@@ -204,8 +207,8 @@ function PromptView({
     case "installing":
       return (
         <>
-          <Hero badge="busy" title={`Installation de Rutile ${prompt.version}`} />
-          <Progress value={null} label="Vérifiée · Rutile va redémarrer…" />
+          <Hero badge="busy" title={t("update.installing.title", { version: prompt.version })} />
+          <Progress value={null} label={t("update.installing.label")} />
           <div className="update-actions-spacer" />
         </>
       );
@@ -214,12 +217,12 @@ function PromptView({
         <>
           <Hero
             badge="ok"
-            title="Rutile est à jour"
-            subtitle={`Vous avez la dernière version, ${prompt.current}.`}
+            title={t("update.uptodate.title")}
+            subtitle={t("update.uptodate.subtitle", { current: prompt.current })}
           />
           <div className="update-actions">
             <button type="button" className="update-button" data-primary onClick={onLater}>
-              OK
+              {t("update.button.ok")}
             </button>
           </div>
         </>
@@ -227,7 +230,7 @@ function PromptView({
     case "failed":
       return (
         <>
-          <Hero badge="error" title="Mise à jour impossible" />
+          <Hero badge="error" title={t("update.failed.title")} />
           <p className="update-message">{prompt.message}</p>
           <div className="update-actions">
             <button
@@ -237,10 +240,10 @@ function PromptView({
                 if (isTauri()) void openReleases();
               }}
             >
-              Page des versions
+              {t("update.button.releases")}
             </button>
             <button type="button" className="update-button" data-primary onClick={onLater}>
-              Fermer
+              {t("update.button.close")}
             </button>
           </div>
         </>
@@ -310,7 +313,7 @@ function Progress({ value, label }: { value: number | null; label: string }) {
 function Notes({ markdown }: { markdown: string }) {
   const blocks = parseNotes(markdown);
   return (
-    <div className="update-notes" tabIndex={0} aria-label="Nouveautés">
+    <div className="update-notes" tabIndex={0} aria-label={t("update.notes.label")}>
       {blocks.map((block, index) => {
         switch (block.kind) {
           case "heading":

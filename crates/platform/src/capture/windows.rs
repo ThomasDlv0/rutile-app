@@ -46,7 +46,7 @@ pub fn capture(target: CaptureTarget, delay: u32, output: &Path) -> Result<bool,
     match target {
         CaptureTarget::Zone => snip(output),
         CaptureTarget::Window => {
-            let area = window_area().ok_or_else(|| failed("aucune fenêtre active"))?;
+            let area = window_area().ok_or_else(|| failed(i18n::t("capture.noActiveWindow")))?;
             save_area(area, output).map(|()| true)
         }
         CaptureTarget::Screen => {
@@ -83,7 +83,7 @@ fn snip(output: &Path) -> Result<bool, CaptureError> {
         )
     };
     if opened.0 as isize <= 32 {
-        return Err(failed("l'outil de capture de Windows ne s'ouvre pas"));
+        return Err(failed(i18n::t("capture.snipFailed")));
     }
     let start = Instant::now();
     while start.elapsed() < SNIP_TIMEOUT {
@@ -128,7 +128,7 @@ fn window_area() -> Option<RECT> {
 fn save_area(area: RECT, output: &Path) -> Result<(), CaptureError> {
     let (width, height) = (area.right - area.left, area.bottom - area.top);
     if width <= 0 || height <= 0 {
-        return Err(failed("rectangle vide"));
+        return Err(failed(i18n::t("capture.emptyRect")));
     }
     let mut pixels = vec![0u8; width as usize * height as usize * 4];
     // SAFETY : les objets GDI sont libérés plus bas ; `pixels` a la taille décrite par `info`
@@ -176,7 +176,7 @@ fn save_area(area: RECT, output: &Path) -> Result<(), CaptureError> {
         ReleaseDC(None, screen);
         copied.map_err(failed)?;
         if read == 0 {
-            return Err(failed("lecture de l'écran impossible"));
+            return Err(failed(i18n::t("capture.screenRead")));
         }
     }
     // GDI donne du BGRA, avec une transparence sans valeur
@@ -221,7 +221,7 @@ pub fn read_text(image: &Path) -> Result<String, String> {
         .or_else(|_| {
             OcrEngine::TryCreateFromLanguage(&Language::CreateLanguage(&HSTRING::from("en-US"))?)
         })
-        .map_err(|_| "Aucune langue de reconnaissance n'est installée sur Windows.".to_string())?;
+        .map_err(|_| i18n::t("capture.noOcrLanguage"))?;
     let result = engine
         .RecognizeAsync(&bitmap)
         .map_err(describe)?

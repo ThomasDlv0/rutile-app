@@ -65,19 +65,35 @@ struct Notifier {
     actions: Mutex<HashMap<i32, Action>>,
 }
 
-pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri_plugin_notification::Error> {
-    app.manage(Notifier::default());
-    let notification = app.notification();
-    notification.register_action_types(vec![
+/// Déclare les boutons des notifications, dans la langue en cours.
+fn register_actions<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), tauri_plugin_notification::Error> {
+    app.notification().register_action_types(vec![
         ActionType::builder(CONVERTED)
-            .actions(vec![Button::builder(REVEAL, "Afficher").build()])
+            .actions(vec![
+                Button::builder(REVEAL, i18n::t("notify.reveal")).build(),
+            ])
             .build(),
         ActionType::builder(SETTINGS)
             .actions(vec![
-                Button::builder(OPEN_SETTINGS, "Ouvrir les réglages").build(),
+                Button::builder(OPEN_SETTINGS, i18n::t("notify.openSettings")).build(),
             ])
             .build(),
-    ])?;
+    ])
+}
+
+/// Redéclare les boutons après un changement de langue.
+pub fn translate<R: Runtime>(app: &AppHandle<R>) {
+    if let Err(err) = register_actions(app) {
+        eprintln!("rutile : boutons de notification impossibles : {err}");
+    }
+}
+
+pub fn setup<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri_plugin_notification::Error> {
+    app.manage(Notifier::default());
+    register_actions(app)?;
+    let notification = app.notification();
 
     let handle = app.clone();
     notification.on_action(move |performed| {

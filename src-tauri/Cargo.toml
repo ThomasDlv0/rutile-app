@@ -1,6 +1,6 @@
 [package]
 name = "rutile"
-version = "1.5.0"
+version = "1.5.1"
 description = "Images, vidéos, apps et partage sur une roue radiale"
 edition = "2024"
 rust-version = "1.88"
@@ -22,6 +22,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rutile-converter = { path = "../crates/converter" }
+rutile-i18n = { path = "../crates/i18n" }
 rutile-platform = { path = "../crates/platform" }
 rutile-shake-detector = { path = "../crates/shake_detector" }
 serde = { version = "1.0.229", features = ["derive"] }

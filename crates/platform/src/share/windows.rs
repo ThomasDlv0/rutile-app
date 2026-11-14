@@ -63,7 +63,7 @@ pub fn copy_files(files: &[PathBuf]) -> Result<(), String> {
         let pointer = GlobalLock(memory).cast::<u8>();
         if pointer.is_null() {
             let _ = GlobalFree(Some(memory));
-            return Err("mémoire indisponible pour le presse-papiers".into());
+            return Err(i18n::t("share.clipboardMemory"));
         }
         let drop_files = DROPFILES {
             pFiles: header as u32,

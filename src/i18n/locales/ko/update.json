@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Rutile {version} 업데이트를 사용할 수 있어요",
+  "update.available.footnote": "업데이트가 설치되면 Rutile이 다시 시작돼요.",
+  "update.downloading.title": "Rutile {version} 다운로드 중",
+  "update.downloading.label": "다운로드 중…",
+  "update.downloading.percent": "{percent}%",
+  "update.downloading.footnote": "업데이트가 설치되면 Rutile이 자동으로 다시 시작돼요. 기다리는 동안 이 윈도우를 닫아도 돼요.",
+  "update.installing.title": "Rutile {version} 설치 중",
+  "update.installing.label": "확인 완료 · Rutile이 다시 시작돼요…",
+  "update.uptodate.title": "Rutile이 최신 버전이에요",
+  "update.uptodate.subtitle": "최신 버전인 {current}을(를) 사용 중이에요.",
+  "update.failed.title": "업데이트할 수 없음",
+  "update.button.later": "나중에",
+  "update.button.install": "업데이트",
+  "update.button.hide": "숨기기",
+  "update.button.ok": "확인",
+  "update.button.close": "닫기",
+  "update.button.releases": "버전 페이지",
+  "update.close.hideTitle": "숨기기(다운로드는 계속돼요)",
+  "update.notes.label": "새로운 기능"
+}

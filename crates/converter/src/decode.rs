@@ -78,7 +78,7 @@ fn decode_avif(bytes: &[u8]) -> Result<DynamicImage, ConvertError> {
                 .map(DynamicImage::ImageLuma16)
         }
     };
-    image.ok_or_else(|| ConvertError::Decode("dimensions AVIF incohérentes".into()))
+    image.ok_or_else(|| ConvertError::Decode(i18n::t("errors.avifSize")))
 }
 
 /// Rendu d'un SVG avec ce qu'il contient seulement. Une image désignée par un chemin ou une

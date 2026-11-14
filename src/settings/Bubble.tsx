@@ -49,14 +49,17 @@ export function BubbleGroup({
     };
     place(placed.current);
     placed.current = true;
-    // Le groupe change de taille (fenêtre, police chargée, nom modifié) : la bulle suit sans
-    // glisser. Le premier appel de l'observateur ne fait que constater la taille actuelle
+    // Le groupe ou un de ses éléments change de taille (fenêtre, police chargée, nom modifié) :
+    // la bulle suit sans glisser. Le premier appel de l'observateur ne fait que constater la
+    // taille actuelle
     let first = true;
     const observer = new ResizeObserver(() => {
       if (first) first = false;
       else place(false);
     });
+    // Le groupe, et chacun de ses éléments : un onglet qui change de largeur déplace la bulle
     observer.observe(element);
+    for (const child of element.children) observer.observe(child);
     return () => observer.disconnect();
   }, [selected]);
 

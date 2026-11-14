@@ -42,6 +42,6 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
     if result.0 as isize > 32 {
         Ok(())
     } else {
-        Err(format!("Windows n'a pas pu ouvrir « {} »", app))
+        Err(i18n::tf("apps.windowsOpenFailed", &[("app", &app)]))
     }
 }

@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Доступна Rutile {version}",
+  "update.available.footnote": "После установки обновления Rutile перезапустится.",
+  "update.downloading.title": "Загрузка Rutile {version}",
+  "update.downloading.label": "Загрузка…",
+  "update.downloading.percent": "{percent} %",
+  "update.downloading.footnote": "После установки обновления Rutile перезапустится сам. Пока можно закрыть это окно.",
+  "update.installing.title": "Установка Rutile {version}",
+  "update.installing.label": "Проверено · Rutile перезапустится…",
+  "update.uptodate.title": "Rutile обновлена",
+  "update.uptodate.subtitle": "У вас последняя версия, {current}.",
+  "update.failed.title": "Не удалось обновить",
+  "update.button.later": "Позже",
+  "update.button.install": "Обновить",
+  "update.button.hide": "Скрыть",
+  "update.button.ok": "OK",
+  "update.button.close": "Закрыть",
+  "update.button.releases": "Страница версий",
+  "update.close.hideTitle": "Скрыть (загрузка продолжится)",
+  "update.notes.label": "Что нового"
+}

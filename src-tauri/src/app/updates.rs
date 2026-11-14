@@ -134,11 +134,10 @@ fn interpret(checked: Result<Option<Update>, Error>) -> Result<Option<Update>, S
         // panne de réseau donne une autre erreur.
         Err(Error::ReleaseNotFound) => Ok(None),
         // Aucune mise à jour publiée pour ce type de paquet
-        Err(Error::TargetNotFound(_) | Error::TargetsNotFound(_)) => Err(format!(
-            "Cette installation ne se met pas à jour toute seule : téléchargez la nouvelle \
-             version sur {RELEASES_URL}"
-        )),
-        Err(err) => Err(format!("Recherche impossible ({err}).")),
+        Err(Error::TargetNotFound(_) | Error::TargetsNotFound(_)) => {
+            Err(i18n::tf("update.manualInstall", &[("url", &RELEASES_URL)]))
+        }
+        Err(err) => Err(i18n::tf("update.searchFailed", &[("reason", &err)])),
     }
 }
 
@@ -211,7 +210,7 @@ fn present<R: Runtime>(app: &AppHandle<R>, prompt: Prompt) {
     // Cachée tant que la page n'a pas mesuré son contenu : elle s'affiche à la bonne taille
     let builder =
         WebviewWindowBuilder::new(app, UPDATE_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Mise à jour de Rutile")
+            .title(i18n::t("update.windowTitle"))
             .inner_size(WINDOW_WIDTH, DEFAULT_HEIGHT)
             .resizable(false)
             .maximizable(false)
@@ -309,7 +308,7 @@ async fn install<R: Runtime>(app: &AppHandle<R>, update: Update) -> Result<(), S
         )
         .await;
     if let Err(err) = result {
-        let message = format!("Installation impossible ({err}).");
+        let message = i18n::tf("update.installFailed", &[("reason", &err)]);
         set_prompt(
             app,
             Prompt::Failed {
@@ -383,7 +382,9 @@ pub async fn check_update<R: Runtime>(app: AppHandle<R>) -> Result<UpdateStatus,
 /// Installe la dernière version, depuis les réglages.
 #[tauri::command]
 pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    let update = find(&app).await?.ok_or("Rutile est déjà à jour.")?;
+    let update = find(&app)
+        .await?
+        .ok_or_else(|| i18n::t("update.alreadyCurrent"))?;
     install(&app, update).await
 }
 

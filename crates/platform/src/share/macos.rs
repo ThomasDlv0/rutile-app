@@ -42,7 +42,7 @@ fn file_urls(files: &[PathBuf]) -> Result<Vec<Retained<NSURL>>, String> {
         .iter()
         .map(|file| {
             NSURL::from_file_path(file)
-                .ok_or_else(|| format!("Chemin illisible : {}", file.display()))
+                .ok_or_else(|| i18n::tf("share.unreadablePath", &[("path", &file.display())]))
         })
         .collect()
 }
@@ -93,7 +93,7 @@ pub fn services() -> Vec<Service> {
 }
 
 pub fn share(id: &str, files: &[PathBuf]) -> Result<(), String> {
-    let mtm = MainThreadMarker::new().ok_or("Le partage doit partir du thread principal.")?;
+    let mtm = MainThreadMarker::new().ok_or_else(|| i18n::t("share.mainThread"))?;
     let urls = file_urls(files)?;
     let service = NSSharingService::sharingServiceNamed(&NSString::from_str(id))
         .or_else(|| {
@@ -101,11 +101,14 @@ pub fn share(id: &str, files: &[PathBuf]) -> Result<(), String> {
                 .iter()
                 .find(|service| service_id(service) == id)
         })
-        .ok_or("Ce service de partage n'est plus disponible.")?;
+        .ok_or_else(|| i18n::t("share.serviceGone"))?;
     let items = items(&urls);
     // SAFETY : tableau d'URL de fichiers, comme l'attend AppKit
     if !unsafe { service.canPerformWithItems(Some(&items)) } {
-        return Err(format!("{} n'accepte pas ces fichiers.", service.title()));
+        return Err(i18n::tf(
+            "share.serviceRefuses",
+            &[("service", &service.title())],
+        ));
     }
     // Rutile passe devant : sinon la fenêtre d'AirDrop s'ouvre derrière l'app active
     #[allow(deprecated)]
@@ -169,10 +172,10 @@ thread_local! {
 /// `view`. Le service choisi (Messages, AirDrop, une extension comme WhatsApp…) ouvre ensuite
 /// sa fenêtre, où l'on choisit le destinataire.
 pub fn show_picker(view: *mut c_void, files: &[PathBuf], done: PickerDone) -> Result<(), String> {
-    let mtm = MainThreadMarker::new().ok_or("Le partage doit partir du thread principal.")?;
+    let mtm = MainThreadMarker::new().ok_or_else(|| i18n::t("share.mainThread"))?;
     // SAFETY : pointeur de NSView fourni par la fenêtre, utilisé sur le thread principal
-    let view =
-        unsafe { view.cast::<NSView>().as_ref() }.ok_or("Fenêtre de la roue introuvable.")?;
+    let view = unsafe { view.cast::<NSView>().as_ref() }
+        .ok_or_else(|| i18n::t("share.wheelWindowMissing"))?;
     let urls = file_urls(files)?;
     // SAFETY : tableau d'URL de fichiers, comme l'attend AppKit
     let picker = unsafe {
@@ -211,7 +214,7 @@ pub fn copy_files(files: &[PathBuf]) -> Result<(), String> {
     if pasteboard.writeObjects(&NSArray::from_slice(&objects)) {
         Ok(())
     } else {
-        Err("Le presse-papiers a refusé les fichiers.".into())
+        Err(i18n::t("share.clipboardRefused"))
     }
 }
 

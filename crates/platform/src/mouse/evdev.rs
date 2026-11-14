@@ -44,7 +44,7 @@ pub fn spawn(
         return Err(if has_devices {
             WatchError::NeedsInputGroup
         } else {
-            WatchError::Unsupported("aucune souris trouvée".into())
+            WatchError::Unsupported(i18n::t("mouse.none"))
         });
     }
 

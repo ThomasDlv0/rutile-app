@@ -68,6 +68,7 @@ import {
   shareItems,
 } from "./formats";
 import { WINDOW_SIZE, isInsideHub } from "./geometry";
+import { t, useLanguage } from "../i18n";
 import {
   type HubText,
   type Point,
@@ -100,26 +101,63 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Indication du centre quand la roue attend un fichier secoué, selon la roue. */
 function dropHint(mode: Mode): HubText | null {
   if (mode === "apps") return null;
-  const target = isCustomMode(mode)
-    ? "une part"
+  const label = isCustomMode(mode)
+    ? t("wheel.hub.dropOnPart")
     : mode === "share"
-      ? "un partage"
+      ? t("wheel.hub.dropOnShare")
       : mode === "actions"
-        ? "une action"
-        : "un format";
-  return { label: `Déposez sur ${target}`, tone: "muted" };
+        ? t("wheel.hub.dropOnAction")
+        : t("wheel.hub.dropOnFormat");
+  return { label, tone: "muted" };
 }
 
-const ACTION_LABELS = { working: "En cours…", done: "Terminé" };
-const CONVERT_LABELS = { working: "Conversion…", done: "Converti" };
-
-const OPEN_LABELS = { working: "Ouverture…", done: "Ouvert" };
+/** Textes pendant et après une action : des accesseurs, lus dans la langue en cours. */
+const ACTION_LABELS = {
+  get working() {
+    return t("wheel.labels.action.working");
+  },
+  get done() {
+    return t("wheel.labels.action.done");
+  },
+};
+const CONVERT_LABELS = {
+  get working() {
+    return t("wheel.labels.convert.working");
+  },
+  get done() {
+    return t("wheel.labels.convert.done");
+  },
+};
+const OPEN_LABELS = {
+  get working() {
+    return t("wheel.labels.open.working");
+  },
+  get done() {
+    return t("wheel.labels.open.done");
+  },
+};
+const COPY_LABELS = {
+  get working() {
+    return t("wheel.labels.copy.working");
+  },
+  get done() {
+    return t("wheel.labels.copy.done");
+  },
+};
+const SYSTEM_SHARE_LABELS = {
+  get working() {
+    return t("wheel.labels.system.working");
+  },
+  get done() {
+    return t("wheel.labels.system.done");
+  },
+};
 /** Un service ouvre sa fenêtre (choix de l'appareil, du destinataire) ; le reste copie. */
 const SHARE_LABELS: Record<ShareTarget["kind"], Work["labels"]> = {
   service: OPEN_LABELS,
-  folder: { working: "Copie…", done: "Copié" },
-  app: { working: "Copie…", done: "Copié" },
-  system: { working: "Choisissez…", done: "Partagé" },
+  folder: COPY_LABELS,
+  app: COPY_LABELS,
+  system: SYSTEM_SHARE_LABELS,
 };
 
 // Aperçu dans un navigateur : toutes les roues, une roue personnalisée qui mélange tout, et
@@ -230,6 +268,8 @@ function useWindowFit(): number {
 
 export function WheelApp() {
   const fit = useWindowFit();
+  // Les parts du catalogue lisent leurs textes en les construisant : elles suivent la langue
+  const lang = useLanguage();
   const [phase, setPhase] = useState<Phase>("closed");
   const [openCount, setOpenCount] = useState(0);
   // Roues actives dans l'ordre du clic au centre, et apps de la roue des apps
@@ -262,12 +302,12 @@ export function WheelApp() {
         shown.length > 0 ? fileTree(config, shown) : actionTree(config),
         config.colors,
       ),
-    [config, shown],
+    [config, shown, lang],
   );
   const customAt = customIndex(mode, config.custom);
   const customNodes = useMemo(
     () => colorizeActions(customTree(config, customAt), config.colors),
-    [config, customAt],
+    [config, customAt, lang],
   );
   const tree = customAt >= 0 ? customNodes : actionsTree;
   const treeKind = shown.length > 0 ? fileKind(shown) : null;
@@ -319,7 +359,7 @@ export function WheelApp() {
   const dwelling = dwellTarget !== null && work === null && inHub;
   const missingHint: HubText | null =
     videoMissing && video
-      ? { label: "FFmpeg introuvable", tone: "muted", hint: video.installHint }
+      ? { label: t("wheel.hub.ffmpegMissing"), tone: "muted", hint: video.installHint }
       : null;
   const hub =
     hubFor(
@@ -335,7 +375,7 @@ export function WheelApp() {
       customName(next),
     ) ??
     missingHint ??
-    (parent ? { label: parent.label, tone: "muted", hint: "Retour au centre" } : null) ??
+    (parent ? { label: parent.label, tone: "muted", hint: t("wheel.hub.backToCenter") } : null) ??
     (openMode === "drop" ? dropHint(mode) : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références

@@ -50,7 +50,7 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     {
         let _ = (app, files);
-        Err("système non pris en charge".into())
+        Err(i18n::t("errors.unsupportedSystem"))
     }
 }
 

@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { GemIcon } from "../GemIcon";
+import { LANGUAGES, type MessageKey, language, languageName, setLanguage, t, tn, useLanguage } from "../i18n";
 import { WheelsIcon } from "../WheelsIcon";
 import {
   SETTINGS_REFRESH_EVENT,
@@ -95,51 +97,51 @@ import { moved, useSortable } from "./useSortable";
 import { WheelPreview } from "./WheelPreview";
 import "./settings.css";
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "general", label: "Général" },
-  { id: "wheels", label: "Roues" },
-  { id: "conversion", label: "Conversion" },
-  { id: "colors", label: "Couleurs" },
-  { id: "actions", label: "Actions" },
-  { id: "apps", label: "Apps" },
-  { id: "share", label: "Partage" },
-  { id: "custom", label: "Mes roues" },
+const TABS: { id: SettingsTab; label: MessageKey }[] = [
+  { id: "general", label: "settings.tabs.general" },
+  { id: "wheels", label: "settings.tabs.wheels" },
+  { id: "conversion", label: "settings.tabs.conversion" },
+  { id: "colors", label: "settings.tabs.colors" },
+  { id: "actions", label: "settings.tabs.actions" },
+  { id: "apps", label: "settings.tabs.apps" },
+  { id: "share", label: "settings.tabs.share" },
+  { id: "custom", label: "settings.tabs.custom" },
 ];
 
 /** Dans l'onglet Actions : ce qu'ouvre un fichier selon son type. */
 const FILE_WHEELS_ANCHOR = "selon-le-fichier";
 
-const MODE_LABELS: Record<BuiltinMode, string> = {
-  image: "Convertisseur d'images",
-  video: "Convertisseur de vidéos",
-  apps: "Applications",
-  share: "Partage",
-  actions: "Actions",
+const MODE_LABELS: Record<BuiltinMode, MessageKey> = {
+  image: "settings.mode.image",
+  video: "settings.mode.video",
+  apps: "settings.mode.apps",
+  share: "settings.mode.share",
+  actions: "settings.mode.actions",
 };
 
-const DIRECTIONS = [
-  "En haut",
-  "En haut à droite",
-  "À droite",
-  "En bas à droite",
-  "En bas",
-  "En bas à gauche",
-  "À gauche",
-  "En haut à gauche",
+const DIRECTIONS: MessageKey[] = [
+  "settings.direction.top",
+  "settings.direction.topRight",
+  "settings.direction.right",
+  "settings.direction.bottomRight",
+  "settings.direction.bottom",
+  "settings.direction.bottomLeft",
+  "settings.direction.left",
+  "settings.direction.topLeft",
 ];
 
 /** Où se trouve la part `index` d'une roue de `count` parts, dans le sens horaire depuis le
  * haut. */
 function slotPosition(index: number, count: number): string {
-  return DIRECTIONS[Math.round((index * 8) / count) % 8];
+  return t(DIRECTIONS[Math.round((index * 8) / count) % 8]);
 }
 
 /** Ce que fait une destination, sous son nom. */
-const SHARE_KINDS: Record<ShareTarget["kind"], string> = {
-  service: "Partage du système",
-  folder: "Copie dans le dossier",
-  app: "Copie et ouvre l'app",
-  system: "Menu de partage du système",
+const SHARE_KINDS: Record<ShareTarget["kind"], MessageKey> = {
+  service: "settings.share.kind.service",
+  folder: "settings.share.kind.folder",
+  app: "settings.share.kind.app",
+  system: "settings.share.kind.system",
 };
 
 // Aperçu dans un navigateur, sans Tauri
@@ -216,6 +218,7 @@ const PREVIEW: SettingsView = {
     ],
     share: PREVIEW_SHARE.map((view) => view && targetOf(view)),
     autoUpdate: true,
+    language: null,
   },
   shortcutLabel: "⌘⇧Espace",
   defaultShortcut: "CommandOrControl+Shift+Space",
@@ -226,7 +229,7 @@ const PREVIEW: SettingsView = {
   dockAccess: false,
   nativeGlass: true,
   platform: "macos",
-  version: "1.5.0",
+  version: "1.5.1",
   apps: [
     { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
     { path: "https://youtube.com/", name: "YouTube", kind: "url", icon: null },
@@ -238,13 +241,15 @@ const PREVIEW: SettingsView = {
   share: PREVIEW_SHARE,
   custom: [],
   tab: null,
+  language: "fr",
+  systemLanguage: "fr",
 };
 
-const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, string> = {
-  granted: "Autorisée",
-  denied: "Refusée",
-  notAsked: "Demandée à la première utilisation",
-  unknown: "Inconnue",
+const PERMISSION_TEXT: Record<NonNullable<SettingsView["finderPermission"]>, MessageKey> = {
+  granted: "settings.permission.granted",
+  denied: "settings.permission.denied",
+  notAsked: "settings.permission.notAsked",
+  unknown: "settings.permission.unknown",
 };
 
 /** Destination à enregistrer, sans ce qui ne sert qu'à l'affichage. */
@@ -262,6 +267,8 @@ function targetOf(view: ShareView): ShareTarget {
 }
 
 export function SettingsApp() {
+  // Un nouveau rendu à chaque changement de langue, pour toute la fenêtre
+  useLanguage();
   const [view, setView] = useState<SettingsView | null>(isTauri() ? null : PREVIEW);
   const [tab, setTab] = useState<SettingsTab>("general");
   // Partie de l'onglet à montrer, quand on y arrive depuis un autre
@@ -303,6 +310,24 @@ export function SettingsApp() {
     shownTab.current = tab;
   }
 
+  // Un nom d'onglet trop long pour cette langue ou cette police : toute la barre se resserre,
+  // plutôt que de couper les noms
+  const loaded = view !== null;
+  useLayoutEffect(() => {
+    const nav = document.querySelector<HTMLElement>(".settings-tabs");
+    if (!nav) return;
+    const fit = () => {
+      delete nav.dataset.compact;
+      const cut = [...nav.querySelectorAll<HTMLElement>(".settings-tab span")].some(
+        (label) => label.scrollWidth > label.clientWidth + 0.5,
+      );
+      if (cut) nav.dataset.compact = "true";
+    };
+    fit();
+    // Une police chargée après coup peut changer la largeur des noms
+    void document.fonts?.ready.then(fit);
+  }, [loaded]);
+
   const save = useCallback(async (section: SectionId, settings: Settings) => {
     setErrors((current) => ({ ...current, [section]: undefined }));
     if (!isTauri()) {
@@ -340,11 +365,11 @@ export function SettingsApp() {
         <GemIcon size={40} />
         <div>
           <h1>Rutile</h1>
-          <p>Images, vidéos, apps et partage sur une roue radiale · version {view.version}</p>
+          <p>{t("settings.header.tagline", { version: view.version })}</p>
         </div>
       </header>
 
-      <BubbleGroup as="nav" className="settings-tabs" role="tablist" label="Réglages" selected={tab}>
+      <BubbleGroup as="nav" className="settings-tabs" role="tablist" label={t("settings.tabs.aria")} selected={tab}>
         {TABS.map(({ id, label }) => (
           <button
             key={id}
@@ -355,7 +380,7 @@ export function SettingsApp() {
             onClick={() => goTo(id)}
           >
             <TabIcon tab={id} />
-            <span>{label}</span>
+            <span>{t(label)}</span>
           </button>
         ))}
       </BubbleGroup>
@@ -365,7 +390,7 @@ export function SettingsApp() {
         className="settings-panel"
         data-direction={direction.current}
         role="tabpanel"
-        aria-label={TABS.find(({ id }) => id === tab)?.label}
+        aria-label={t(TABS.find(({ id }) => id === tab)?.label ?? "settings.tabs.general")}
       >
         {tab === "general" && (
           <GeneralTab view={view} errors={errors} setErrors={setErrors} setView={setView} change={change} />
@@ -461,6 +486,21 @@ function TabIcon({ tab }: { tab: SettingsTab }) {
   );
 }
 
+/** Marque la place d'un fragment de code dans un texte traduit. */
+const CODE_MARK = "\u0001";
+
+/** Le texte traduit, `code` en police de code à la place de la marque. */
+function withCode(text: string, code: string): ReactNode {
+  const [before, after = ""] = text.split(CODE_MARK);
+  return (
+    <>
+      {before}
+      <code>{code}</code>
+      {after}
+    </>
+  );
+}
+
 function GeneralTab({
   view,
   errors,
@@ -489,23 +529,25 @@ function GeneralTab({
 
   return (
     <>
+      <LanguageSection view={view} error={errors.language} change={change} />
+
       <Section
-        title="Ouvrir la roue"
+        title={t("settings.general.open.title")}
         error={errors.shortcut}
-        note="Dans la roue, ← et → choisissent une part, Entrée la lance ; les chiffres 1 à 9 (0 pour la dixième) la lancent directement. ↑ et ↓ changent de roue, Échap la ferme."
+        note={t("settings.general.open.note")}
       >
         {view.shortcutsSupported ? (
           <Row
-            label="Raccourci clavier"
+            label={t("settings.general.shortcut.label")}
             hint={
               isMac
-                ? "Si une autre app utilise déjà ce raccourci, macOS la sert en premier."
-                : "Un nouvel appui referme la roue."
+                ? t("settings.general.shortcut.hintMac")
+                : t("settings.general.shortcut.hintOther")
             }
           >
             <ShortcutRecorder
               label={view.shortcutLabel}
-              modifiersHint={isMac ? "Ajoutez ⌘, ⌃, ⌥ ou ⇧." : "Ajoutez Ctrl, Alt ou Maj."}
+              modifiersHint={t(isMac ? "settings.general.shortcut.modifiersMac" : "settings.general.shortcut.modifiersOther")}
               onRecord={(shortcut) => change("shortcut", { shortcut })}
             />
             {settings.shortcut !== view.defaultShortcut && (
@@ -514,52 +556,48 @@ function GeneralTab({
                 className="link-button"
                 onClick={() => change("shortcut", { shortcut: view.defaultShortcut })}
               >
-                Par défaut
+                {t("settings.general.shortcut.default")}
               </button>
             )}
           </Row>
         ) : (
-          <p className="section-note">
-            Sous Wayland, les apps ne peuvent pas écouter le clavier. Liez la commande{" "}
-            <code>rutile --open</code> à un raccourci du système : Paramètres → Clavier →
-            Raccourcis personnalisés.
-          </p>
+          <p className="section-note">{withCode(t("settings.general.shortcut.wayland", { command: CODE_MARK }), "rutile --open")}</p>
         )}
       </Section>
 
-      <Section title="Secouer un fichier" error={errors.shake}>
+      <Section title={t("settings.general.shake.title")} error={errors.shake}>
         <Row
-          label="Ouvrir la roue en secouant un fichier glissé"
+          label={t("settings.general.shake.label")}
           hint={
             view.wayland
-              ? "Demande d'être dans le groupe « input », qui donne aussi accès au clavier."
-              : "Quelques allers-retours rapides pendant le glisser."
+              ? t("settings.general.shake.hintWayland")
+              : t("settings.general.shake.hint")
           }
         >
           <Toggle
             checked={settings.shakeEnabled}
-            label="Secouage"
+            label={t("settings.general.shake.toggle")}
             onChange={(shakeEnabled) => change("shake", { shakeEnabled })}
           />
         </Row>
-        <Row label="Sensibilité">
+        <Row label={t("settings.general.shake.sensitivity")}>
           <Slider
-            label="Sensibilité du secouage"
+            label={t("settings.general.shake.sensitivityAria")}
             value={settings.shakeSensitivity}
             min={1}
             max={10}
             disabled={!settings.shakeEnabled}
-            ends={["Franc", "Léger"]}
+            ends={[t("settings.general.shake.firm"), t("settings.general.shake.light")]}
             onCommit={(shakeSensitivity) => change("shake", { shakeSensitivity })}
           />
         </Row>
       </Section>
 
-      <Section title="Démarrage" error={errors.startup}>
-        <Row label="Lancer Rutile à l'ouverture de session">
+      <Section title={t("settings.general.startup.title")} error={errors.startup}>
+        <Row label={t("settings.general.startup.label")}>
           <Toggle
             checked={view.launchAtLogin}
-            label="Lancement au démarrage"
+            label={t("settings.general.startup.toggle")}
             onChange={(enabled) => void toggleLaunchAtLogin(enabled)}
           />
         </Row>
@@ -568,13 +606,13 @@ function GeneralTab({
       <UpdatesSection view={view} error={errors.updates} change={change} />
 
       {view.finderPermission && (
-        <Section title="Autorisations">
+        <Section title={t("settings.general.permissions.title")}>
           <Row
-            label="Lire la sélection du Finder"
-            hint="Pour convertir ou partager le fichier sélectionné quand la roue s'ouvre."
+            label={t("settings.general.permissions.finder")}
+            hint={t("settings.general.permissions.finderHint")}
           >
             <span className="status" data-state={view.finderPermission}>
-              {PERMISSION_TEXT[view.finderPermission]}
+              {t(PERMISSION_TEXT[view.finderPermission])}
             </span>
             {view.finderPermission === "denied" && (
               <button
@@ -582,13 +620,53 @@ function GeneralTab({
                 className="link-button"
                 onClick={() => void openPermissionSettings("automation")}
               >
-                Ouvrir les réglages
+                {t("settings.common.openSettings")}
               </button>
             )}
           </Row>
         </Section>
       )}
     </>
+  );
+}
+
+/** Langue de Rutile : celle du système par défaut, ou une autre au choix. Chaque langue est
+ * nommée dans la sienne, pour qu'on retrouve la sienne même sans comprendre la langue en cours. */
+function LanguageSection({
+  view,
+  error,
+  change,
+}: {
+  view: SettingsView;
+  error?: string;
+  change: Change;
+}) {
+  const choice = view.settings.language;
+  return (
+    <Section title={t("settings.language.title")} error={error}>
+      <Row label={t("settings.language.label")} hint={t("settings.language.hint")}>
+        <select
+          className="text-input language-select"
+          aria-label={t("settings.language.label")}
+          value={choice ?? "system"}
+          onChange={(event) => {
+            const next = event.target.value === "system" ? null : event.target.value;
+            change("language", { language: next });
+            // Dans un navigateur, Rust n'est pas là pour annoncer la nouvelle langue
+            if (!isTauri()) setLanguage(next ?? view.systemLanguage);
+          }}
+        >
+          <option value="system">
+            {t("settings.language.system", { name: languageName(view.systemLanguage) })}
+          </option>
+          {LANGUAGES.map(({ code, name }) => (
+            <option key={code} value={code} lang={code}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </Row>
+    </Section>
   );
 }
 
@@ -606,12 +684,12 @@ function wheelKeys(settings: Settings): Mode[] {
 }
 
 /** Ce que fait chaque réglage « S'ouvre sur », en quelques mots. */
-const FIRST_WHEEL_NAMES: Record<FirstWheel, string> = {
-  convert: "convertisseur",
-  actions: "roue Actions",
-  share: "partage",
-  apps: "apps",
-  usual: "première roue",
+const FIRST_WHEEL_NAMES: Record<FirstWheel, MessageKey> = {
+  convert: "settings.wheels.firstName.convert",
+  actions: "settings.wheels.firstName.actions",
+  share: "settings.wheels.firstName.share",
+  apps: "settings.wheels.firstName.apps",
+  usual: "settings.wheels.firstName.usual",
 };
 
 /** « Images, Vidéos : convertisseur · PDF, Archives, Autres : roue Actions ». */
@@ -622,7 +700,12 @@ function fileWheelsSummary(fileWheels: FileWheels): string {
     groups.set(first, [...(groups.get(first) ?? []), FILE_KIND_LABELS[kind]]);
   }
   return [...groups]
-    .map(([first, kinds]) => `${kinds.join(", ")} : ${FIRST_WHEEL_NAMES[first]}`)
+    .map(([first, kinds]) =>
+      t("settings.wheels.fileSummary.item", {
+        kinds: kinds.join(", "),
+        wheel: t(FIRST_WHEEL_NAMES[first]),
+      }),
+    )
     .join(" · ");
 }
 
@@ -657,7 +740,7 @@ function WheelsTab({
     if (!isCustomMode(key)) {
       const enabled = settings.modes.some((entry) => entry.id === key && entry.enabled);
       const toggle = (next: boolean) => change("wheels", { modes: withMode(settings, key, next) });
-      return [{ key, label: MODE_LABELS[key], hint: undefined, custom: false, enabled, always: enabled, toggle }];
+      return [{ key, label: t(MODE_LABELS[key]), hint: undefined, custom: false, enabled, always: enabled, toggle }];
     }
     const wheel = settings.customWheels.find((known) => customMode(known.id) === key);
     if (!wheel) return [];
@@ -671,11 +754,11 @@ function WheelsTab({
     return [
       {
         key,
-        label: wheel.name || "Roue sans nom",
+        label: wheel.name || t("settings.common.unnamed"),
         hint:
           count === 0
-            ? "Roue perso · vide, elle n'apparaît pas encore"
-            : `Roue perso · ${count} part${count > 1 ? "s" : ""}`,
+            ? t("settings.wheels.customEmpty")
+            : tn("settings.wheels.customParts", count),
         custom: true,
         enabled: wheel.enabled,
         // Affichée quels que soient les fichiers : elle peut rester la seule roue
@@ -689,10 +772,10 @@ function WheelsTab({
   return (
     <>
       <Section
-        title="Roues"
+        title={t("settings.wheels.title")}
         error={error}
         sorting={sortable.sorting}
-        note="Un clic au centre (ou ↓ au clavier) passe à la roue suivante, dans cet ordre. Glissez une ligne par sa poignée pour la déplacer."
+        note={t("settings.wheels.note")}
       >
         {rows.map((row, index) => (
           <Row
@@ -709,7 +792,7 @@ function WheelsTab({
                 className="link-button"
                 onClick={() => goTo("custom", row.key.slice("custom:".length))}
               >
-                Modifier
+                {t("settings.wheels.edit")}
               </button>
             )}
             <Toggle
@@ -721,49 +804,53 @@ function WheelsTab({
             />
           </Row>
         ))}
-        <AddRow label="Créer ma propre roue…" onClick={() => goTo("custom")} />
+        <AddRow label={t("settings.wheels.create")} onClick={() => goTo("custom")} />
       </Section>
 
-      <Section title="Comportement">
+      <Section title={t("settings.wheels.behavior")}>
         <Row
-          label="Temps de maintien"
-          hint="Au centre pendant un glisser pour basculer entre conversion et partage, ou sur une part de la roue Actions pour ouvrir ses options."
+          label={t("settings.wheels.dwell.label")}
+          hint={t("settings.wheels.dwell.hint")}
         >
           <Slider
-            label="Temps de maintien"
+            label={t("settings.wheels.dwell.label")}
             value={settings.dwellMs}
             min={400}
             max={2500}
             step={100}
             showValue
-            formatValue={(ms) => `${(ms / 1000).toLocaleString("fr-FR", { minimumFractionDigits: 1 })} s`}
+            formatValue={(ms) =>
+              t("settings.wheels.dwell.value", {
+                seconds: (ms / 1000).toLocaleString(language(), { minimumFractionDigits: 1 }),
+              })
+            }
             onCommit={(dwellMs) => change("wheels", { dwellMs })}
           />
         </Row>
         <Row
-          label="Rouvrir sur la dernière roue utilisée"
+          label={t("settings.wheels.remember.label")}
           hint={
             settings.rememberWheel
-              ? "La roue revient là où vous étiez."
-              : "Sinon, la roue s'ouvre sur la première de la liste."
+              ? t("settings.wheels.remember.on")
+              : t("settings.wheels.remember.off")
           }
         >
           <Toggle
             checked={settings.rememberWheel}
-            label="Rouvrir sur la dernière roue"
+            label={t("settings.wheels.remember.toggle")}
             onChange={(rememberWheel) => change("wheels", { rememberWheel })}
           />
         </Row>
         <Row
-          label="Roue ouverte par un fichier"
-          hint={`${fileWheelsSummary(settings.fileWheels)}.`}
+          label={t("settings.wheels.fileWheel.label")}
+          hint={t("settings.wheels.fileWheel.hint", { summary: fileWheelsSummary(settings.fileWheels) })}
         >
           <button
             type="button"
             className="link-button"
             onClick={() => goTo("actions", FILE_WHEELS_ANCHOR)}
           >
-            Régler…
+            {t("settings.wheels.fileWheel.adjust")}
           </button>
         </Row>
       </Section>
@@ -799,7 +886,7 @@ function WheelSwitch({
     <Row
       label={label}
       icon={<ModeIcon mode={mode} size={22} />}
-      hint={enabled ? "Ordre et autres roues dans l'onglet Roues." : "Désactivée : elle n'apparaît pas au clic sur le centre."}
+      hint={enabled ? t("settings.wheels.switch.on") : t("settings.wheels.switch.off")}
     >
       <Toggle
         checked={enabled}
@@ -830,9 +917,9 @@ function ConversionTab({
   return (
     <>
       <Section
-        title="Qualité des formats avec perte"
+        title={t("settings.conversion.quality.title")}
         error={error}
-        note="Plus la qualité est haute, plus le fichier est lourd."
+        note={t("settings.conversion.quality.note")}
       >
         {(
           [
@@ -843,7 +930,7 @@ function ConversionTab({
         ).map(([label, key]) => (
           <Row key={key} label={label}>
             <Slider
-              label={`Qualité ${label}`}
+              label={t("settings.conversion.quality.aria", { format: label })}
               value={settings[key]}
               min={1}
               max={100}
@@ -854,29 +941,24 @@ function ConversionTab({
         ))}
       </Section>
 
-      <Section title="Vectorisation">
-        <p className="section-note">
-          Seule la sortie SVG est vectorisée : l'image est retracée en formes aux couleurs unies,
-          nette à toutes les tailles. C'est idéal pour un logo ou une icône, approximatif pour une
-          photo. PNG, JPEG, WebP, AVIF et ICO gardent les pixels, et un SVG converti vers eux est
-          d'abord rendu en pixels.
-        </p>
+      <Section title={t("settings.conversion.vector.title")}>
+        <p className="section-note">{t("settings.conversion.vector.note")}</p>
       </Section>
 
-      <Section title="Vidéos">
+      <Section title={t("settings.conversion.videos.title")}>
         <Row
           label="FFmpeg"
           hint={
             video === null
-              ? "Recherche…"
+              ? t("settings.conversion.videos.searching")
               : video.available
-                ? "Convertit les vidéos de la roue Vidéo."
-                : `Pour l'installer : ${video.installHint}`
+                ? t("settings.conversion.videos.available")
+                : t("settings.conversion.videos.install", { command: video.installHint })
           }
         >
           {video && (
             <span className="status" data-state={video.available ? "granted" : "denied"}>
-              {video.available ? "Installé" : "Introuvable"}
+              {video.available ? t("settings.conversion.videos.installed") : t("settings.conversion.videos.missing")}
             </span>
           )}
         </Row>
@@ -891,17 +973,17 @@ type ColorWheel = { key: Mode; title: string; custom: number | null };
 
 /** Couleurs proposées d'un clic : celles d'origine des parts. Toute autre se choisit dans le
  * sélecteur du système. */
-const PALETTE: { color: string; name: string }[] = [
-  { color: "#3b82f6", name: "Bleu" },
-  { color: "#0d9488", name: "Turquoise" },
-  { color: "#16a34a", name: "Vert" },
-  { color: "#f2b705", name: "Jaune" },
-  { color: "#f97316", name: "Orange" },
-  { color: "#e5484d", name: "Rouge" },
-  { color: "#ec4899", name: "Rose" },
-  { color: "#8b5cf6", name: "Violet" },
-  { color: "#64748b", name: "Ardoise" },
-  { color: "#6b7280", name: "Gris" },
+const PALETTE: { color: string; name: MessageKey }[] = [
+  { color: "#3b82f6", name: "settings.colors.palette.blue" },
+  { color: "#0d9488", name: "settings.colors.palette.turquoise" },
+  { color: "#16a34a", name: "settings.colors.palette.green" },
+  { color: "#f2b705", name: "settings.colors.palette.yellow" },
+  { color: "#f97316", name: "settings.colors.palette.orange" },
+  { color: "#e5484d", name: "settings.colors.palette.red" },
+  { color: "#ec4899", name: "settings.colors.palette.pink" },
+  { color: "#8b5cf6", name: "settings.colors.palette.purple" },
+  { color: "#64748b", name: "settings.colors.palette.slate" },
+  { color: "#6b7280", name: "settings.colors.palette.gray" },
 ];
 
 /** Ce dont on règle la couleur quand ce n'est pas une part : la surbrillance. */
@@ -937,11 +1019,11 @@ function withPartColors(
 /** Rang d'une part de roue perso, d'après l'identifiant de sa part sur la roue. */
 const slotOf = (id: string) => Number(id.split("-")[2]);
 
-const BORDERS: { id: WheelBorder; label: string }[] = [
-  { id: "none", label: "Aucun" },
-  { id: "light", label: "Clair" },
-  { id: "dark", label: "Noir" },
-  { id: "color", label: "Couleur" },
+const BORDERS: { id: WheelBorder; label: MessageKey }[] = [
+  { id: "none", label: "settings.colors.border.none" },
+  { id: "light", label: "settings.colors.border.light" },
+  { id: "dark", label: "settings.colors.border.dark" },
+  { id: "color", label: "settings.colors.border.color" },
 ];
 
 function ColorsTab({
@@ -959,6 +1041,7 @@ function ColorsTab({
   goTo: (tab: SettingsTab, anchor?: string) => void;
 }) {
   const { settings } = view;
+  const lang = useLanguage();
   // Les couleurs s'appliquent à l'aperçu tout de suite, et s'enregistrent un instant après
   const { formatColors, highlightColor, wheelBorder, wheelBorderColor, customWheels } = settings;
   const saved = (): ColorDraft => ({
@@ -999,12 +1082,12 @@ function ColorsTab({
 
   // Roues de Rutile qui ont des couleurs, puis celles de l'utilisateur, sous leur nom
   const wheels: ColorWheel[] = [
-    { key: "image", title: "Images", custom: null },
-    { key: "video", title: "Vidéos", custom: null },
-    { key: "actions", title: "Actions", custom: null },
+    { key: "image", title: t("settings.colors.wheel.image"), custom: null },
+    { key: "video", title: t("settings.colors.wheel.video"), custom: null },
+    { key: "actions", title: t("settings.colors.wheel.actions"), custom: null },
     ...customWheels.map((wheel, index) => ({
       key: customMode(wheel.id),
-      title: wheel.name || "Roue sans nom",
+      title: wheel.name || t("settings.common.unnamed"),
       custom: index,
     })),
   ];
@@ -1014,7 +1097,8 @@ function ColorsTab({
   const windowLayout = view.platform !== "linux" || !view.wayland;
   const actionParts = useMemo(
     () => actionTree({ windowLayout: true, actionParts: settings.actionParts }),
-    [settings.actionParts],
+    // Les libellés des actions suivent la langue
+    [settings.actionParts, lang],
   );
   // Parts de la roue affichée telles qu'à l'origine, puis à leurs couleurs. L'origine d'une
   // part perso est la couleur de son format ou de son action
@@ -1072,26 +1156,32 @@ function ColorsTab({
     draft.highlight !== null ||
     draft.border !== "none" ||
     Object.values(draft.parts).some((colors) => colors.some((color) => color !== null));
-  const title = part ? `Couleur de ${part.label}` : "Couleur de surbrillance";
+  const title = part
+    ? t("settings.colors.partTitle", { part: part.label })
+    : t("settings.colors.highlightTitle");
   const hint = !part
-    ? "La part survolée, et l'anneau autour du bouton visé."
+    ? t("settings.colors.hint.highlight")
     : !colorable
-      ? "Une app, un dossier ou un site garde son icône."
+      ? t("settings.colors.hint.icon")
       : wheel.custom !== null
-        ? `Cette part, sur cette roue seulement${(part as ActionNode).children ? " ; ses options en héritent" : ""}.`
+        ? t(
+            (part as ActionNode).children
+              ? "settings.colors.hint.customWithOptions"
+              : "settings.colors.hint.custom",
+          )
         : wheel.key === "actions"
-          ? "La part, et les actions de sa sous-roue."
-          : "La pastille de ce format, sur toutes les roues.";
+          ? t("settings.colors.hint.actions")
+          : t("settings.colors.hint.format");
   const customId = wheel.custom === null ? null : customWheels[wheel.custom].id;
 
   return (
     <>
-      <Section title="Couleurs des parts" error={error}>
+      <Section title={t("settings.colors.parts.title")} error={error}>
         <div className="color-preview">
           <BubbleGroup
             className="chips"
             role="tablist"
-            label="Roue affichée"
+            label={t("settings.colors.parts.shown")}
             selected={`${wheel.key} ${wheels.map(({ title }) => title).join()}`}
           >
             {wheels.map(({ key, title }) => (
@@ -1124,13 +1214,13 @@ function ColorsTab({
                 borderColor={borderColor}
                 glass={settings.wheelGlass}
                 selected={part ? selected : null}
-                partLabel={(item) => `Couleur de ${item.label}`}
-                hubLabel="Couleur de surbrillance"
+                partLabel={(item) => t("settings.colors.partTitle", { part: item.label })}
+                hubLabel={t("settings.colors.highlightTitle")}
                 onPart={(index) => setTarget(items[index].id)}
                 onHub={() => setTarget(HIGHLIGHT)}
               />
               <p className="row-hint">
-                Cliquez une part de la roue, ou son centre, puis choisissez sa couleur ci-dessous.
+                {t("settings.colors.parts.click")}
               </p>
             </>
           ) : (
@@ -1138,13 +1228,13 @@ function ColorsTab({
               <span className="color-empty-ring" aria-hidden="true">
                 <WheelsIcon size={34} />
               </span>
-              <p>« {wheel.title} » n'a pas encore de parts.</p>
+              <p>{t("settings.colors.parts.empty", { name: wheel.title })}</p>
               <button
                 type="button"
                 className="link-button"
                 onClick={() => customId && goTo("custom", customId)}
               >
-                Ajouter des parts…
+                {t("settings.colors.parts.addParts")}
               </button>
             </div>
           )}
@@ -1171,13 +1261,13 @@ function ColorsTab({
         </div>
       </Section>
 
-      <Section title="Matière">
+      <Section title={t("settings.colors.material.title")}>
         <Row
           label="Liquid Glass"
           hint={
             view.nativeGlass
-              ? "Le verre de macOS : il réfracte et reflète ce qu'il y a derrière la roue."
-              : "Une imitation : le vrai verre n'existe que sur macOS 26 ou plus récent."
+              ? t("settings.colors.glass.hintNative")
+              : t("settings.colors.glass.hintFake")
           }
         >
           <Toggle
@@ -1186,11 +1276,11 @@ function ColorsTab({
             onChange={(wheelGlass) => change("colors", { wheelGlass })}
           />
         </Row>
-        <Row stacked label="Contour de la roue" hint="Le trait qui entoure le disque.">
+        <Row stacked label={t("settings.colors.border.label")} hint={t("settings.colors.border.hint")}>
           <BubbleGroup
             className="segmented segmented-fill"
             role="radiogroup"
-            label="Contour de la roue"
+            label={t("settings.colors.border.label")}
             selected={draft.border}
           >
             {BORDERS.map(({ id, label }) => (
@@ -1211,13 +1301,13 @@ function ColorsTab({
                     aria-hidden="true"
                   />
                 )}
-                {label}
+                {t(label)}
               </button>
             ))}
           </BubbleGroup>
           {draft.border === "color" && (
             <Swatches
-              label="Couleur du contour"
+              label={t("settings.colors.border.colorAria")}
               current={borderColor}
               onPick={(color) => update({ ...draft, borderColor: color })}
             />
@@ -1225,17 +1315,17 @@ function ColorsTab({
         </Row>
       </Section>
 
-      <Section title="Surbrillance">
-        <Row label="Part survolée" hint="Secteur éclairé et anneau autour du bouton visé.">
+      <Section title={t("settings.colors.highlight.title")}>
+        <Row label={t("settings.colors.highlight.hovered")} hint={t("settings.colors.highlight.hoveredHint")}>
           <ColorField
-            label="Part survolée"
+            label={t("settings.colors.highlight.hovered")}
             value={draft.highlight ?? DEFAULT_ACCENT}
             onChange={setHighlight}
           />
         </Row>
         <Row
-          label="Couleurs d'origine"
-          hint="Le texte des boutons reste lisible : blanc ou foncé selon la couleur."
+          label={t("settings.colors.original.label")}
+          hint={t("settings.colors.original.hint")}
         >
           <button
             type="button"
@@ -1253,7 +1343,7 @@ function ColorsTab({
               })
             }
           >
-            Réinitialiser
+            {t("settings.colors.original.reset")}
           </button>
         </Row>
       </Section>
@@ -1283,20 +1373,20 @@ function Swatches({
           role="radio"
           className="swatch"
           aria-checked={current === color}
-          aria-label={name}
-          title={name}
+          aria-label={t(name)}
+          title={t(name)}
           style={{ background: color }}
           onClick={() => onPick(color)}
         />
       ))}
       <label
         className="swatch swatch-custom"
-        title="Autre couleur…"
+        title={t("settings.colors.swatch.more")}
         data-current={!PALETTE.some(({ color }) => color === current) || undefined}
       >
         <input
           type="color"
-          aria-label="Autre couleur"
+          aria-label={t("settings.colors.swatch.otherAria")}
           value={current}
           onChange={(event) => onPick(event.target.value.toLowerCase())}
         />
@@ -1308,7 +1398,7 @@ function Swatches({
           disabled={current === original}
           onClick={() => onPick(original)}
         >
-          D'origine
+          {t("settings.colors.swatch.original")}
         </button>
       )}
     </div>
@@ -1329,7 +1419,7 @@ function ColorField({
     <label className="color-field">
       <input
         type="color"
-        aria-label={`Couleur ${label}`}
+        aria-label={t("settings.colors.fieldAria", { label })}
         value={value}
         onChange={(event) => onChange(event.target.value.toLowerCase())}
       />
@@ -1361,7 +1451,7 @@ function usePartRows(
     >
       <Toggle
         checked={enabled}
-        label={`Afficher ${item.label}`}
+        label={t("settings.actions.showPart", { part: item.label })}
         disabled={enabled && shown === 1}
         onChange={(next) =>
           onChange(
@@ -1382,22 +1472,34 @@ function firstChoices(
 ): { id: FirstWheel; label: string; mode: BuiltinMode | null }[] {
   const convert =
     kind === "images"
-      ? [{ id: "convert" as const, label: "Convertisseur d'images", mode: "image" as const }]
+      ? [{ id: "convert" as const, label: t("settings.mode.image"), mode: "image" as const }]
       : kind === "videos"
-        ? [{ id: "convert" as const, label: "Convertisseur vidéo", mode: "video" as const }]
+        ? [
+            {
+              id: "convert" as const,
+              label: t("settings.actions.first.converterVideo"),
+              mode: "video" as const,
+            },
+          ]
         : [];
   return [
     ...convert,
-    { id: "actions", label: "Roue Actions", mode: "actions" },
-    { id: "share", label: "Partage", mode: "share" },
-    { id: "apps", label: "Apps", mode: "apps" },
-    { id: "usual", label: "Première roue de la liste", mode: null },
+    { id: "actions", label: t("settings.actions.first.actions"), mode: "actions" },
+    { id: "share", label: t("settings.mode.share"), mode: "share" },
+    { id: "apps", label: t("settings.actions.first.apps"), mode: "apps" },
+    { id: "usual", label: t("settings.actions.first.usual"), mode: null },
   ];
 }
 
 /** D'où viennent les fichiers sélectionnés, selon le système. */
 const fileManager = (platform: string) =>
-  platform === "macos" ? "le Finder" : platform === "windows" ? "l'Explorateur" : "vos fichiers";
+  t(
+    platform === "macos"
+      ? "settings.actions.manager.macos"
+      : platform === "windows"
+        ? "settings.actions.manager.windows"
+        : "settings.actions.manager.default",
+  );
 
 function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Errors; change: Change }) {
   const { settings } = view;
@@ -1424,27 +1526,27 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
   return (
     <>
       <Section
-        title="Roue Actions"
+        title={t("settings.actions.root.title")}
         error={errors.wheels}
         sorting={root.sorting}
-        note="Glissez une part par sa poignée pour la déplacer : la première est en haut de la roue, les suivantes dans le sens des aiguilles d'une montre. Restez une seconde sur une part pour ouvrir ses options ; le centre ramène à la roue d'avant, comme Échap."
+        note={t("settings.actions.root.note")}
       >
-        <WheelSwitch settings={settings} mode="actions" label="Afficher la roue Actions" change={change} />
+        <WheelSwitch settings={settings} mode="actions" label={t("settings.actions.root.switch")} change={change} />
         {root.rows}
       </Section>
 
       <Section
         id={FILE_WHEELS_ANCHOR}
-        title="Selon le fichier"
+        title={t("settings.actions.files.title")}
         error={errors.actions}
         sorting={forFiles.sorting}
-        note={`Un fichier secoué, glissé sur la roue ou sélectionné dans ${fileManager(view.platform)} ouvre la roue choisie. Sa roue Actions ne montre que ces actions, dans cet ordre, et seulement celles qui ont un sens (la fusion à partir de deux PDF) ; dix au plus. Plusieurs types mélangés comptent comme « Autres ».`}
+        note={t("settings.actions.files.note", { manager: fileManager(view.platform) })}
       >
         <div className="kind-switch">
           <BubbleGroup
             className="segmented segmented-fill"
             role="tablist"
-            label="Type de fichier"
+            label={t("settings.actions.files.kind")}
             selected={kind}
           >
             {FILE_KINDS.map((id) => (
@@ -1461,16 +1563,16 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
           </BubbleGroup>
         </div>
         <Row
-          label="S'ouvre sur"
+          label={t("settings.actions.files.opensOn")}
           hint={
             chosenOff
-              ? "Cette roue est désactivée : la première de la liste s'ouvre à sa place."
-              : "La roue affichée quand arrive un fichier de ce type."
+              ? t("settings.actions.files.opensOnOff")
+              : t("settings.actions.files.opensOnHint")
           }
         >
           <select
             className="text-input"
-            aria-label="Roue ouverte d'abord"
+            aria-label={t("settings.actions.files.opensOnAria")}
             value={chosen.id}
             onChange={(event) => setFileWheel({ first: event.target.value as FirstWheel })}
           >
@@ -1485,36 +1587,36 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
         <Fragment key={kind}>{forFiles.rows}</Fragment>
       </Section>
 
-      <Section title="Capture">
+      <Section title={t("settings.actions.capture.title")}>
         <Row
-          label="Rouvrir la roue après une capture"
-          hint="Pour convertir ou partager l'image tout de suite."
+          label={t("settings.actions.capture.reopen")}
+          hint={t("settings.actions.capture.reopenHint")}
         >
           <Toggle
             checked={settings.captureReopen}
-            label="Rouvrir la roue après une capture"
+            label={t("settings.actions.capture.reopen")}
             onChange={(captureReopen) => change("actions", { captureReopen })}
           />
         </Row>
         {view.platform === "macos" && (
           <Row
-            label="Capture et lecture du texte"
-            hint="macOS demande l'autorisation Enregistrement de l'écran, à redonner après une mise à jour."
+            label={t("settings.actions.capture.read")}
+            hint={t("settings.actions.capture.readHint")}
           >
             <button
               type="button"
               className="link-button"
               onClick={() => void openPermissionSettings("screen")}
             >
-              Ouvrir les réglages
+              {t("settings.common.openSettings")}
             </button>
           </Row>
         )}
         {view.dockAccess !== null && (
           <DockBadgesRow
             allowed={view.dockAccess}
-            label="Ranger les fenêtres"
-            hint="Déplacer la fenêtre d'une autre app demande l'autorisation Accessibilité."
+            label={t("settings.actions.capture.arrange")}
+            hint={t("settings.actions.capture.arrangeHint")}
           />
         )}
       </Section>
@@ -1524,9 +1626,9 @@ function ActionsTab({ view, errors, change }: { view: SettingsView; errors: Erro
 }
 
 /** Ce que devient une part qui n'ouvre pas une app. */
-const SLOT_KINDS: Record<Exclude<AppKind, "app">, string> = {
-  folder: "Dossier",
-  url: "Site web",
+const SLOT_KINDS: Record<Exclude<AppKind, "app">, MessageKey> = {
+  folder: "settings.kind.folder",
+  url: "settings.kind.url",
 };
 
 /** Ce qu'on peut poser sur la roue des apps. */
@@ -1558,18 +1660,17 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
 
   return (
     <>
-      <Section title="Roue des apps" error={errors.wheels}>
-        <WheelSwitch settings={settings} mode="apps" label="Afficher la roue des apps" change={change} />
+      <Section title={t("settings.apps.wheel.title")} error={errors.wheels}>
+        <WheelSwitch settings={settings} mode="apps" label={t("settings.apps.wheel.switch")} change={change} />
       </Section>
       <Section
-        title="Applications"
+        title={t("settings.apps.title")}
         error={errors.apps}
         sorting={sortable.sorting}
-        note={`Un clic sur une part lance l'application, ouvre le dossier ou le site ; un fichier déposé sur une application s'ouvre avec elle. La roue compte de ${SECTOR_COUNT} à ${MAX_SECTORS} parts.${
-          view.platform === "macos"
-            ? " Les pastilles de notifications du Dock s'affichent sur les icônes."
-            : ""
-        }`}
+        note={t(view.platform === "macos" ? "settings.apps.noteMac" : "settings.apps.note", {
+          min: SECTOR_COUNT,
+          max: MAX_SECTORS,
+        })}
       >
         {settings.apps.map((_, slot) => {
           const app = view.apps[slot];
@@ -1577,8 +1678,12 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
           return (
             <Row
               key={slot}
-              label={app ? app.name : "Aucune application"}
-              hint={app && app.kind !== "app" ? `${SLOT_KINDS[app.kind]} · ${position}` : position}
+              label={app ? app.name : t("settings.apps.none")}
+              hint={
+                app && app.kind !== "app"
+                  ? t("settings.apps.slotHint", { kind: t(SLOT_KINDS[app.kind]), position })
+                  : position
+              }
               muted={!app}
               // Un site dont le logo n'est pas (encore) connu garde le globe, comme sur la roue
               icon={
@@ -1591,11 +1696,11 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
               handle={<DragHandle label={app?.name ?? position} {...sortable.handle(slot)} />}
             >
               <button type="button" className="link-button" onClick={() => setPicking(slot)}>
-                {app ? "Changer…" : "Choisir…"}
+                {app ? t("settings.common.change") : t("settings.common.choose")}
               </button>
               {(app || count > SECTOR_COUNT) && (
                 <button type="button" className="link-button" onClick={() => remove(slot)}>
-                  Retirer
+                  {t("settings.common.remove")}
                 </button>
               )}
             </Row>
@@ -1603,17 +1708,17 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
         })}
         {(free >= 0 || count < MAX_SECTORS) && (
           // Dans la première part libre, ou une part de plus
-          <AddRow label="Ajouter une part" onClick={() => setPicking(free >= 0 ? free : count)} />
+          <AddRow label={t("settings.common.addPart")} onClick={() => setPicking(free >= 0 ? free : count)} />
         )}
       </Section>
       {view.dockAccess !== null && (
-        <Section title="Pastilles de notifications">
+        <Section title={t("settings.apps.badges.title")}>
           <DockBadgesRow allowed={view.dockAccess} />
         </Section>
       )}
       {picking !== null && (
         <PartPicker
-          title={replaced ? `Changer ${replaced.name}` : "Nouvelle part"}
+          title={replaced ? t("settings.apps.changeTitle", { name: replaced.name }) : t("settings.common.newPart")}
           kinds={APP_KINDS}
           current={replaced && { kind: replaced.kind, name: replaced.name, value: replaced.path }}
           colors={settings.formatColors}
@@ -1633,8 +1738,8 @@ function AppsTab({ view, errors, change }: { view: SettingsView; errors: Errors;
  * garde pour les apps fermées demandent l'autorisation Accessibilité. */
 function DockBadgesRow({
   allowed: initial,
-  label = "Pastilles des apps fermées",
-  hint = "Messages ou Mail gardent la leur dans le Dock une fois fermés ; Rutile l'y lit avec l'autorisation Accessibilité.",
+  label = t("settings.apps.badges.label"),
+  hint = t("settings.apps.badges.hint"),
 }: {
   allowed: boolean;
   label?: string;
@@ -1661,7 +1766,7 @@ function DockBadgesRow({
     <Row label={label} hint={hint}>
       {allowed ? (
         <span className="status" data-state="granted">
-          Autorisée
+          {t("settings.permission.granted")}
         </span>
       ) : asked ? (
         <button
@@ -1669,11 +1774,11 @@ function DockBadgesRow({
           className="link-button"
           onClick={() => void openPermissionSettings("accessibility")}
         >
-          Ouvrir les réglages
+          {t("settings.common.openSettings")}
         </button>
       ) : (
         <button type="button" className="link-button" onClick={() => void ask()}>
-          Autoriser…
+          {t("settings.apps.badges.allow")}
         </button>
       )}
     </Row>
@@ -1707,23 +1812,21 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
 
   return (
     <>
-      <Section title="Roue de partage" error={errors.wheels}>
+      <Section title={t("settings.share.wheel.title")} error={errors.wheels}>
         <WheelSwitch
           settings={settings}
           mode="share"
-          label="Afficher la roue de partage"
+          label={t("settings.share.wheel.switch")}
           change={change}
         />
       </Section>
       <Section
-        title="Destinations"
+        title={t("settings.share.title")}
         error={errors.share}
         sorting={sortable.sorting}
-        note={`${
-          view.platform === "macos"
-            ? "« Partager… » ouvre le menu de partage de macOS : choisissez l'app, puis le destinataire. AirDrop, Messages et Mail ouvrent directement leur fenêtre d'envoi. "
-            : ""
-        }Un dossier synchronisé (Google Drive, iCloud Drive…) reçoit une copie, que son app met en ligne. Pour Signal et les messageries sans partage, le fichier est copié puis l'app s'ouvre : collez-le avec ${paste} dans la conversation.`}
+        note={t(view.platform === "macos" ? "settings.share.noteMac" : "settings.share.note", {
+          paste,
+        })}
       >
         {settings.share.map((_, slot) => {
           const target = view.share[slot];
@@ -1731,32 +1834,36 @@ function ShareTab({ view, errors, change }: { view: SettingsView; errors: Errors
           return (
             <Row
               key={slot}
-              label={target ? target.name : "Aucune destination"}
-              hint={target ? `${position} · ${SHARE_KINDS[target.kind]}` : position}
+              label={target ? target.name : t("settings.share.none")}
+              hint={
+                target
+                  ? t("settings.share.slotHint", { position, kind: t(SHARE_KINDS[target.kind]) })
+                  : position
+              }
               muted={!target}
               icon={<ItemIcon icon={target && shareIcon(target)} name={target?.name} />}
               sortable={sortable.row(slot)}
               handle={<DragHandle label={target?.name ?? position} {...sortable.handle(slot)} />}
             >
               <button type="button" className="link-button" onClick={() => setPicking(slot)}>
-                {target ? "Changer…" : "Choisir…"}
+                {target ? t("settings.common.change") : t("settings.common.choose")}
               </button>
               {(target || count > SECTOR_COUNT) && (
                 <button type="button" className="link-button" onClick={() => remove(slot)}>
-                  Retirer
+                  {t("settings.common.remove")}
                 </button>
               )}
             </Row>
           );
         })}
         {count < MAX_SECTORS && (
-          <AddRow label="Ajouter une destination" onClick={() => setPicking(count)} />
+          <AddRow label={t("settings.share.add")} onClick={() => setPicking(count)} />
         )}
       </Section>
       {picking !== null && (
         <SharePicker
           position={
-            picking < count ? slotPosition(picking, count) : "Nouvelle part"
+            picking < count ? slotPosition(picking, count) : t("settings.common.newPart")
           }
           onPick={(target) => {
             setTarget(picking, target);
@@ -1818,13 +1925,15 @@ function SharePicker({
         className="sheet"
         role="dialog"
         aria-modal="true"
-        aria-label={`Destination ${position.toLowerCase()}`}
+        aria-label={t("settings.share.sheet.aria", { position: position.toLocaleLowerCase(language()) })}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
-        <h3 className="sheet-title">Destination · {position.toLowerCase()}</h3>
+        <h3 className="sheet-title">
+          {t("settings.share.sheet.title", { position: position.toLocaleLowerCase(language()) })}
+        </h3>
         <div className="sheet-list">
-          {choices === null && <p className="sheet-empty">Recherche des destinations…</p>}
+          {choices === null && <p className="sheet-empty">{t("settings.share.sheet.searching")}</p>}
           {[...groups].map(([group, items]) => (
             <div key={group} className="sheet-group">
               <h4>{group}</h4>
@@ -1848,24 +1957,24 @@ function SharePicker({
             </div>
           ))}
           <div className="sheet-group">
-            <h4>Autre</h4>
+            <h4>{t("settings.share.sheet.misc")}</h4>
             <button type="button" className="sheet-item" onClick={() => void pickFolder()}>
               <span className="sheet-item-glyph" aria-hidden="true">
                 ⌂
               </span>
-              <span>Un dossier…</span>
+              <span>{t("settings.share.sheet.folder")}</span>
             </button>
             <button type="button" className="sheet-item" onClick={() => void pickMessagingApp()}>
               <span className="sheet-item-glyph" aria-hidden="true">
                 ✉
               </span>
-              <span>Une messagerie…</span>
+              <span>{t("settings.share.sheet.messaging")}</span>
             </button>
           </div>
         </div>
         <div className="sheet-actions">
           <button type="button" className="shortcut-button" onClick={onCancel}>
-            Annuler
+            {t("settings.common.cancel")}
           </button>
         </div>
       </div>
@@ -1926,22 +2035,22 @@ function UpdatesSection({
   const available = state.step === "done" ? state.status.available : null;
   const hint =
     state.step === "checking"
-      ? "Recherche…"
+      ? t("settings.updates.searching")
       : state.step === "installing"
         ? state.progress === null
-          ? "Téléchargement…"
-          : `Téléchargement… ${Math.round(state.progress * 100)} %`
+          ? t("settings.updates.downloading")
+          : t("settings.updates.progress", { percent: Math.round(state.progress * 100) })
         : state.step === "failed"
           ? state.message
           : state.step === "done"
             ? available
-              ? `Rutile ${available} est disponible.`
-              : "Rutile est à jour."
+              ? t("settings.updates.available", { version: available })
+              : t("settings.updates.upToDate")
             : undefined;
 
   return (
-    <Section title="Mises à jour" error={error}>
-      <Row label={`Rutile ${view.version}`} hint={hint}>
+    <Section title={t("settings.updates.title")} error={error}>
+      <Row label={t("settings.updates.version", { version: view.version })} hint={hint}>
         {available ? (
           <button
             type="button"
@@ -1949,7 +2058,7 @@ function UpdatesSection({
             disabled={state.step !== "done"}
             onClick={() => void install()}
           >
-            Installer {available}
+            {t("settings.updates.install", { version: available })}
           </button>
         ) : (
           <button
@@ -1958,17 +2067,17 @@ function UpdatesSection({
             disabled={state.step === "checking" || state.step === "installing"}
             onClick={() => void check()}
           >
-            Rechercher
+            {t("settings.updates.check")}
           </button>
         )}
       </Row>
       <Row
-        label="Rechercher automatiquement"
-        hint="Au lancement, puis toutes les six heures ; Rutile demande avant d'installer."
+        label={t("settings.updates.auto")}
+        hint={t("settings.updates.autoHint")}
       >
         <Toggle
           checked={view.settings.autoUpdate}
-          label="Rechercher automatiquement les mises à jour"
+          label={t("settings.updates.autoAria")}
           onChange={(autoUpdate) => change("updates", { autoUpdate })}
         />
       </Row>
@@ -2022,7 +2131,7 @@ function ShortcutRecorder({
           setRecording(!recording);
         }}
       >
-        {recording ? "Tapez le raccourci…" : label}
+        {recording ? t("settings.general.shortcut.recording") : label}
       </button>
       {recording && hint && <span className="row-hint">{hint}</span>}
     </div>

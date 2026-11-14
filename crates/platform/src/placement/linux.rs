@@ -86,9 +86,7 @@ fn send(
 
 pub fn place(layout: Layout) -> Result<(), PlacementError> {
     if !super::supported() {
-        return Err(PlacementError::Failed(
-            "Wayland ne laisse pas une app déplacer les fenêtres".into(),
-        ));
+        return Err(PlacementError::Failed(i18n::t("placement.wayland")));
     }
     let window = REMEMBERED.load(Ordering::Relaxed);
     if window == 0 {

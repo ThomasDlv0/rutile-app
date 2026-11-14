@@ -93,7 +93,7 @@ fn work_areas(mtm: MainThreadMarker) -> Vec<Rect> {
 
 pub fn place(layout: Layout) -> Result<(), PlacementError> {
     let mtm = MainThreadMarker::new()
-        .ok_or_else(|| PlacementError::Failed("hors du thread principal".into()))?;
+        .ok_or_else(|| PlacementError::Failed(i18n::t("placement.mainThread")))?;
     if !crate::apps::dock_access() {
         crate::apps::request_dock_access();
         return Err(PlacementError::Permission);
@@ -146,8 +146,6 @@ pub fn place(layout: Layout) -> Result<(), PlacementError> {
     if placed {
         Ok(())
     } else {
-        Err(PlacementError::Failed(
-            "cette fenêtre ne se laisse pas déplacer".into(),
-        ))
+        Err(PlacementError::Failed(i18n::t("placement.immovable")))
     }
 }

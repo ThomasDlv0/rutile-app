@@ -22,6 +22,7 @@ import {
   isCustomMode,
 } from "./formats";
 import { MAX_SECTORS } from "./geometry";
+import { t } from "../i18n";
 
 /** Fichiers qu'une action sait traiter. */
 export type FileNeed = "images" | "videos" | "pdfs" | "archives" | "files";
@@ -65,45 +66,121 @@ const SLATE = "#64748b";
 const TEAL = "#0d9488";
 const YELLOW = "#f2b705";
 
+/** Noms des parts du catalogue : leurs textes sont dans `wheel.json`, sous `wheel.actions`. */
+type PartName =
+  | "group.capture"
+  | "group.text"
+  | "group.color"
+  | "group.files"
+  | "group.image"
+  | "group.video"
+  | "group.windows"
+  | "group.apps"
+  | "capture.zone"
+  | "capture.window"
+  | "capture.screen"
+  | "capture.timer"
+  | "rename.number"
+  | "rename.date"
+  | "rename.lowercase"
+  | "rename.clean"
+  | "files.zip"
+  | "files.extract"
+  | "files.pdf"
+  | "files.merge"
+  | "files.rename"
+  | "files.path"
+  | "pdf.text"
+  | "image.text"
+  | "image.copy"
+  | "image.half"
+  | "image.fullHd"
+  | "image.compress"
+  | "image.strip"
+  | "video.compress"
+  | "video.fit"
+  | "video.gif"
+  | "video.mp3"
+  | "video.mute"
+  | "windows.left"
+  | "windows.right"
+  | "windows.top"
+  | "windows.bottom"
+  | "windows.maximize"
+  | "windows.center";
+
+type PartFields = Omit<ActionNode, "label" | "action" | "hint">;
+type PartTexts = { label?: () => string; action?: () => string; hint?: () => string };
+
+/** Une part dont le libellé, l'action et l'indice se lisent à chaque usage, dans la langue
+ * en cours : ce sont des accesseurs, pas des textes figés au chargement du module. */
+function entry(fields: PartFields, name: PartName, texts: PartTexts = {}): ActionNode {
+  const read = (read: (() => string) | undefined, fallback: () => string) => ({
+    get: read ?? fallback,
+    enumerable: true,
+    configurable: true,
+  });
+  const descriptors: PropertyDescriptorMap = {
+    label: read(texts.label, () => t(`wheel.actions.${name}.label`)),
+    action: read(texts.action, () => t(`wheel.actions.${name}.action`)),
+  };
+  if (texts.hint) descriptors.hint = read(texts.hint, texts.hint);
+  return Object.defineProperties({ ...fields }, descriptors) as ActionNode;
+}
+
+/** Comme `{ ...node, ...extra }`, mais sans figer les accesseurs des textes. */
+function extend(node: ActionNode, extra: Partial<ActionNode>): ActionNode {
+  return Object.defineProperties(
+    {},
+    { ...Object.getOwnPropertyDescriptors(node), ...Object.getOwnPropertyDescriptors(extra) },
+  ) as ActionNode;
+}
+
 const CAPTURE: readonly ActionNode[] = [
-  {
-    id: "capture-zone",
-    label: "Zone",
-    action: "Capturer une zone",
-    glyph: "zone",
-    hides: true,
-    run: { kind: "capture", target: "zone", delay: 0 },
-  },
-  {
-    id: "capture-window",
-    label: "Fenêtre",
-    action: "Capturer une fenêtre",
-    glyph: "window",
-    hides: true,
-    run: { kind: "capture", target: "window", delay: 0 },
-  },
-  {
-    id: "capture-screen",
-    label: "Écran",
-    action: "Capturer tout l'écran",
-    glyph: "screen",
-    hides: true,
-    run: { kind: "capture", target: "screen", delay: 0 },
-  },
-  {
-    id: "capture-timer",
-    label: "3 s",
-    action: "Capturer l'écran dans 3 secondes",
-    glyph: "timer",
-    hides: true,
-    run: { kind: "capture", target: "screen", delay: 3 },
-  },
+  entry(
+    {
+      id: "capture-zone",
+      glyph: "zone",
+      hides: true,
+      run: { kind: "capture", target: "zone", delay: 0 },
+    },
+    "capture.zone",
+  ),
+  entry(
+    {
+      id: "capture-window",
+      glyph: "window",
+      hides: true,
+      run: { kind: "capture", target: "window", delay: 0 },
+    },
+    "capture.window",
+  ),
+  entry(
+    {
+      id: "capture-screen",
+      glyph: "screen",
+      hides: true,
+      run: { kind: "capture", target: "screen", delay: 0 },
+    },
+    "capture.screen",
+  ),
+  entry(
+    {
+      id: "capture-timer",
+      glyph: "timer",
+      hides: true,
+      run: { kind: "capture", target: "screen", delay: 3 },
+    },
+    "capture.timer",
+  ),
 ];
 
 const COLOR: readonly ActionNode[] = (["hex", "rgb", "hsl"] as const).map((format) => ({
   id: `color-${format}`,
   label: format.toUpperCase(),
-  action: `Copier la couleur en ${format.toUpperCase()}`,
+  get action() {
+    return t("wheel.actions.color.copy", { format: format.toUpperCase() });
+  },
   glyph: "color",
   hides: true,
   run: { kind: "color", format },
@@ -114,192 +191,168 @@ const IMAGE_FAMILY = { family: "action-image", color: VIOLET } as const;
 const VIDEO_FAMILY = { family: "action-video", color: RED } as const;
 const TEXT_FAMILY = { family: "action-text", color: GREEN } as const;
 
+const renamePart = (style: Extract<ActionRequest, { kind: "rename" }>["style"], glyph: GlyphName) =>
+  entry(
+    { id: `rename-${style}`, glyph, needs: "files", run: { kind: "rename", style } },
+    `rename.${style}`,
+  );
+
 const RENAME: readonly ActionNode[] = [
-  { style: "number", label: "Numéros", action: "Numéroter les fichiers", glyph: "number" },
-  { style: "date", label: "Date", action: "Ajouter la date au nom", glyph: "date" },
-  { style: "lowercase", label: "Minuscules", action: "Passer en minuscules", glyph: "lower" },
-  { style: "clean", label: "Nettoyer", action: "Retirer accents et espaces", glyph: "clean" },
-].map(({ style, ...item }) => ({
-  ...item,
-  id: `rename-${style}`,
-  glyph: item.glyph as GlyphName,
-  needs: "files" as const,
-  run: { kind: "rename", style } as ActionRequest,
-}));
+  renamePart("number", "number"),
+  renamePart("date", "date"),
+  renamePart("lowercase", "lower"),
+  renamePart("clean", "clean"),
+];
 
-const ZIP: ActionNode = {
-  id: "files-zip",
-  label: "ZIP",
-  action: "Créer un ZIP",
-  glyph: "zip",
-  needs: "files",
-  run: { kind: "zip" },
-  ...FILES_FAMILY,
-};
+const ZIP = entry(
+  { id: "files-zip", glyph: "zip", needs: "files", run: { kind: "zip" }, ...FILES_FAMILY },
+  "files.zip",
+);
 
-const EXTRACT: ActionNode = {
-  id: "archive-extract",
-  label: "Extraire",
-  action: "Décompresser l'archive",
-  glyph: "unzip",
-  needs: "archives",
-  run: { kind: "extract" },
-  ...FILES_FAMILY,
-};
+const EXTRACT = entry(
+  {
+    id: "archive-extract",
+    glyph: "unzip",
+    needs: "archives",
+    run: { kind: "extract" },
+    ...FILES_FAMILY,
+  },
+  "files.extract",
+);
 
-const IMAGES_PDF: ActionNode = {
-  id: "files-pdf",
-  label: "PDF",
-  action: "Assembler les images en PDF",
-  glyph: "pdf",
-  needs: "images",
-  run: { kind: "imagesToPdf" },
-  ...FILES_FAMILY,
-};
+const IMAGES_PDF = entry(
+  { id: "files-pdf", glyph: "pdf", needs: "images", run: { kind: "imagesToPdf" }, ...FILES_FAMILY },
+  "files.pdf",
+);
 
-const MERGE: ActionNode = {
-  id: "files-merge",
-  label: "Fusion",
-  action: "Fusionner les PDF",
-  glyph: "merge",
-  needs: "pdfs",
-  least: 2,
-  run: { kind: "mergePdfs" },
-  ...FILES_FAMILY,
-};
+const MERGE = entry(
+  {
+    id: "files-merge",
+    glyph: "merge",
+    needs: "pdfs",
+    least: 2,
+    run: { kind: "mergePdfs" },
+    ...FILES_FAMILY,
+  },
+  "files.merge",
+);
 
-const RENAME_NODE: ActionNode = {
-  id: "files-rename",
-  label: "Renommer",
-  action: "Renommer en lot",
-  hint: "Restez pour les options",
-  glyph: "rename",
-  children: RENAME,
-  ...FILES_FAMILY,
-};
+const RENAME_NODE = entry(
+  { id: "files-rename", glyph: "rename", children: RENAME, ...FILES_FAMILY },
+  "files.rename",
+  { hint: () => t("wheel.actions.files.rename.hint") },
+);
 
-const PATHS: ActionNode = {
-  id: "files-path",
-  label: "Chemin",
-  action: "Copier le chemin",
-  glyph: "link",
-  needs: "files",
-  run: { kind: "copyPaths" },
-  ...FILES_FAMILY,
-};
+const PATHS = entry(
+  { id: "files-path", glyph: "link", needs: "files", run: { kind: "copyPaths" }, ...FILES_FAMILY },
+  "files.path",
+);
 
-const PDF_TEXT: ActionNode = {
-  id: "pdf-text",
-  label: "Texte",
-  action: "Copier le texte du PDF",
-  glyph: "text",
-  needs: "pdfs",
-  run: { kind: "pdfText" },
-  ...TEXT_FAMILY,
-};
+const PDF_TEXT = entry(
+  { id: "pdf-text", glyph: "text", needs: "pdfs", run: { kind: "pdfText" }, ...TEXT_FAMILY },
+  "pdf.text",
+);
 
-const IMAGE_TEXT: ActionNode = {
-  id: "image-text",
-  label: "Texte",
-  action: "Copier le texte de l'image",
-  glyph: "text",
-  needs: "images",
-  run: { kind: "readText" },
-  ...TEXT_FAMILY,
-};
+const IMAGE_TEXT = entry(
+  { id: "image-text", glyph: "text", needs: "images", run: { kind: "readText" }, ...TEXT_FAMILY },
+  "image.text",
+);
 
-const IMAGE_COPY: ActionNode = {
-  id: "image-copy",
-  label: "Copier",
-  action: "Copier l'image",
-  glyph: "copy",
-  needs: "images",
-  most: 1,
-  run: { kind: "copyImage" },
-  ...IMAGE_FAMILY,
-};
+const IMAGE_COPY = entry(
+  {
+    id: "image-copy",
+    glyph: "copy",
+    needs: "images",
+    most: 1,
+    run: { kind: "copyImage" },
+    ...IMAGE_FAMILY,
+  },
+  "image.copy",
+);
 
 const FILES: readonly ActionNode[] = [ZIP, EXTRACT, IMAGES_PDF, MERGE, RENAME_NODE];
 
-const IMAGE: readonly ActionNode[] = [
-  { id: "half", label: "Moitié", action: "Réduire de moitié", glyph: "half", retouch: "half" },
-  { id: "fullHd", label: "1920", action: "Réduire à 1920 pixels", glyph: "full", retouch: "fullHd" },
-  { id: "compress", label: "Alléger", action: "Compresser", glyph: "compress", retouch: "compress" },
-  {
-    id: "strip",
-    label: "Métadonnées",
-    action: "Retirer les métadonnées",
-    glyph: "shield",
-    retouch: "stripMetadata",
-  },
-].map(({ id, retouch, ...item }) => ({
-  ...item,
-  ...IMAGE_FAMILY,
-  id: `image-${id}`,
-  glyph: item.glyph as GlyphName,
-  needs: "images" as const,
-  run: { kind: "retouch", retouch } as ActionRequest,
-}));
+const imagePart = (
+  id: string,
+  retouch: Extract<ActionRequest, { kind: "retouch" }>["retouch"],
+  glyph: GlyphName,
+  name: PartName,
+  texts?: PartTexts,
+) =>
+  entry(
+    {
+      id: `image-${id}`,
+      glyph,
+      needs: "images",
+      run: { kind: "retouch", retouch },
+      ...IMAGE_FAMILY,
+    },
+    name,
+    texts,
+  );
 
-const VIDEO: readonly ActionNode[] = ([
-  {
-    id: "video-compress",
-    label: "Alléger",
-    action: "Compresser la vidéo",
-    glyph: "compress",
-    needs: "videos",
-    run: { kind: "video", rework: { kind: "compress" } },
-  },
-  ...[10, 25].map(
-    (megabytes): ActionNode => ({
-      id: `video-fit-${megabytes}`,
-      label: `${megabytes} Mo`,
-      action: `Réduire à ${megabytes} Mo`,
+const IMAGE: readonly ActionNode[] = [
+  imagePart("half", "half", "half", "image.half"),
+  imagePart("fullHd", "fullHd", "full", "image.fullHd"),
+  imagePart("compress", "compress", "compress", "image.compress"),
+  imagePart("strip", "stripMetadata", "shield", "image.strip"),
+];
+
+const VIDEO: readonly ActionNode[] = [
+  entry(
+    {
+      id: "video-compress",
       glyph: "compress",
       needs: "videos",
-      run: { kind: "video", rework: { kind: "fit", megabytes } },
-    }),
+      run: { kind: "video", rework: { kind: "compress" } },
+    },
+    "video.compress",
   ),
-  {
-    id: "video-gif",
-    label: "GIF",
-    action: "Convertir en GIF",
-    glyph: "gif",
-    needs: "videos",
-    convert: "gif",
-  },
-  {
-    id: "video-mp3",
-    label: "MP3",
-    action: "Extraire le son en MP3",
-    glyph: "music",
-    needs: "videos",
-    convert: "mp3",
-  },
-  {
-    id: "video-mute",
-    label: "Muet",
-    action: "Retirer le son",
-    glyph: "mute",
-    needs: "videos",
-    run: { kind: "video", rework: { kind: "mute" } },
-  },
-] satisfies ActionNode[]).map((node) => ({ ...node, ...VIDEO_FAMILY }));
+  ...[10, 25].map((megabytes) =>
+    entry(
+      {
+        id: `video-fit-${megabytes}`,
+        glyph: "compress",
+        needs: "videos",
+        run: { kind: "video", rework: { kind: "fit", megabytes } },
+      },
+      "video.fit",
+      {
+        label: () => t("wheel.actions.video.fit.label", { megabytes }),
+        action: () => t("wheel.actions.video.fit.action", { megabytes }),
+      },
+    ),
+  ),
+  entry({ id: "video-gif", glyph: "gif", needs: "videos", convert: "gif" }, "video.gif"),
+  entry({ id: "video-mp3", glyph: "music", needs: "videos", convert: "mp3" }, "video.mp3"),
+  entry(
+    {
+      id: "video-mute",
+      glyph: "mute",
+      needs: "videos",
+      run: { kind: "video", rework: { kind: "mute" } },
+    },
+    "video.mute",
+  ),
+].map((node) => extend(node, VIDEO_FAMILY));
+
+const windowPart = (
+  layout: Extract<ActionRequest, { kind: "place" }>["layout"],
+  glyph: GlyphName,
+) =>
+  entry(
+    { id: `windows-${layout}`, glyph, hides: true, run: { kind: "place", layout } },
+    `windows.${layout}`,
+  );
 
 const WINDOWS: readonly ActionNode[] = [
-  { layout: "left", label: "Gauche", action: "Moitié gauche de l'écran", glyph: "left" },
-  { layout: "right", label: "Droite", action: "Moitié droite de l'écran", glyph: "right" },
-  { layout: "top", label: "Haut", action: "Moitié haute de l'écran", glyph: "top" },
-  { layout: "bottom", label: "Bas", action: "Moitié basse de l'écran", glyph: "bottom" },
-  { layout: "maximize", label: "Agrandir", action: "Remplir l'écran", glyph: "full" },
-  { layout: "center", label: "Centrer", action: "Centrer la fenêtre", glyph: "center" },
-].map(({ layout, ...item }) => ({
-  ...item,
-  id: `windows-${layout}`,
-  glyph: item.glyph as GlyphName,
-  hides: true,
-  run: { kind: "place", layout } as ActionRequest,
-}));
+  windowPart("left", "left"),
+  windowPart("right", "right"),
+  windowPart("top", "top"),
+  windowPart("bottom", "bottom"),
+  windowPart("maximize", "full"),
+  windowPart("center", "center"),
+];
 
 /** Famille de couleur des raccourcis et des commandes d'une roue personnalisée. */
 const CUSTOM_ID = "action-custom";
@@ -307,80 +360,47 @@ const CUSTOM_ID = "action-custom";
 /** Toutes les parts de la roue Actions, dans leur ordre d'origine. */
 export function actionCatalog(config: Pick<WheelConfig, "windowLayout">): ActionNode[] {
   const tree: ActionNode[] = [
-    {
-      id: "action-capture",
-      label: "Capture",
-      action: "Capturer une zone",
-      hint: "Restez pour les options",
-      glyph: "capture",
-      color: BLUE,
-      hides: true,
-      run: { kind: "capture", target: "zone", delay: 0 },
-      children: CAPTURE,
-    },
-    {
-      id: "action-text",
-      label: "Texte",
-      action: "Copier le texte d'une zone",
-      glyph: "text",
-      color: GREEN,
-      hides: true,
-      run: { kind: "text" },
-    },
-    {
-      id: "action-color",
-      label: "Couleur",
-      action: "Copier une couleur de l'écran",
-      hint: "Restez pour les formats",
-      glyph: "color",
-      color: PINK,
-      hides: true,
-      run: { kind: "color", format: "hex" },
-      children: COLOR,
-    },
-    {
-      id: "action-files",
-      label: "Fichiers",
-      action: "ZIP, PDF, renommer…",
-      glyph: "files",
-      color: ORANGE,
-      children: FILES,
-    },
-    {
-      id: "action-image",
-      label: "Image",
-      action: "Réduire, compresser…",
-      glyph: "image",
-      color: VIOLET,
-      children: IMAGE,
-    },
-    {
-      id: "action-video",
-      label: "Vidéo",
-      action: "Compresser, GIF, MP3…",
-      glyph: "video",
-      color: RED,
-      children: VIDEO,
-    },
+    entry(
+      {
+        id: "action-capture",
+        glyph: "capture",
+        color: BLUE,
+        hides: true,
+        run: { kind: "capture", target: "zone", delay: 0 },
+        children: CAPTURE,
+      },
+      "group.capture",
+      { hint: () => t("wheel.actions.group.capture.hint") },
+    ),
+    entry(
+      { id: "action-text", glyph: "text", color: GREEN, hides: true, run: { kind: "text" } },
+      "group.text",
+    ),
+    entry(
+      {
+        id: "action-color",
+        glyph: "color",
+        color: PINK,
+        hides: true,
+        run: { kind: "color", format: "hex" },
+        children: COLOR,
+      },
+      "group.color",
+      { hint: () => t("wheel.actions.group.color.hint") },
+    ),
+    entry({ id: "action-files", glyph: "files", color: ORANGE, children: FILES }, "group.files"),
+    entry({ id: "action-image", glyph: "image", color: VIOLET, children: IMAGE }, "group.image"),
+    entry({ id: "action-video", glyph: "video", color: RED, children: VIDEO }, "group.video"),
   ];
   if (config.windowLayout) {
-    tree.push({
-      id: "action-windows",
-      label: "Fenêtres",
-      action: "Ranger la fenêtre active",
-      glyph: "grid",
-      color: SLATE,
-      children: WINDOWS,
-    });
+    tree.push(
+      entry(
+        { id: "action-windows", glyph: "grid", color: SLATE, children: WINDOWS },
+        "group.windows",
+      ),
+    );
   }
-  tree.push({
-    id: "action-apps",
-    label: "Apps",
-    action: "Passer aux apps",
-    glyph: "star",
-    color: TEAL,
-    goesTo: "apps",
-  });
+  tree.push(entry({ id: "action-apps", glyph: "star", color: TEAL, goesTo: "apps" }, "group.apps"));
   return tree;
 }
 
@@ -431,9 +451,9 @@ export const FILE_ACTIONS: Record<FileKind, readonly ActionNode[]> = {
     IMAGE.find(({ id }) => id === "image-strip")!,
     ZIP,
     RENAME_NODE,
-    { ...PATHS, offByDefault: true },
+    extend(PATHS, { offByDefault: true }),
   ],
-  videos: [...VIDEO, ZIP, RENAME_NODE, { ...PATHS, offByDefault: true }],
+  videos: [...VIDEO, ZIP, RENAME_NODE, extend(PATHS, { offByDefault: true })],
   pdfs: [MERGE, PDF_TEXT, ZIP, RENAME_NODE, PATHS],
   archives: [EXTRACT, RENAME_NODE, PATHS],
   others: [ZIP, RENAME_NODE, PATHS],
@@ -448,12 +468,23 @@ export const DEFAULT_FILE_WHEELS: FileWheels = {
   others: { first: "actions", parts: [] },
 };
 
+/** Noms des types de fichiers : des accesseurs, lus dans la langue en cours à chaque usage. */
 export const FILE_KIND_LABELS: Record<FileKind, string> = {
-  images: "Images",
-  videos: "Vidéos",
-  pdfs: "PDF",
-  archives: "Archives",
-  others: "Autres",
+  get images() {
+    return t("wheel.fileKind.images");
+  },
+  get videos() {
+    return t("wheel.fileKind.videos");
+  },
+  get pdfs() {
+    return t("wheel.fileKind.pdfs");
+  },
+  get archives() {
+    return t("wheel.fileKind.archives");
+  },
+  get others() {
+    return t("wheel.fileKind.others");
+  },
 };
 
 const extension = (file: FileInfo) => file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -580,8 +611,8 @@ function basePartNode(
       return {
         id,
         label: part.name,
-        action: `Ouvrir ${part.name}`,
-        dragAction: `Ouvrir avec ${part.name}`,
+        action: t("wheel.open", { name: part.name }),
+        dragAction: t("wheel.openWith", { name: part.name }),
         // Sans icône lisible, la part garde une pastille
         ...(part.icon ? { icon: part.icon } : { glyph: "grid" as const, color: SLATE }),
         opens: true,
@@ -592,7 +623,7 @@ function basePartNode(
       return {
         id,
         label: part.name,
-        action: `Ouvrir ${part.name}`,
+        action: t("wheel.open", { name: part.name }),
         ...(part.icon ? { icon: part.icon } : { glyph: "files" as const, color: BLUE }),
         opens: true,
         run,
@@ -601,7 +632,7 @@ function basePartNode(
       return {
         id,
         label: part.name,
-        action: `Ouvrir ${part.name}`,
+        action: t("wheel.open", { name: part.name }),
         icon: part.icon ?? WEB_ICON,
         opens: true,
         run,
@@ -612,7 +643,7 @@ function basePartNode(
         return {
           id,
           label: image.label,
-          action: `Convertir en ${image.label}`,
+          action: t("wheel.convertTo", { format: image.label }),
           color: image.color,
           family: image.id,
           needs: "images",
@@ -624,7 +655,7 @@ function basePartNode(
       return {
         id,
         label: video.label,
-        action: "action" in video ? video.action : `Convertir en ${video.label}`,
+        action: "action" in video ? video.action : t("wheel.convertTo", { format: video.label }),
         color: video.color,
         family: video.id,
         needs: "videos",
@@ -770,5 +801,4 @@ export function disabledActions(
 }
 
 /** Une sous-roue s'ouvre en restant sur la part. */
-export const opensOnDwell = (node: ActionNode | undefined): boolean =>
-  node?.children !== undefined;
+export const opensOnDwell = (node: ActionNode | undefined): boolean => node?.children !== undefined;

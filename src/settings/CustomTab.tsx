@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { t, tn, useLanguage } from "../i18n";
 import { WheelsIcon } from "../WheelsIcon";
 import type {
   CustomPart,
@@ -38,15 +39,32 @@ function useWheelNodes(
   windowLayout: boolean,
   colors: Settings["formatColors"],
 ): ActionNode[] {
+  // Les libellés des actions suivent la langue
+  const lang = useLanguage();
   return useMemo(
     () => colorizeActions(customTree({ windowLayout, custom: [...custom] }, index), colors),
-    [custom, index, windowLayout, colors],
+    [custom, index, windowLayout, colors, lang],
   );
 }
 
 /** « 4 parts », « Vide ». */
 function partCount(count: number): string {
-  return count === 0 ? "Vide" : `${count} part${count > 1 ? "s" : ""}`;
+  return count === 0 ? t("settings.custom.empty") : tn("settings.custom.partCount", count);
+}
+
+/** Nom donné à une roue toute neuve : « Ma roue », « Ma roue 2 »… */
+function defaultName(wheels: number): string {
+  return wheels === 0
+    ? t("settings.custom.defaultName")
+    : t("settings.custom.defaultNumbered", { number: String(wheels + 1) });
+}
+
+/** Ce nom est-il l'un de ceux que Rutile donne aux roues neuves ? */
+function isDefaultName(name: string): boolean {
+  const mark = "\u0001";
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const numbered = escape(t("settings.custom.defaultNumbered", { number: mark })).replace(mark, "\\d+");
+  return name === t("settings.custom.defaultName") || new RegExp(`^${numbered}$`).test(name);
 }
 
 /** Les roues de l'utilisateur : une galerie pour les voir toutes d'un coup d'œil, puis
@@ -99,7 +117,7 @@ export function CustomTab({
       ...wheels,
       {
         id,
-        name: wheels.length === 0 ? "Ma roue" : `Ma roue ${wheels.length + 1}`,
+        name: defaultName(wheels.length),
         enabled: true,
         parts: [],
         extensions: [],
@@ -113,13 +131,10 @@ export function CustomTab({
       <section className="settings-section">
         <div className="settings-card empty-state">
           <WheelsIcon size={52} />
-          <h3>Composez votre roue</h3>
-          <p>
-            Apps, dossiers, sites web, conversions, actions : posez ce que vous voulez sur une
-            même roue. Elle prend ensuite sa place parmi les autres, au clic sur le centre.
-          </p>
+          <h3>{t("settings.custom.intro.title")}</h3>
+          <p>{t("settings.custom.intro.text")}</p>
           <button type="button" className="primary-button" onClick={create}>
-            Créer ma roue
+            {t("settings.custom.intro.create")}
           </button>
         </div>
         {error && (
@@ -135,9 +150,9 @@ export function CustomTab({
     return (
       <div className="subpage" data-direction={direction ?? undefined}>
         <Section
-          title={`Mes roues · ${wheels.length}`}
+          title={t("settings.custom.gallery.title", { count: wheels.length })}
           error={error}
-          note="Ouvrez une roue pour la composer. Leur ordre, au clic sur le centre, se règle dans l'onglet Roues."
+          note={t("settings.custom.gallery.note")}
         >
           <div className="wheel-gallery">
             {wheels.map((wheel, position) => (
@@ -156,11 +171,9 @@ export function CustomTab({
                 <span className="wheel-tile-disk wheel-tile-plus" aria-hidden="true">
                   +
                 </span>
-                <span className="wheel-tile-name">Nouvelle roue</span>
+                <span className="wheel-tile-name">{t("settings.custom.gallery.new")}</span>
                 <span className="wheel-tile-meta">
-                  {MAX_SECTORS - wheels.length === 1
-                    ? "Une place libre"
-                    : `${MAX_SECTORS - wheels.length} places libres`}
+                  {tn("settings.custom.gallery.freeSlots", MAX_SECTORS - wheels.length)}
                 </span>
               </button>
             )}
@@ -178,14 +191,14 @@ export function CustomTab({
           <svg width="8" height="13" viewBox="0 0 8 13" aria-hidden="true">
             <path d="M6.5 1.5 1.5 6.5l5 5" />
           </svg>
-          Mes roues
+          {t("settings.custom.back")}
         </button>
         {wheels.length > 1 && (
-          <div className="editor-steps" role="group" aria-label="Autres roues">
+          <div className="editor-steps" role="group" aria-label={t("settings.custom.others")}>
             <button
               type="button"
               className="step-button"
-              aria-label="Roue précédente"
+              aria-label={t("settings.custom.previous")}
               disabled={index === 0}
               onClick={() => openAt(wheels[index - 1].id, "back")}
             >
@@ -199,7 +212,7 @@ export function CustomTab({
             <button
               type="button"
               className="step-button"
-              aria-label="Roue suivante"
+              aria-label={t("settings.custom.next")}
               disabled={index === wheels.length - 1}
               onClick={() => openAt(wheels[index + 1].id)}
             >
@@ -261,7 +274,7 @@ function WheelTile({
       className="wheel-tile"
       role="button"
       tabIndex={0}
-      aria-label={`Ouvrir ${wheel.name || "la roue sans nom"}`}
+      aria-label={wheel.name ? t("settings.custom.open", { name: wheel.name }) : t("settings.custom.openUnnamed")}
       data-off={!wheel.enabled || undefined}
       onClick={onOpen}
       onKeyDown={onKeyDown}
@@ -286,9 +299,9 @@ function WheelTile({
           <WheelsIcon size={30} />
         </span>
       )}
-      <span className="wheel-tile-name">{wheel.name || "Roue sans nom"}</span>
+      <span className="wheel-tile-name">{wheel.name || t("settings.common.unnamed")}</span>
       <span className="wheel-tile-meta">{meta}</span>
-      {!wheel.enabled && <span className="wheel-tile-badge">Masquée</span>}
+      {!wheel.enabled && <span className="wheel-tile-badge">{t("settings.custom.hidden")}</span>}
     </div>
   );
 }
@@ -330,7 +343,7 @@ function WheelEditor({
   // Une roue toute neuve attend son nom : le champ est prêt à être tapé
   const name = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (parts.length === 0 && /^Ma roue( \d+)?$/.test(wheel.name)) name.current?.select();
+    if (parts.length === 0 && isDefaultName(wheel.name)) name.current?.select();
     // Seulement à l'ouverture de la roue
   }, [wheel.id]);
 
@@ -344,15 +357,11 @@ function WheelEditor({
   return (
     <>
       <Section
-        title={wheel.name || "Roue sans nom"}
+        title={wheel.name || t("settings.common.unnamed")}
         error={error}
         sorting={sortable.sorting}
-        action={<ConfirmButton label="Supprimer la roue" onConfirm={onRemove} />}
-        note={
-          parts.length === 0
-            ? "Tant qu'elle est vide, la roue n'apparaît pas parmi les autres."
-            : "Glissez une part par sa poignée pour la déplacer : la première est en haut de la roue, les suivantes dans le sens des aiguilles d'une montre. Dix parts au plus ; leurs couleurs se règlent dans l'onglet Couleurs."
-        }
+        action={<ConfirmButton label={t("settings.custom.remove")} onConfirm={onRemove} />}
+        note={parts.length === 0 ? t("settings.custom.noteEmpty") : t("settings.custom.note")}
       >
         <div className="wheel-builder">
           {nodes.length > 0 ? (
@@ -368,22 +377,22 @@ function WheelEditor({
                 partLabel={(item) => item.action ?? item.label}
                 onPart={(part) => setPicking(slotOf(nodes[part].id))}
               />
-              <p className="row-hint">Voici votre roue. Cliquez une part pour la changer.</p>
+              <p className="row-hint">{t("settings.custom.previewHint")}</p>
             </>
           ) : (
             <button type="button" className="wheel-empty" onClick={() => setPicking(parts.length)}>
               <span className="wheel-empty-plus" aria-hidden="true">
                 +
               </span>
-              <span>Ajouter une première part</span>
+              <span>{t("settings.custom.addFirst")}</span>
             </button>
           )}
         </div>
-        <Row label="Nom de la roue">
+        <Row label={t("settings.custom.name")}>
           <input
             ref={name}
             className="text-input"
-            aria-label="Nom de la roue"
+            aria-label={t("settings.custom.name")}
             maxLength={30}
             defaultValue={wheel.name}
             onBlur={(event) => {
@@ -398,57 +407,57 @@ function WheelEditor({
         </Row>
         {parts.map((part, slot) => {
           const node = nodeOf(slot);
-          const label = node?.label ?? (part.name || "Part inconnue");
+          const label = node?.label ?? (part.name || t("settings.custom.unknownPart"));
           return (
             <Row
               key={slot}
               label={label}
-              hint={node ? partHint(part, node) : "Indisponible sur cet ordinateur"}
+              hint={node ? partHint(part, node) : t("settings.custom.unavailable")}
               muted={!node}
               icon={node ? <PartIcon item={node} /> : <ItemIcon name="?" />}
               sortable={sortable.row(slot)}
               handle={<DragHandle label={label} {...sortable.handle(slot)} />}
             >
               <button type="button" className="link-button" onClick={() => setPicking(slot)}>
-                Changer…
+                {t("settings.common.change")}
               </button>
               <button
                 type="button"
                 className="link-button"
                 onClick={() => onChange({ ...wheel, parts: parts.filter((_, i) => i !== slot) })}
               >
-                Retirer
+                {t("settings.common.remove")}
               </button>
             </Row>
           );
         })}
         {!full && parts.length > 0 && (
-          <AddRow label="Ajouter une part" onClick={() => setPicking(parts.length)} />
+          <AddRow label={t("settings.common.addPart")} onClick={() => setPicking(parts.length)} />
         )}
       </Section>
 
-      <Section title="Affichage">
+      <Section title={t("settings.custom.display.title")}>
         <Row
-          label="Afficher cette roue"
-          hint="Sa place parmi les autres se règle dans l'onglet Roues."
+          label={t("settings.custom.display.show")}
+          hint={t("settings.custom.display.showHint")}
         >
           <Toggle
             checked={wheel.enabled}
-            label={`Afficher ${wheel.name}`}
+            label={t("settings.custom.display.toggle", { name: wheel.name })}
             onChange={(enabled) => onChange({ ...wheel, enabled })}
           />
         </Row>
         <Row
-          label="Seulement pour certains fichiers"
+          label={t("settings.custom.extensions.label")}
           hint={
             wheel.extensions.length > 0
-              ? "Elle n'apparaît que si tous les fichiers ont une de ces extensions."
-              : "Laissez vide pour qu'elle apparaisse toujours."
+              ? t("settings.custom.extensions.limited")
+              : t("settings.custom.extensions.always")
           }
         >
           <input
             className="text-input extensions-input"
-            aria-label="Extensions des fichiers concernés"
+            aria-label={t("settings.custom.extensions.aria")}
             placeholder="pdf, docx…"
             autoCapitalize="off"
             spellCheck={false}
@@ -467,7 +476,7 @@ function WheelEditor({
 
       {picking !== null && (
         <PartPicker
-          title={picking < parts.length ? "Changer la part" : "Nouvelle part"}
+          title={picking < parts.length ? t("settings.custom.changePart") : t("settings.common.newPart")}
           kinds={kinds}
           current={parts[picking] ?? null}
           colors={settings.formatColors}
@@ -498,7 +507,7 @@ function ConfirmButton({ label, onConfirm }: { label: string; onConfirm: () => v
       data-danger={asking || undefined}
       onClick={() => (asking ? onConfirm() : setAsking(true))}
     >
-      {asking ? "Confirmer la suppression" : label}
+      {asking ? t("settings.custom.confirmRemove") : label}
     </button>
   );
 }

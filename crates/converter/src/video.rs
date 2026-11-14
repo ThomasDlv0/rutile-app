@@ -159,36 +159,33 @@ pub fn detect_video(path: &Path) -> Option<VideoInput> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VideoError {
-    #[error(
-        "FFmpeg est introuvable : installez-le pour convertir des vidéos ({}).",
-        install_hint()
-    )]
+    #[error("{}", i18n::tf("video.ffmpegMissing", &[("hint", &install_hint())]))]
     FfmpegMissing,
-    #[error("Le fichier est déjà au format {0}.")]
+    #[error("{}", i18n::tf("video.sameFormat", &[("format", .0)]))]
     SameFormat(VideoFormat),
-    #[error("Cette vidéo n'a pas de son à extraire.")]
+    #[error("{}", i18n::t("video.noAudio"))]
     NoAudio,
-    #[error("Cette vidéo n'a pas d'image.")]
+    #[error("{}", i18n::t("video.noVideo"))]
     NoVideo,
-    #[error("Votre FFmpeg ne sait pas encoder en {0}.")]
+    #[error("{}", i18n::tf("video.missingEncoder", &[("format", .0)]))]
     MissingEncoder(VideoFormat),
-    #[error("Ce fichier n'est pas dans un format vidéo que Rutile accepte.")]
+    #[error("{}", i18n::t("video.unsupportedInput"))]
     UnsupportedInput,
-    #[error("Échec de FFmpeg ({0}).")]
+    #[error("{}", i18n::tf("video.failed", &[("reason", .0)]))]
     Failed(String),
     #[error(transparent)]
     Output(#[from] ConvertError),
 }
 
 /// Commande d'installation de FFmpeg, selon le système.
-pub fn install_hint() -> &'static str {
+pub fn install_hint() -> String {
     if cfg!(target_os = "macos") {
-        "brew install ffmpeg"
+        "brew install ffmpeg".into()
     } else if cfg!(windows) {
-        "winget install Gyan.FFmpeg"
+        "winget install Gyan.FFmpeg".into()
     } else {
         // Court : il s'affiche aussi au centre de la roue
-        "paquet ffmpeg (apt, dnf ou brew)"
+        i18n::t("video.installHint")
     }
 }
 
@@ -594,7 +591,7 @@ pub fn rework_video(
             args.extend_from_slice(&["-movflags", "+faststart"]);
             (
                 args.into_iter().map(String::from).collect(),
-                "-compressee".into(),
+                i18n::t("files.suffix.compressed"),
                 "mp4".into(),
             )
         }
@@ -602,7 +599,7 @@ pub fn rework_video(
             let encoder = h264()?;
             let seconds = probe
                 .duration
-                .ok_or_else(|| VideoError::Failed("durée de la vidéo inconnue".into()))?;
+                .ok_or_else(|| VideoError::Failed(i18n::t("video.unknownDuration")))?;
             let kbps = fit_video_kbps(megabytes, seconds);
             let filter = if kbps < FIT_SD_KBPS {
                 "scale='min(854,trunc(iw/2)*2)':-2"
@@ -632,13 +629,17 @@ pub fn rework_video(
                 ]
                 .map(String::from),
             );
-            (args, format!("-{megabytes}mo"), "mp4".into())
+            (
+                args,
+                i18n::tf("files.suffix.megabytes", &[("megabytes", &megabytes)]),
+                "mp4".into(),
+            )
         }
         VideoRework::Mute => (
             ["-map", "0:v:0", "-c", "copy", "-an"]
                 .map(String::from)
                 .to_vec(),
-            "-sans-son".into(),
+            i18n::t("files.suffix.muted"),
             input
                 .extension()
                 .map(|ext| ext.to_string_lossy().into_owned())
@@ -727,8 +728,11 @@ fn run(
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
-        .unwrap_or("erreur inconnue");
-    Err(VideoError::Failed(last_line.trim().to_string()))
+        .map_or_else(
+            || i18n::t("video.unknownError"),
+            |line| line.trim().to_string(),
+        );
+    Err(VideoError::Failed(last_line))
 }
 
 #[cfg(test)]

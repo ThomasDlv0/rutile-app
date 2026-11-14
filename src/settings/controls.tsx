@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { t } from "../i18n";
 import type { Settings } from "../ipc";
 import type { SortableRow, useSortable } from "./useSortable";
 
@@ -14,7 +15,8 @@ export type SectionId =
   | "shake"
   | "quality"
   | "startup"
-  | "updates";
+  | "updates"
+  | "language";
 
 export type Change = (section: SectionId, patch: Partial<Settings>) => void;
 export type Errors = Partial<Record<SectionId, string>>;
@@ -132,8 +134,8 @@ export function DragHandle({
     <button
       type="button"
       className="drag-handle"
-      aria-label={`Déplacer ${label}`}
-      title="Glisser pour déplacer"
+      aria-label={t("settings.controls.move", { label })}
+      title={t("settings.controls.drag")}
       {...handle}
     >
       <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">

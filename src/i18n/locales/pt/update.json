@@ -1,0 +1,21 @@
+{
+  "update.available.title": "O Rutile {version} está disponível",
+  "update.available.footnote": "O Rutile será reiniciado depois que a atualização for instalada.",
+  "update.downloading.title": "Baixando o Rutile {version}",
+  "update.downloading.label": "Baixando…",
+  "update.downloading.percent": "{percent}%",
+  "update.downloading.footnote": "O Rutile será reiniciado sozinho depois que a atualização for instalada. Você pode fechar esta janela enquanto isso.",
+  "update.installing.title": "Instalando o Rutile {version}",
+  "update.installing.label": "Verificado · O Rutile vai reiniciar…",
+  "update.uptodate.title": "O Rutile está atualizado",
+  "update.uptodate.subtitle": "Você já tem a versão mais recente, {current}.",
+  "update.failed.title": "Não foi possível atualizar",
+  "update.button.later": "Mais tarde",
+  "update.button.install": "Atualizar",
+  "update.button.hide": "Ocultar",
+  "update.button.ok": "OK",
+  "update.button.close": "Fechar",
+  "update.button.releases": "Página de versões",
+  "update.close.hideTitle": "Ocultar (o download continua)",
+  "update.notes.label": "Novidades"
+}

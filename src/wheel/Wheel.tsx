@@ -7,7 +7,7 @@ import { ShareIcon } from "../ShareIcon";
 import { WheelsIcon } from "../WheelsIcon";
 import type { WheelBorder, WheelConfig } from "../ipc";
 import { ActionGlyph } from "./ActionGlyph";
-import { type BuiltinMode, type Mode, type WheelItem, isCustomMode } from "./formats";
+import { type Mode, type WheelItem, isCustomMode } from "./formats";
 import {
   BUTTON_RADIUS,
   CENTER,
@@ -24,6 +24,7 @@ import {
   separatorAngles,
 } from "./geometry";
 import { DEFAULT_ACCENT, glow } from "./color";
+import { t, useLanguage } from "../i18n";
 import { type HubText, type Point, digitSector, stepSector, usableSector } from "./selection";
 
 export type Phase = "open" | "closing" | "closed";
@@ -76,17 +77,9 @@ interface WheelProps {
   onToggleMode: () => void;
 }
 
-const MODE_NAMES: Record<BuiltinMode, string> = {
-  image: "Images",
-  video: "Vidéo",
-  apps: "Apps",
-  share: "Partage",
-  actions: "Actions",
-};
-
 /** Nom court d'une roue ; `title` est celui d'une roue personnalisée. */
 function modeName(mode: Mode, title?: string): string {
-  return isCustomMode(mode) ? title || "Ma roue" : MODE_NAMES[mode];
+  return isCustomMode(mode) ? title || t("wheel.mode.custom") : t(`wheel.mode.${mode}`);
 }
 
 export function ModeIcon({ mode, size }: { mode: Mode; size: number }) {
@@ -191,7 +184,7 @@ function HubContent({
         <>
           <ProgressRing progress={work.progress} />
           <span className="hub-label" data-tone="muted">
-            {Math.round(work.progress * 100)} %
+            {t("wheel.hub.percent", { percent: Math.round(work.progress * 100) })}
           </span>
         </>
       );
@@ -200,7 +193,7 @@ function HubContent({
       <>
         <span className="spinner" aria-hidden="true" />
         <span className="hub-label" data-tone="muted">
-          {work.labels?.working ?? "Conversion…"}
+          {work.labels?.working ?? t("wheel.labels.convert.working")}
         </span>
       </>
     );
@@ -213,7 +206,7 @@ function HubContent({
           {done ? "✓" : "!"}
         </span>
         <span className="hub-label" data-tone="action">
-          {done ? (work.labels?.done ?? "Converti") : "Échec"}
+          {done ? (work.labels?.done ?? t("wheel.labels.convert.done")) : t("wheel.hub.failed")}
         </span>
       </span>
     );
@@ -267,6 +260,8 @@ export function Wheel({
   onOutsideClick,
   onToggleMode,
 }: WheelProps) {
+  // Les textes se relisent à chaque changement de langue
+  useLanguage();
   const count = items.length;
   const wedge = useWedge(highlighted, count);
   const busy = work !== null;
@@ -403,9 +398,13 @@ export function Wheel({
               title={isNamed(mode) && !format.empty ? format.label : undefined}
               aria-label={
                 isDisabled
-                  ? `${format.label}, indisponible`
-                  : (format.action ?? `Convertir en ${format.label}`) +
-                    (format.badge ? `, ${format.badge} notification(s)` : "")
+                  ? t("wheel.item.unavailable", { label: format.label })
+                  : format.badge
+                    ? t("wheel.item.withBadge", {
+                        action: format.action ?? t("wheel.convertTo", { format: format.label }),
+                        badge: format.badge,
+                      })
+                    : (format.action ?? t("wheel.convertTo", { format: format.label }))
               }
               onFocus={() => onPointer(buttonCenter(index, count), true)}
               onBlur={() => onPointer(null)}
@@ -447,8 +446,8 @@ export function Wheel({
             title={hub?.title}
             aria-label={
               next && !back
-                ? `Passer à la roue ${modeName(next, nextTitle)}`
-                : "Revenir à la roue d'avant"
+                ? t("wheel.hub.switchTo", { name: modeName(next, nextTitle) })
+                : t("wheel.hub.back")
             }
             onClick={onToggleMode}
           >

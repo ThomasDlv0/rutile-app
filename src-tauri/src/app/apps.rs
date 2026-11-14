@@ -251,8 +251,8 @@ pub async fn pick_app<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
         let mut picker = dialog
             .dialog()
             .file()
-            .set_title("Choisir une application")
-            .add_filter("Applications", extensions);
+            .set_title(i18n::t("apps.pickApp"))
+            .add_filter(i18n::t("apps.appsFilter"), extensions);
         if let Some(folder) = folder {
             picker = picker.set_directory(folder);
         }
@@ -273,7 +273,7 @@ pub async fn pick_app<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
 #[tauri::command]
 pub async fn pick_app_folder<R: Runtime>(app: AppHandle<R>) -> Option<AppSlot> {
     tauri::async_runtime::spawn_blocking(move || {
-        let picker = app.dialog().file().set_title("Choisir un dossier");
+        let picker = app.dialog().file().set_title(i18n::t("apps.pickFolder"));
         let path = picker.blocking_pick_folder()?.into_path().ok()?;
         let name = path.file_name()?.to_string_lossy().into_owned();
         Some(AppSlot {
@@ -337,7 +337,7 @@ pub async fn launch_app<R: Runtime>(
     paths: Vec<PathBuf>,
 ) -> Result<(), String> {
     let Some(Some(chosen)) = settings::current(&app).apps.get(slot).cloned() else {
-        return Err("Aucune application n'est associée à cette part.".into());
+        return Err(i18n::t("apps.noAppForSlot"));
     };
     match chosen.kind {
         AppKind::App => tauri::async_runtime::spawn_blocking(move || {
@@ -353,7 +353,7 @@ pub async fn launch_app<R: Runtime>(
             .opener()
             .open_url(chosen.path.to_string_lossy(), None::<&str>)
             .map_err(|err| err.to_string()),
-        AppKind::Url => Err("Seules les adresses web s'ouvrent.".into()),
+        AppKind::Url => Err(i18n::t("apps.onlyWebAddresses")),
     }
 }
 

@@ -36,12 +36,10 @@ pub enum ShareTarget {
     System { name: String },
 }
 
-/// Nom de la destination « menu de partage du système ».
-const SHARE_MENU_NAME: &str = "Partager…";
-
+/// Destination « menu de partage du système », nommée dans la langue en cours.
 fn share_menu_target() -> ShareTarget {
     ShareTarget::System {
-        name: SHARE_MENU_NAME.into(),
+        name: i18n::t("share.menuName"),
     }
 }
 
@@ -104,7 +102,11 @@ fn icon<R: Runtime>(app: &AppHandle<R>, target: &ShareTarget) -> Option<String> 
 fn view<R: Runtime>(app: &AppHandle<R>, target: &ShareTarget) -> ShareView {
     ShareView {
         icon: icon(app, target),
-        target: target.clone(),
+        // Le nom enregistré est celui de la langue d'alors : l'interface montre celui d'aujourd'hui
+        target: match target {
+            ShareTarget::System { .. } => share_menu_target(),
+            other => other.clone(),
+        },
     }
 }
 
@@ -169,7 +171,7 @@ pub fn suggestions<R: Runtime>(app: &AppHandle<R>) -> Vec<Option<ShareTarget>> {
 /// Destination proposée dans les réglages, rangée par famille.
 #[derive(Debug, Serialize)]
 pub struct ShareChoice {
-    group: &'static str,
+    group: String,
     #[serde(flatten)]
     view: ShareView,
 }
@@ -184,21 +186,22 @@ pub async fn share_choices<R: Runtime>(app: AppHandle<R>) -> Vec<ShareChoice> {
 }
 
 fn choices<R: Runtime>(app: &AppHandle<R>) -> Vec<ShareChoice> {
-    let menu = platform::share::HAS_SHARE_MENU.then(|| ("Partage du système", share_menu_target()));
+    let system = i18n::t("share.group.system");
+    let menu = platform::share::HAS_SHARE_MENU.then(|| (system.clone(), share_menu_target()));
     let services = refresh_services(app).into_iter().map(|service| {
         let target = ShareTarget::Service {
             id: service.id,
             name: service.name,
         };
-        ("Partage du système", target)
+        (system.clone(), target)
     });
     let folders = platform::share::cloud_folders()
         .into_iter()
-        .map(|folder| ("Dossiers synchronisés", folder_target(folder)));
+        .map(|folder| (i18n::t("share.group.folders"), folder_target(folder)));
     let messaging = platform::share::messaging_apps()
         .into_iter()
         .filter_map(app_target)
-        .map(|target| ("Messageries", target));
+        .map(|target| (i18n::t("share.group.messaging"), target));
     menu.into_iter()
         .chain(services)
         .chain(folders)
@@ -218,7 +221,7 @@ pub async fn pick_share_folder<R: Runtime>(app: AppHandle<R>) -> Option<ShareVie
         dialog
             .dialog()
             .file()
-            .set_title("Choisir le dossier où copier les fichiers")
+            .set_title(i18n::t("share.pickFolder"))
             .blocking_pick_folder()?
             .into_path()
             .ok()
@@ -260,14 +263,14 @@ pub async fn share_files<R: Runtime>(
     paths: Vec<PathBuf>,
 ) -> Result<(), String> {
     let Some(Some(target)) = settings::current(&app).share.get(slot).cloned() else {
-        return Err("Aucun partage n'est associé à cette part.".into());
+        return Err(i18n::t("share.noTarget"));
     };
     let result = share_with(&app, target, paths).await;
     if let Err(err) = &result {
         notify::announce(
             &app,
             Message {
-                title: "Partage impossible".into(),
+                title: i18n::t("share.failed"),
                 body: err.clone(),
                 action: None,
             },
@@ -318,8 +321,8 @@ async fn share_with<R: Runtime>(
             notify::announce(
                 app,
                 Message {
-                    title: format!("Prêt à coller dans {name}"),
-                    body: format!("Ouvrez la conversation puis collez avec {PASTE}."),
+                    title: i18n::tf("share.readyToPaste", &[("name", &name)]),
+                    body: i18n::tf("share.pasteHint", &[("shortcut", &PASTE)]),
                     action: None,
                 },
                 true,
@@ -338,7 +341,7 @@ async fn show_share_menu<R: Runtime>(
 ) -> Result<(), String> {
     let window = app
         .get_webview_window(WHEEL_LABEL)
-        .ok_or("Fenêtre de la roue introuvable.")?;
+        .ok_or_else(|| i18n::t("share.wheelWindowMissing"))?;
     let (sender, receiver) = mpsc::channel();
     on_main_thread(app, move || {
         let view = window.ns_view().map_err(|err| err.to_string())?;
@@ -352,7 +355,7 @@ async fn show_share_menu<R: Runtime>(
         .await
         .map_err(|err| err.to_string())?
         .map(|_chosen| ())
-        .map_err(|_| "Le menu de partage s'est fermé sans réponse.".into())
+        .map_err(|_| i18n::t("share.menuClosed"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -360,7 +363,7 @@ async fn show_share_menu<R: Runtime>(
     _app: &AppHandle<R>,
     _paths: Vec<PathBuf>,
 ) -> Result<(), String> {
-    Err("Ce système n'a pas de menu de partage commun aux apps.".into())
+    Err(i18n::t("share.noMenu"))
 }
 
 #[cfg(target_os = "macos")]
@@ -376,10 +379,11 @@ struct CopyReport {
 impl CopyReport {
     /// Notification d'une copie en partie ratée : combien sont passés, puis les erreurs.
     fn message(&self, folder: &str) -> Message {
-        let title = match self.copied.len() {
-            1 => format!("1 fichier copié dans {folder}"),
-            count => format!("{count} fichiers copiés dans {folder}"),
-        };
+        let title = i18n::tn(
+            "share.copied",
+            self.copied.len() as u64,
+            &[("folder", &folder)],
+        );
         Message {
             title,
             body: self.errors.join("\n"),
@@ -396,9 +400,15 @@ fn copy_all(paths: &[PathBuf], folder: &Path) -> CopyReport {
     for path in paths {
         match copy_into(path, folder) {
             Ok(copy) => report.copied.push(copy),
-            Err(err) => report.errors.push(format!(
-                "{} : {err}",
-                path.file_name().unwrap_or_default().to_string_lossy()
+            Err(err) => report.errors.push(i18n::tf(
+                "files.failureLine",
+                &[
+                    (
+                        "name",
+                        &path.file_name().unwrap_or_default().to_string_lossy(),
+                    ),
+                    ("reason", &err),
+                ],
             )),
         }
     }
@@ -428,8 +438,9 @@ fn numbered(source: &Path, attempt: u32, is_dir: bool) -> Option<String> {
 fn copy_into(source: &Path, folder: &Path) -> io::Result<PathBuf> {
     let is_dir = source.is_dir();
     for attempt in 0..MAX_ATTEMPTS {
-        let name = numbered(source, attempt, is_dir)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "nom de fichier vide"))?;
+        let name = numbered(source, attempt, is_dir).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, i18n::t("share.emptyName"))
+        })?;
         let target = folder.join(name);
         // Le nom est réservé de façon atomique, même si un autre programme écrit en même temps
         let reserved = if is_dir {
@@ -462,7 +473,7 @@ fn copy_into(source: &Path, folder: &Path) -> io::Result<PathBuf> {
             Err(err) => return Err(err),
         }
     }
-    Err(io::Error::other("aucun nom de fichier disponible"))
+    Err(io::Error::other(i18n::t("output.noFileName")))
 }
 
 fn copy_dir_contents(source: &Path, target: &Path) -> io::Result<()> {

@@ -4698,13 +4698,14 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rutile"
-version = "1.5.0"
+version = "1.5.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
  "reqwest",
  "rustls",
  "rutile-converter",
+ "rutile-i18n",
  "rutile-platform",
  "rutile-shake-detector",
  "serde",
@@ -4731,12 +4732,21 @@ dependencies = [
  "image 0.25.10",
  "lopdf",
  "resvg",
+ "rutile-i18n",
  "serde",
  "tempfile",
  "thiserror 2.0.21",
  "vtracer",
  "webp",
  "zip",
+]
+
+[[package]]
+name = "rutile-i18n"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sys-locale",
 ]
 
 [[package]]
@@ -4754,6 +4764,7 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-vision",
+ "rutile-i18n",
  "serde",
  "tokio",
  "windows",
@@ -5409,6 +5420,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

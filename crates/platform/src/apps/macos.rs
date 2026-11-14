@@ -45,7 +45,7 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
     if status.success() {
         Ok(())
     } else {
-        Err(format!("macOS n'a pas pu ouvrir « {} »", app.display()))
+        Err(i18n::tf("apps.macosOpenFailed", &[("app", &app.display())]))
     }
 }
 

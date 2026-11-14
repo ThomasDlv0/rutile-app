@@ -75,7 +75,7 @@ pub fn place(layout: Layout) -> Result<(), PlacementError> {
             ..Default::default()
         };
         if !GetMonitorInfoW(monitor, &mut info).as_bool() {
-            return Err(PlacementError::Failed("écran introuvable".into()));
+            return Err(PlacementError::Failed(i18n::t("placement.noScreen")));
         }
         let mut outer = RECT::default();
         GetWindowRect(window, &mut outer).map_err(|err| PlacementError::Failed(err.message()))?;

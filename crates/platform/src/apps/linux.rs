@@ -27,11 +27,14 @@ pub fn launch(app: &Path, files: &[PathBuf]) -> Result<(), String> {
             .arg(app)
             .args(files)
             .status()
-            .map_err(|err| format!("gio introuvable ({err})"))?;
+            .map_err(|err| i18n::tf("apps.gioMissing", &[("reason", &err)]))?;
         return if status.success() {
             Ok(())
         } else {
-            Err(format!("impossible de lancer « {} »", app.display()))
+            Err(i18n::tf(
+                "apps.linuxLaunchFailed",
+                &[("app", &app.display())],
+            ))
         };
     }
     let mut child = Command::new(app)

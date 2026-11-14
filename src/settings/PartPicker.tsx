@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { pickApp, pickAppFolder, sitePreview, type CustomPart, type PartKind, type SitePreview } from "../ipc";
+import { t, useLanguage, type MessageKey } from "../i18n";
 import { actionChoices } from "../wheel/actions";
 import { OUTPUT_FORMATS, VIDEO_FORMATS, WEB_ICON, colorize } from "../wheel/formats";
 import { ItemIcon } from "./controls";
 import { PartChip } from "./parts";
 import { siteName, webAddress } from "./web";
 
-const KIND_LABELS: Record<PartKind, string> = {
-  app: "Application",
-  folder: "Dossier",
-  url: "Site web",
-  convert: "Conversion",
-  action: "Action",
-  shortcut: "Raccourci",
-  command: "Commande",
+const KIND_LABELS: Record<PartKind, MessageKey> = {
+  app: "settings.kind.app",
+  folder: "settings.kind.folder",
+  url: "settings.kind.url",
+  convert: "settings.kind.convert",
+  action: "settings.kind.action",
+  shortcut: "settings.kind.shortcut",
+  command: "settings.kind.command",
 };
 
 /** Pictogrammes des genres de parts, au trait, comme ceux des onglets. */
@@ -130,7 +131,7 @@ export function PartPicker({
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="sheet-title">{title}</h3>
-        <div className="kind-grid" role="group" aria-label="Genre de part">
+        <div className="kind-grid" role="group" aria-label={t("settings.picker.kinds")}>
           {kinds.map((id) => (
             <button
               key={id}
@@ -142,7 +143,7 @@ export function PartPicker({
               <svg className="tab-icon" width="24" height="24" viewBox="0 0 20 20" aria-hidden="true">
                 {KIND_ICONS[id]}
               </svg>
-              <span>{KIND_LABELS[id]}</span>
+              <span>{t(KIND_LABELS[id])}</span>
             </button>
           ))}
         </div>
@@ -155,9 +156,9 @@ export function PartPicker({
           <NamedForm
             kind="shortcut"
             current={same("shortcut")}
-            valueLabel="Nom du raccourci"
-            placeholder="Tel qu'il s'appelle dans l'app Raccourcis"
-            hint="Les fichiers de la roue lui sont passés en entrée."
+            valueLabel={t("settings.picker.shortcut.value")}
+            placeholder={t("settings.picker.shortcut.placeholder")}
+            hint={t("settings.picker.shortcut.hint")}
             onPick={onPick}
           />
         )}
@@ -165,15 +166,15 @@ export function PartPicker({
           <NamedForm
             kind="command"
             current={same("command")}
-            valueLabel="Commande"
+            valueLabel={t("settings.picker.command.value")}
             placeholder={'open -a Aperçu "$1"'}
-            hint="Les fichiers de la roue sont ses arguments : $1, $2…"
+            hint={t("settings.picker.command.hint")}
             onPick={onPick}
           />
         )}
         <div className="sheet-actions">
           <button type="button" className="shortcut-button" onClick={onCancel}>
-            Annuler
+            {t("settings.common.cancel")}
           </button>
         </div>
       </div>
@@ -231,7 +232,7 @@ function SiteForm({
       }}
     >
       <label className="picker-field">
-        <span>Adresse</span>
+        <span>{t("settings.picker.address")}</span>
         <input
           className="text-input"
           placeholder="youtube.com"
@@ -249,23 +250,23 @@ function SiteForm({
         </span>
         <input
           className="text-input"
-          aria-label="Nom de la part"
-          placeholder="Nom"
+          aria-label={t("settings.picker.partName")}
+          placeholder={t("settings.picker.name")}
           maxLength={40}
           disabled={!url}
           value={name}
           onChange={(event) => setTypedName(event.target.value)}
         />
         <button type="submit" className="primary-button" disabled={!url}>
-          {current ? "Enregistrer" : "Ajouter"}
+          {current ? t("settings.common.save") : t("settings.common.add")}
         </button>
       </div>
       <p className="picker-hint">
         {looking
-          ? "Recherche du logo…"
+          ? t("settings.picker.site.looking")
           : site && !site.icon
-            ? "Ce site ne donne pas de logo : il gardera le globe."
-            : "Le logo et le nom viennent du site lui-même."}
+            ? t("settings.picker.site.noLogo")
+            : t("settings.picker.site.hint")}
       </p>
     </form>
   );
@@ -280,8 +281,8 @@ function FormatChoices({
   onPick: (part: CustomPart) => void;
 }) {
   const groups = [
-    { title: "Images", formats: colorize(OUTPUT_FORMATS, colors) },
-    { title: "Vidéos et son", formats: colorize(VIDEO_FORMATS, colors) },
+    { title: t("settings.picker.formats.images"), formats: colorize(OUTPUT_FORMATS, colors) },
+    { title: t("settings.picker.formats.videos"), formats: colorize(VIDEO_FORMATS, colors) },
   ];
   return (
     <div className="picker-panel">
@@ -295,7 +296,7 @@ function FormatChoices({
                 type="button"
                 className="format-choice"
                 style={{ background: format.color, color: format.ink }}
-                title={format.action ?? `Convertir en ${format.label}`}
+                title={format.action ?? t("settings.picker.formats.convertTo", { format: format.label })}
                 onClick={() => onPick({ kind: "convert", name: format.label, value: format.id })}
               >
                 {format.label}
@@ -305,7 +306,7 @@ function FormatChoices({
         </div>
       ))}
       <p className="picker-hint">
-        La part convertit les fichiers de la roue, ou les fait choisir s'il n'y en a pas.
+        {t("settings.picker.formats.hint")}
       </p>
     </div>
   );
@@ -322,7 +323,9 @@ function ActionChoices({
   windowLayout: boolean;
   onPick: (part: CustomPart) => void;
 }) {
-  const choices = useMemo(() => actionChoices({ windowLayout }), [windowLayout]);
+  const lang = useLanguage();
+  // Les libellés des actions suivent la langue
+  const choices = useMemo(() => actionChoices({ windowLayout }), [windowLayout, lang]);
   return (
     <div className="sheet-list picker-list">
       {choices.map(({ group, actions }) => (
@@ -339,7 +342,9 @@ function ActionChoices({
               <span className="sheet-item-text">
                 <span>{action.label}</span>
                 <span className="sheet-item-hint">
-                  {action.children ? `${action.action} · avec ses options` : action.action}
+                  {action.children
+                    ? t("settings.parts.withOptions", { action: action.action ?? "" })
+                    : action.action}
                 </span>
               </span>
             </button>
@@ -378,10 +383,10 @@ function NamedForm({
       }}
     >
       <label className="picker-field">
-        <span>Nom de la part</span>
+        <span>{t("settings.picker.partName")}</span>
         <input
           className="text-input"
-          placeholder="Ce qui s'affiche sur la roue"
+          placeholder={t("settings.picker.namePlaceholder")}
           autoFocus
           maxLength={40}
           value={name}
@@ -403,7 +408,7 @@ function NamedForm({
       <div className="picker-submit">
         <p className="picker-hint">{hint}</p>
         <button type="submit" className="primary-button" disabled={!ready}>
-          {current ? "Enregistrer" : "Ajouter"}
+          {current ? t("settings.common.save") : t("settings.common.add")}
         </button>
       </div>
     </form>

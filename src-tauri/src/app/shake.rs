@@ -30,9 +30,6 @@ impl Default for ShakeSettings {
 #[derive(Default)]
 struct ShakeWatcher(Mutex<Option<Watcher>>);
 
-pub const NEEDS_INPUT_GROUP: &str = "Sous Wayland, Rutile lit la souris avec evdev, ce qui demande \
-     d'être dans le groupe « input ». La marche à suivre est dans le README.";
-
 /// Démarre, redémarre ou arrête l'écoute selon les réglages.
 pub fn apply<R: Runtime>(app: &AppHandle<R>, settings: ShakeSettings) -> Result<(), String> {
     if app.try_state::<ShakeWatcher>().is_none() {
@@ -50,8 +47,10 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>, settings: ShakeSettings) -> Result<
             *current = Some(watcher);
             Ok(())
         }
-        Err(WatchError::NeedsInputGroup) => Err(NEEDS_INPUT_GROUP.into()),
-        Err(WatchError::Unsupported(reason)) => Err(format!("Secouage indisponible : {reason}.")),
+        Err(WatchError::NeedsInputGroup) => Err(i18n::t("shake.needsInputGroup")),
+        Err(WatchError::Unsupported(reason)) => {
+            Err(i18n::tf("shake.unavailableReason", &[("reason", &reason)]))
+        }
     }
 }
 

@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Rutile {version} ist verfügbar",
+  "update.available.footnote": "Rutile wird nach der Installation des Updates neu gestartet.",
+  "update.downloading.title": "Rutile {version} wird geladen",
+  "update.downloading.label": "Wird geladen …",
+  "update.downloading.percent": "{percent} %",
+  "update.downloading.footnote": "Rutile wird nach der Installation des Updates automatisch neu gestartet. Sie können dieses Fenster in der Zwischenzeit schließen.",
+  "update.installing.title": "Rutile {version} wird installiert",
+  "update.installing.label": "Überprüft · Rutile wird neu gestartet …",
+  "update.uptodate.title": "Rutile ist auf dem neuesten Stand",
+  "update.uptodate.subtitle": "Sie haben die neueste Version, {current}.",
+  "update.failed.title": "Update nicht möglich",
+  "update.button.later": "Später",
+  "update.button.install": "Aktualisieren",
+  "update.button.hide": "Ausblenden",
+  "update.button.ok": "OK",
+  "update.button.close": "Schließen",
+  "update.button.releases": "Seite der Versionen",
+  "update.close.hideTitle": "Ausblenden (das Laden wird fortgesetzt)",
+  "update.notes.label": "Neuerungen"
+}

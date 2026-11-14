@@ -33,7 +33,7 @@ pub(crate) fn reserve(input: &Path, extension: &str) -> Result<(PathBuf, File), 
 
     Err(write_error(
         dir,
-        io::Error::other("aucun nom de fichier disponible"),
+        io::Error::other(i18n::t("output.noFileName")),
     ))
 }
 
@@ -55,7 +55,7 @@ pub(crate) fn reserve_dir(target: &Path) -> Result<PathBuf, ConvertError> {
     }
     Err(write_error(
         dir,
-        io::Error::other("aucun nom de dossier disponible"),
+        io::Error::other(i18n::t("output.noDirName")),
     ))
 }
 

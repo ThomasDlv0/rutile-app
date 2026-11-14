@@ -422,28 +422,31 @@ pub enum PickKind {
 /// il ne propose que les images ou que les vidéos sur les roues de conversion.
 #[tauri::command]
 pub async fn pick_files<R: Runtime>(app: AppHandle<R>, kind: PickKind) -> Vec<FileInfo> {
-    let (title, filter): (_, Option<(_, &[&str])>) = match kind {
+    let (title, filter): (_, Option<(String, &[&str])>) = match kind {
         PickKind::Images => (
-            "Choisir les images à convertir",
-            Some(("Images", &IMAGE_EXTENSIONS)),
+            i18n::t("wheel.pick.images"),
+            Some((i18n::t("wheel.pick.imagesFilter"), &IMAGE_EXTENSIONS)),
         ),
         PickKind::Videos => (
-            "Choisir les vidéos à convertir",
-            Some(("Vidéos", &VIDEO_EXTENSIONS)),
+            i18n::t("wheel.pick.videos"),
+            Some((i18n::t("wheel.pick.videosFilter"), &VIDEO_EXTENSIONS)),
         ),
-        PickKind::Pdfs => ("Choisir les PDF", Some(("PDF", &PDF_EXTENSIONS))),
+        PickKind::Pdfs => (
+            i18n::t("wheel.pick.pdfs"),
+            Some(("PDF".to_string(), &PDF_EXTENSIONS)),
+        ),
         PickKind::Archives => (
-            "Choisir les archives",
-            Some(("Archives ZIP", &ARCHIVE_EXTENSIONS)),
+            i18n::t("wheel.pick.archives"),
+            Some((i18n::t("wheel.pick.archivesFilter"), &ARCHIVE_EXTENSIONS)),
         ),
-        PickKind::Files => ("Choisir les fichiers", None),
-        PickKind::Any => ("Choisir les fichiers à partager", None),
+        PickKind::Files => (i18n::t("wheel.pick.files"), None),
+        PickKind::Any => (i18n::t("wheel.pick.any"), None),
     };
     let dialog = app.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         let mut picker = dialog.dialog().file().set_title(title);
         if let Some((name, extensions)) = filter {
-            picker = picker.add_filter(name, extensions);
+            picker = picker.add_filter(&name, extensions);
         }
         picker.blocking_pick_files()
     })

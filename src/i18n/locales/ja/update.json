@@ -1,0 +1,21 @@
+{
+  "update.available.title": "Rutile {version} が利用できます",
+  "update.available.footnote": "アップデートのインストール後、Rutile は再起動します。",
+  "update.downloading.title": "Rutile {version} をダウンロード中",
+  "update.downloading.label": "ダウンロード中…",
+  "update.downloading.percent": "{percent}%",
+  "update.downloading.footnote": "アップデートのインストール後、Rutile は自動的に再起動します。このウィンドウは閉じても構いません。",
+  "update.installing.title": "Rutile {version} をインストール中",
+  "update.installing.label": "検証済み · Rutile を再起動します…",
+  "update.uptodate.title": "Rutile は最新です",
+  "update.uptodate.subtitle": "最新バージョン（{current}）をお使いです。",
+  "update.failed.title": "アップデートできません",
+  "update.button.later": "あとで",
+  "update.button.install": "アップデート",
+  "update.button.hide": "隠す",
+  "update.button.ok": "OK",
+  "update.button.close": "閉じる",
+  "update.button.releases": "リリースページ",
+  "update.close.hideTitle": "隠す（ダウンロードは続行されます）",
+  "update.notes.label": "新機能"
+}
