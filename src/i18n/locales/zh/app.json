@@ -202,5 +202,10 @@
   "clipboard.copied": "已复制到剪贴板，并存放在“图片 › Rutile”中。",
   "actions.compressPdf.done.other": "已压缩 {count} 个 PDF",
   "actions.compressPdf.failed": "无法压缩",
-  "welcome.windowTitle": "欢迎使用 Rutile"
+  "welcome.windowTitle": "欢迎使用 Rutile",
+  "actions.undoRename.done.other": "已恢复 {count} 个文件的原名",
+  "actions.undoRename.failed": "无法撤销",
+  "actions.undoRename.nothing": "自 Rutile 启动以来没有可撤销的重命名。",
+  "actions.rename.undoHint": "如需撤销：重命名 › 撤销。",
+  "errors.io.exists": "已有同名文件"
 }

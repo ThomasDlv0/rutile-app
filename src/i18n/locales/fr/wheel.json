@@ -154,5 +154,7 @@
   "wheel.variant.half.action": "{format} à moitié de la taille",
   "wheel.hub.dragResult": "Glissez-le où vous voulez",
   "wheel.actions.pdf.compress.label": "Alléger",
-  "wheel.actions.pdf.compress.action": "Alléger le PDF"
+  "wheel.actions.pdf.compress.action": "Alléger le PDF",
+  "wheel.actions.rename.undo.label": "Annuler",
+  "wheel.actions.rename.undo.action": "Annuler le dernier renommage"
 }

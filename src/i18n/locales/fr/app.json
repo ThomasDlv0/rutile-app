@@ -224,5 +224,11 @@
   "actions.compressPdf.done.one": "PDF allégé",
   "actions.compressPdf.done.other": "{count} PDF allégés",
   "actions.compressPdf.failed": "Compression impossible",
-  "welcome.windowTitle": "Bienvenue dans Rutile"
+  "welcome.windowTitle": "Bienvenue dans Rutile",
+  "actions.undoRename.done.one": "Ancien nom rendu",
+  "actions.undoRename.done.other": "{count} fichiers ont retrouvé leur nom",
+  "actions.undoRename.failed": "Annulation impossible",
+  "actions.undoRename.nothing": "Aucun renommage à annuler depuis le lancement de Rutile.",
+  "actions.rename.undoHint": "Pour revenir en arrière : Renommer › Annuler.",
+  "errors.io.exists": "un fichier porte déjà ce nom"
 }

@@ -154,5 +154,7 @@
   "wheel.variant.half.action": "{format} 절반 크기",
   "wheel.hub.dragResult": "원하는 곳으로 끌어다 놓기",
   "wheel.actions.pdf.compress.label": "경량화",
-  "wheel.actions.pdf.compress.action": "PDF 압축"
+  "wheel.actions.pdf.compress.action": "PDF 압축",
+  "wheel.actions.rename.undo.label": "되돌리기",
+  "wheel.actions.rename.undo.action": "마지막 이름 변경 되돌리기"
 }

@@ -224,5 +224,11 @@
   "actions.compressPdf.done.one": "PDFを圧縮しました",
   "actions.compressPdf.done.other": "{count}個のPDFを圧縮しました",
   "actions.compressPdf.failed": "圧縮できません",
-  "welcome.windowTitle": "Rutileへようこそ"
+  "welcome.windowTitle": "Rutileへようこそ",
+  "actions.undoRename.done.one": "元の名前に戻しました",
+  "actions.undoRename.done.other": "{count}個のファイルを元の名前に戻しました",
+  "actions.undoRename.failed": "取り消せません",
+  "actions.undoRename.nothing": "Rutileの起動後に取り消せる名称変更はありません。",
+  "actions.rename.undoHint": "元に戻すには：名称変更 › 取り消す。",
+  "errors.io.exists": "同じ名前のファイルがすでにあります"
 }

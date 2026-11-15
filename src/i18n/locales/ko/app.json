@@ -224,5 +224,11 @@
   "actions.compressPdf.done.one": "PDF가 압축됨",
   "actions.compressPdf.done.other": "PDF {count}개가 압축됨",
   "actions.compressPdf.failed": "압축할 수 없음",
-  "welcome.windowTitle": "Rutile에 오신 것을 환영해요"
+  "welcome.windowTitle": "Rutile에 오신 것을 환영해요",
+  "actions.undoRename.done.one": "원래 이름으로 되돌림",
+  "actions.undoRename.done.other": "파일 {count}개의 원래 이름을 되돌림",
+  "actions.undoRename.failed": "되돌릴 수 없음",
+  "actions.undoRename.nothing": "Rutile을 시작한 뒤로 되돌릴 이름 변경이 없어요.",
+  "actions.rename.undoHint": "되돌리려면: 이름 변경 › 되돌리기.",
+  "errors.io.exists": "같은 이름의 파일이 이미 있어요"
 }

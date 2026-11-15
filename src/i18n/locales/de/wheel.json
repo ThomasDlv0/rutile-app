@@ -154,5 +154,7 @@
   "wheel.variant.half.action": "{format} in halber Größe",
   "wheel.hub.dragResult": "Beliebig hinziehen",
   "wheel.actions.pdf.compress.label": "Verkleinern",
-  "wheel.actions.pdf.compress.action": "PDF komprimieren"
+  "wheel.actions.pdf.compress.action": "PDF komprimieren",
+  "wheel.actions.rename.undo.label": "Widerrufen",
+  "wheel.actions.rename.undo.action": "Letzte Umbenennung widerrufen"
 }

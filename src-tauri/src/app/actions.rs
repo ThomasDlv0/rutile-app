@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -65,6 +65,8 @@ pub enum ActionRequest {
     Rename {
         style: RenameStyle,
     },
+    /// Rend leur ancien nom aux fichiers du dernier renommage.
+    UndoRename,
     Retouch {
         retouch: Retouch,
     },
@@ -179,7 +181,8 @@ async fn perform<R: Runtime>(
                 output,
             )
         }
-        ActionRequest::Rename { style } => rename(paths, style).await,
+        ActionRequest::Rename { style } => rename(app, paths, style).await,
+        ActionRequest::UndoRename => undo_rename(app).await,
         ActionRequest::Retouch { retouch } => retouch_images(app, paths, retouch).await,
         ActionRequest::Video { rework } => rework_videos(app, paths, rework).await,
         ActionRequest::Place { layout } => place_window(app, layout).await,
@@ -248,17 +251,69 @@ fn summary(
     }))
 }
 
-async fn rename(paths: Vec<PathBuf>, style: RenameStyle) -> Done {
-    match blocking(move || files::rename_files(&paths, style)).await {
-        Some(Ok(done)) => summary(
-            |count| i18n::tn("actions.rename.done", count, &[]),
-            i18n::t("actions.rename.failed"),
-            done,
-            Vec::new(),
-        ),
+/// Dernier renommage en lot, (avant, après) pour chaque fichier, tant que Rutile tourne :
+/// de quoi l'annuler.
+#[derive(Default)]
+pub struct RenameHistory(Mutex<Vec<(PathBuf, PathBuf)>>);
+
+async fn rename<R: Runtime>(app: &AppHandle<R>, paths: Vec<PathBuf>, style: RenameStyle) -> Done {
+    match blocking(move || files::rename_files_tracked(&paths, style)).await {
+        Some(Ok(pairs)) => {
+            let done = pairs.iter().map(|(_, after)| after.clone()).collect();
+            *app.state::<RenameHistory>()
+                .0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = pairs;
+            let mut message = summary(
+                |count| i18n::tn("actions.rename.done", count, &[]),
+                i18n::t("actions.rename.failed"),
+                done,
+                Vec::new(),
+            )?;
+            if let Some(message) = &mut message {
+                message.body = format!("{}\n{}", message.body, i18n::t("actions.rename.undoHint"));
+            }
+            Ok(message)
+        }
         Some(Err(err)) => Err(failure(i18n::t("actions.rename.failed"), err.to_string())),
         None => Err(failure(i18n::t("actions.rename.failed"), interrupted())),
     }
+}
+
+async fn undo_rename<R: Runtime>(app: &AppHandle<R>) -> Done {
+    let pairs = std::mem::take(
+        &mut *app
+            .state::<RenameHistory>()
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
+    if pairs.iter().all(|(before, after)| before == after) {
+        return Err(failure(
+            i18n::t("actions.undoRename.failed"),
+            i18n::t("actions.undoRename.nothing"),
+        ));
+    }
+    let results = blocking(move || files::undo_renames(&pairs))
+        .await
+        .unwrap_or_default();
+    let mut done = Vec::new();
+    let mut failed = Vec::new();
+    for (path, result) in results {
+        match result {
+            Ok(()) => done.push(path),
+            Err(err) => failed.push(i18n::tf(
+                "files.failureLine",
+                &[("name", &file_name(&path)), ("reason", &err)],
+            )),
+        }
+    }
+    summary(
+        |count| i18n::tn("actions.undoRename.done", count, &[]),
+        i18n::t("actions.undoRename.failed"),
+        done,
+        failed,
+    )
 }
 
 async fn extract(paths: Vec<PathBuf>) -> Done {

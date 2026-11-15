@@ -153,5 +153,7 @@
   "wheel.variant.half.action": "{format}，一半尺寸",
   "wheel.hub.dragResult": "拖到任意位置",
   "wheel.actions.pdf.compress.label": "瘦身",
-  "wheel.actions.pdf.compress.action": "压缩 PDF"
+  "wheel.actions.pdf.compress.action": "压缩 PDF",
+  "wheel.actions.rename.undo.label": "撤销",
+  "wheel.actions.rename.undo.action": "撤销上次重命名"
 }

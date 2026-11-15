@@ -84,6 +84,7 @@ type PartName =
   | "rename.date"
   | "rename.lowercase"
   | "rename.clean"
+  | "rename.undo"
   | "files.zip"
   | "files.extract"
   | "files.pdf"
@@ -203,6 +204,8 @@ const RENAME: readonly ActionNode[] = [
   renamePart("date", "date"),
   renamePart("lowercase", "lower"),
   renamePart("clean", "clean"),
+  // Sans fichier : il rend leur nom à ceux du dernier renommage
+  entry({ id: "rename-undo", glyph: "undo", run: { kind: "undoRename" }, ...FILES_FAMILY }, "rename.undo"),
 ];
 
 const ZIP = entry(

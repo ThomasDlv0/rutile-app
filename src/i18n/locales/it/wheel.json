@@ -154,5 +154,7 @@
   "wheel.variant.half.action": "{format} a metà dimensione",
   "wheel.hub.dragResult": "Trascinalo dove vuoi",
   "wheel.actions.pdf.compress.label": "Alleggerisci",
-  "wheel.actions.pdf.compress.action": "Comprimi il PDF"
+  "wheel.actions.pdf.compress.action": "Comprimi il PDF",
+  "wheel.actions.rename.undo.label": "Annulla",
+  "wheel.actions.rename.undo.action": "Annulla l’ultima rinomina"
 }

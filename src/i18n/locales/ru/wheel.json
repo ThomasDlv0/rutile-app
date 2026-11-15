@@ -156,5 +156,7 @@
   "wheel.variant.half.action": "{format} вдвое меньше",
   "wheel.hub.dragResult": "Перетащите куда угодно",
   "wheel.actions.pdf.compress.label": "Сжать",
-  "wheel.actions.pdf.compress.action": "Сжать PDF"
+  "wheel.actions.pdf.compress.action": "Сжать PDF",
+  "wheel.actions.rename.undo.label": "Отменить",
+  "wheel.actions.rename.undo.action": "Отменить последнее переименование"
 }

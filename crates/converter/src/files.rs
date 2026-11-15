@@ -794,6 +794,16 @@ fn free_name(dir: &Path, name: &str, taken: &HashSet<PathBuf>) -> PathBuf {
 
 /// Renomme les fichiers sur place et renvoie leurs nouveaux chemins.
 pub fn rename_files(paths: &[PathBuf], style: RenameStyle) -> Result<Vec<PathBuf>, ConvertError> {
+    rename_files_tracked(paths, style)
+        .map(|pairs| pairs.into_iter().map(|(_, renamed)| renamed).collect())
+}
+
+/// Comme [`rename_files`], avec l'ancien chemin de chaque fichier : (avant, après), de quoi
+/// annuler avec [`undo_renames`].
+pub fn rename_files_tracked(
+    paths: &[PathBuf],
+    style: RenameStyle,
+) -> Result<Vec<(PathBuf, PathBuf)>, ConvertError> {
     if paths.is_empty() {
         return Err(ConvertError::NoFiles);
     }
@@ -807,7 +817,7 @@ pub fn rename_files(paths: &[PathBuf], style: RenameStyle) -> Result<Vec<PathBuf
             source: io::Error::from(io::ErrorKind::NotFound),
         })?;
         if path.file_name().is_some_and(|current| *current == *name) {
-            renamed_paths.push(path.clone());
+            renamed_paths.push((path.clone(), path.clone()));
             continue;
         }
         let write_error = |source| ConvertError::Write {
@@ -831,9 +841,47 @@ pub fn rename_files(paths: &[PathBuf], style: RenameStyle) -> Result<Vec<PathBuf
             target
         };
         taken.insert(target.clone());
-        renamed_paths.push(target);
+        renamed_paths.push((path.clone(), target));
     }
     Ok(renamed_paths)
+}
+
+/// Rend leur ancien nom à des fichiers renommés par [`rename_files_tracked`], du dernier au
+/// premier. Un ancien nom repris entre-temps par un autre fichier n'est jamais écrasé : ce
+/// fichier-là garde son nouveau nom.
+pub fn undo_renames(pairs: &[(PathBuf, PathBuf)]) -> Vec<(PathBuf, Result<(), ConvertError>)> {
+    pairs
+        .iter()
+        .rev()
+        .filter(|(before, after)| before != after)
+        .map(|(before, after)| (after.clone(), undo_rename(before, after)))
+        .collect()
+}
+
+fn undo_rename(before: &Path, after: &Path) -> Result<(), ConvertError> {
+    let dir = before.parent().unwrap_or(Path::new("."));
+    let write_error = |source| ConvertError::Write {
+        dir: dir.to_path_buf(),
+        source,
+    };
+    if !after.exists() {
+        return Err(ConvertError::Read {
+            path: after.to_path_buf(),
+            source: io::Error::from(io::ErrorKind::NotFound),
+        });
+    }
+    if !before.exists() {
+        return fs::rename(after, before).map_err(write_error);
+    }
+    if !same_file(before, after) {
+        return Err(write_error(io::Error::from(io::ErrorKind::AlreadyExists)));
+    }
+    // Seule la casse change, sur un disque qui l'ignore : par un nom intermédiaire, comme au
+    // renommage
+    let name = before.file_name().unwrap_or_default().to_string_lossy();
+    let step = free_name(dir, &format!("{name}.rutile"), &HashSet::new());
+    fs::rename(after, &step).map_err(write_error)?;
+    fs::rename(&step, before).map_err(write_error)
 }
 
 /// Les deux chemins mènent-ils au même fichier ?

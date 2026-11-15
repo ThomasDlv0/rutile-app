@@ -106,6 +106,7 @@ fn io_reason(error: &io::Error) -> String {
         io::ErrorKind::StorageFull => i18n::t("errors.io.full"),
         io::ErrorKind::ReadOnlyFilesystem => i18n::t("errors.io.readOnly"),
         io::ErrorKind::IsADirectory => i18n::t("errors.io.directory"),
+        io::ErrorKind::AlreadyExists => i18n::t("errors.io.exists"),
         _ => error.to_string(),
     }
 }

@@ -89,7 +89,7 @@ ramène à la roue d'avant, comme <kbd>Échap</kbd>.
 | **Capture** | capture une zone, copiée dans le presse-papiers et enregistrée dans Images/Rutile | zone, fenêtre, écran, dans 3 secondes |
 | **Texte** | tracez une zone : son texte est copié, sans rien envoyer sur internet | |
 | **Couleur** | copie la couleur prise à l'écran | en HEX, RGB ou HSL |
-| **Fichiers** | | ZIP, extraire un ZIP, images en PDF, fusion de PDF, alléger un PDF, renommage en lot (numéros, date, minuscules, sans accents) |
+| **Fichiers** | | ZIP, extraire un ZIP, images en PDF, fusion de PDF, alléger un PDF, renommage en lot (numéros, date, minuscules, sans accents) et son annulation |
 | **Image** | | moitié de la taille, 1920 pixels, alléger, retirer les métadonnées |
 | **Vidéo** | | alléger, tenir dans 10 ou 25 Mo, GIF, MP3, retirer le son |
 | **Fenêtres** | | moitié gauche, droite, haute ou basse, agrandir, centrer |

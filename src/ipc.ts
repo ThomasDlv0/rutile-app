@@ -106,6 +106,7 @@ export type ActionRequest =
   | { kind: "copyImage" }
   | { kind: "copyPaths" }
   | { kind: "rename"; style: "number" | "date" | "lowercase" | "clean" }
+  | { kind: "undoRename" }
   | { kind: "retouch"; retouch: "half" | "fullHd" | "compress" | "stripMetadata" }
   | {
       kind: "video";

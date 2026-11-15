@@ -452,3 +452,73 @@ fn un_pdf_de_photos_se_compresse() {
         Err(converter::ConvertError::NotSmaller)
     ));
 }
+
+#[test]
+fn un_renommage_s_annule_sans_rien_ecraser() {
+    let dir = tempdir().unwrap();
+    let paths: Vec<PathBuf> = ["vacances.jpg", "plage.jpg", "Soir.JPG"]
+        .iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            fs::write(&path, name).unwrap();
+            path
+        })
+        .collect();
+
+    let pairs = files::rename_files_tracked(&paths, RenameStyle::Lowercase).unwrap();
+    assert!(dir.path().join("soir.jpg").exists());
+    let pairs = files::rename_files_tracked(
+        &pairs
+            .iter()
+            .map(|(_, after)| after.clone())
+            .collect::<Vec<_>>(),
+        RenameStyle::Number,
+    )
+    .unwrap()
+    .into_iter()
+    .zip(&pairs)
+    .map(|((_, numbered), (original, _))| (original.clone(), numbered))
+    .collect::<Vec<_>>();
+    // Entre-temps, un autre fichier a pris l'ancien nom de « plage.jpg »
+    fs::write(dir.path().join("plage.jpg"), "autre").unwrap();
+
+    let results = files::undo_renames(&pairs);
+    let restored = results.iter().filter(|(_, result)| result.is_ok()).count();
+    assert_eq!(restored, 2);
+    assert_eq!(
+        fs::read_to_string(dir.path().join("vacances.jpg")).unwrap(),
+        "vacances.jpg"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.path().join("Soir.JPG")).unwrap(),
+        "Soir.JPG"
+    );
+    // Rien d'écrasé : le nouveau « plage.jpg » est intact, l'ancien garde son numéro
+    assert_eq!(
+        fs::read_to_string(dir.path().join("plage.jpg")).unwrap(),
+        "autre"
+    );
+    assert!(
+        results
+            .iter()
+            .any(|(path, result)| result.is_err() && path.exists())
+    );
+}
+
+#[test]
+fn un_changement_de_casse_s_annule() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("Soir.JPG");
+    fs::write(&path, "soir").unwrap();
+    let pairs = files::rename_files_tracked(&[path], RenameStyle::Lowercase).unwrap();
+    assert!(
+        files::undo_renames(&pairs)
+            .iter()
+            .all(|(_, result)| result.is_ok())
+    );
+    let names: Vec<String> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["Soir.JPG"]);
+}

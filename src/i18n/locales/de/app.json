@@ -224,5 +224,11 @@
   "actions.compressPdf.done.one": "PDF komprimiert",
   "actions.compressPdf.done.other": "{count} PDFs komprimiert",
   "actions.compressPdf.failed": "Komprimierung nicht möglich",
-  "welcome.windowTitle": "Willkommen bei Rutile"
+  "welcome.windowTitle": "Willkommen bei Rutile",
+  "actions.undoRename.done.one": "Alter Name wiederhergestellt",
+  "actions.undoRename.done.other": "{count} Dateien haben ihren Namen zurück",
+  "actions.undoRename.failed": "Widerrufen nicht möglich",
+  "actions.undoRename.nothing": "Seit dem Start von Rutile wurde nichts umbenannt.",
+  "actions.rename.undoHint": "Zum Widerrufen: Umbenennen › Widerrufen.",
+  "errors.io.exists": "eine Datei mit diesem Namen existiert bereits"
 }

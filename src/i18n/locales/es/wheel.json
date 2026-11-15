@@ -154,5 +154,7 @@
   "wheel.variant.half.action": "{format} a la mitad del tamaño",
   "wheel.hub.dragResult": "Arrástralo adonde quieras",
   "wheel.actions.pdf.compress.label": "Aligerar",
-  "wheel.actions.pdf.compress.action": "Comprimir el PDF"
+  "wheel.actions.pdf.compress.action": "Comprimir el PDF",
+  "wheel.actions.rename.undo.label": "Deshacer",
+  "wheel.actions.rename.undo.action": "Deshacer el último cambio de nombre"
 }

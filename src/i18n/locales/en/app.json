@@ -224,5 +224,11 @@
   "actions.compressPdf.done.one": "PDF compressed",
   "actions.compressPdf.done.other": "{count} PDFs compressed",
   "actions.compressPdf.failed": "Couldn’t compress",
-  "welcome.windowTitle": "Welcome to Rutile"
+  "welcome.windowTitle": "Welcome to Rutile",
+  "actions.undoRename.done.one": "Old name restored",
+  "actions.undoRename.done.other": "{count} files got their names back",
+  "actions.undoRename.failed": "Couldn’t undo",
+  "actions.undoRename.nothing": "Nothing renamed to undo since Rutile started.",
+  "actions.rename.undoHint": "To go back: Rename › Undo.",
+  "errors.io.exists": "a file already has this name"
 }
