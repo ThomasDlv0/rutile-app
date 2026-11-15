@@ -548,7 +548,7 @@ pub async fn drag_out<R: Runtime>(
     app.run_on_main_thread(move || {
         let item = drag::DragItem::Files(paths);
         let image = drag::Image::Raw(icon);
-        let dropped = move |result, _| {
+        let dropped = move |result: drag::DragResult, _: drag::CursorPosition| {
             let _ = sender.send(Ok(matches!(result, drag::DragResult::Dropped)));
         };
         let options = drag::Options::default();
