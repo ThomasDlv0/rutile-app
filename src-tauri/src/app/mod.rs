@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod apps;
+pub mod clipboard;
 pub mod convert;
 pub mod glass;
 pub mod launch;

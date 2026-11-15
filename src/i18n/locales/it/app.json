@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "Immagini",
   "wheel.pick.pdfs": "Scegli i PDF",
   "wheel.pick.videos": "Scegli i video da convertire",
-  "wheel.pick.videosFilter": "Video"
+  "wheel.pick.videosFilter": "Video",
+  "clipboard.name": "Appunti",
+  "clipboard.fileName": "Appunti {date} alle {time}",
+  "clipboard.copied": "Copiato negli appunti e salvato in Immagini › Rutile."
 }

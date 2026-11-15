@@ -18,6 +18,8 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Image du presse-papiers écrite en PNG avant sa conversion
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 # Logo des sites web : le même client HTTP et le même chiffrement que le module de mises à jour
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }

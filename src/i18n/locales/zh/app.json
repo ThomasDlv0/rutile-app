@@ -196,5 +196,8 @@
   "wheel.pick.imagesFilter": "图片",
   "wheel.pick.pdfs": "选取 PDF",
   "wheel.pick.videos": "选取要转换的视频",
-  "wheel.pick.videosFilter": "视频"
+  "wheel.pick.videosFilter": "视频",
+  "clipboard.name": "剪贴板",
+  "clipboard.fileName": "剪贴板 {date} {time}",
+  "clipboard.copied": "已复制到剪贴板，并存放在“图片 › Rutile”中。"
 }

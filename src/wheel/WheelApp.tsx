@@ -897,7 +897,8 @@ export function WheelApp() {
           // Une sélection lue après une nouvelle ouverture n'a plus lieu d'être
           if (payload.id !== openId.current) return;
           setFiles(payload.files);
-          adoptMode(payload.files);
+          // Une image copiée ne change pas de roue : elle attend qu'on aille la convertir
+          if (!payload.files.every((file) => file.clipboard)) adoptMode(payload.files);
         }),
       );
       keep(

@@ -259,5 +259,8 @@
   "wheel.pick.imagesFilter": "Изображения",
   "wheel.pick.pdfs": "Выберите PDF",
   "wheel.pick.videos": "Выберите видео для конвертации",
-  "wheel.pick.videosFilter": "Видео"
+  "wheel.pick.videosFilter": "Видео",
+  "clipboard.name": "Буфер обмена",
+  "clipboard.fileName": "Буфер обмена {date} в {time}",
+  "clipboard.copied": "Скопировано в буфер обмена и сохранено в «Изображения › Rutile»."
 }

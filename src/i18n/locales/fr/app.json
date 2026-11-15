@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "Images",
   "wheel.pick.pdfs": "Choisir les PDF",
   "wheel.pick.videos": "Choisir les vidéos à convertir",
-  "wheel.pick.videosFilter": "Vidéos"
+  "wheel.pick.videosFilter": "Vidéos",
+  "clipboard.name": "Presse-papiers",
+  "clipboard.fileName": "Presse-papiers {date} à {time}",
+  "clipboard.copied": "Copié dans le presse-papiers et rangé dans Images › Rutile."
 }

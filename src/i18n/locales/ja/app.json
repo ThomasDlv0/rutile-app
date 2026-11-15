@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "画像",
   "wheel.pick.pdfs": "PDFを選択",
   "wheel.pick.videos": "変換するビデオを選択",
-  "wheel.pick.videosFilter": "ビデオ"
+  "wheel.pick.videosFilter": "ビデオ",
+  "clipboard.name": "クリップボード",
+  "clipboard.fileName": "クリップボード {date} {time}",
+  "clipboard.copied": "クリップボードにコピーし、ピクチャ › Rutile に保存しました。"
 }

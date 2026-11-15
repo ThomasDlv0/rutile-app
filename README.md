@@ -56,6 +56,13 @@ Pendant un glisser, **secouez le fichier** de quelques allers-retours : la roue 
 part du haut sous le curseur, il suffit de le lâcher sur un format. Les formats impossibles
 pour ce fichier (celui qu'il a déjà, par exemple) sont grisés.
 
+**Restez une seconde sur JPEG, WebP ou AVIF** : la qualité max, un fichier plus léger, 1920 px
+ou la moitié de la taille (pour le PNG, les tailles seulement).
+
+Rien de sélectionné, mais **une image copiée** il y a moins de dix minutes (une capture, une
+image d'un site) : la roue la prend comme fichier. Le résultat est rangé dans Images › Rutile et
+mis dans le presse-papiers, prêt à être collé dans un message ou un envoi.
+
 ### Cinq roues, un clic au centre
 
 <p align="center">

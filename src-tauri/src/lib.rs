@@ -47,6 +47,7 @@ pub fn run() {
 
     builder
         .manage(app::wheel::WheelState::default())
+        .manage(app::clipboard::ClipboardState::default())
         .invoke_handler(tauri::generate_handler![
             app::wheel::wheel_ready,
             app::wheel::hide_wheel,

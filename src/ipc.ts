@@ -53,6 +53,8 @@ export interface FileInfo {
   format: InputFormat | null;
   /** `null` si ce n'est pas une vidéo reconnue. */
   video: VideoInput | null;
+  /** L'image du presse-papiers, et non un fichier choisi. */
+  clipboard?: boolean;
 }
 
 export interface Outcome {

@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "Images",
   "wheel.pick.pdfs": "Choose PDFs",
   "wheel.pick.videos": "Choose the videos to convert",
-  "wheel.pick.videosFilter": "Videos"
+  "wheel.pick.videosFilter": "Videos",
+  "clipboard.name": "Clipboard",
+  "clipboard.fileName": "Clipboard {date} at {time}",
+  "clipboard.copied": "Copied to the clipboard and saved in Pictures › Rutile."
 }

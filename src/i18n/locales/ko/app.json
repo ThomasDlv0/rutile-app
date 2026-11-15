@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "이미지",
   "wheel.pick.pdfs": "PDF 선택",
   "wheel.pick.videos": "변환할 비디오 선택",
-  "wheel.pick.videosFilter": "비디오"
+  "wheel.pick.videosFilter": "비디오",
+  "clipboard.name": "클립보드",
+  "clipboard.fileName": "클립보드 {date} {time}",
+  "clipboard.copied": "클립보드에 복사하고 사진 › Rutile에 저장했어요."
 }

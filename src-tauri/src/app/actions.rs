@@ -16,6 +16,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_opener::OpenerExt;
 
+use super::clipboard;
 use super::convert::PROGRESS_EVENT;
 use super::notify::{self, Action, Message};
 use super::settings::{self, CustomPart, PartKind};
@@ -85,7 +86,21 @@ pub async fn run_action<R: Runtime>(
     paths: Vec<PathBuf>,
 ) -> Result<(), String> {
     match perform(&app, request, paths).await {
-        Ok(Some(message)) => {
+        Ok(Some(mut message)) => {
+            // Un fichier tiré de l'image du presse-papiers rejoint Images › Rutile et le
+            // presse-papiers
+            if let Some(Action::Reveal(outputs)) = message.action.take() {
+                let (outputs, moved) = clipboard::settle(&app, outputs);
+                if moved {
+                    let copied = i18n::t("clipboard.copied");
+                    message.body = if message.body.is_empty() {
+                        copied
+                    } else {
+                        format!("{}\n{copied}", message.body)
+                    };
+                }
+                message.action = Some(Action::Reveal(outputs));
+            }
             notify::announce(&app, message, true);
             Ok(())
         }

@@ -10,6 +10,7 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 
+use super::clipboard;
 use super::convert::{self, FileInfo};
 use super::permissions;
 
@@ -87,6 +88,8 @@ struct Files {
 enum Lookup {
     Selection(selection::Source),
     Paths(Vec<PathBuf>),
+    /// Pas de gestionnaire de fichiers au premier plan : seule une image copiée peut servir.
+    Nothing,
 }
 
 /// Ouvre la roue sous le curseur, ou dès que l'interface est chargée.
@@ -116,8 +119,8 @@ fn open_on_main_thread<R: Runtime>(app: &AppHandle<R>, source: Source) {
     platform::placement::remember();
     // Repéré avant d'afficher la roue, tant que le gestionnaire de fichiers est au premier plan
     let lookup = match source {
-        Source::Files(paths) => Some(Lookup::Paths(paths)),
-        Source::Selection => selection::capture_source().map(Lookup::Selection),
+        Source::Files(paths) => Lookup::Paths(paths),
+        Source::Selection => selection::capture_source().map_or(Lookup::Nothing, Lookup::Selection),
     };
     let opened = Opened {
         id,
@@ -129,30 +132,34 @@ fn open_on_main_thread<R: Runtime>(app: &AppHandle<R>, source: Source) {
     }
 
     // La roue s'affiche tout de suite ; les fichiers suivent dès qu'ils sont lus
-    if let Some(lookup) = lookup {
-        let handle = app.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            let paths = match lookup {
-                Lookup::Paths(paths) => paths,
-                Lookup::Selection(source) => match selection::selected_files(source) {
-                    Ok(paths) => paths,
-                    Err(SelectionError::PermissionDenied) => {
-                        permissions::selection_denied(&handle);
-                        Vec::new()
-                    }
-                    Err(SelectionError::Failed(err)) => {
-                        eprintln!("rutile : sélection illisible : {err}");
-                        Vec::new()
-                    }
-                },
-            };
-            let files = Files {
-                id,
-                files: convert::inspect(paths),
-            };
-            let _ = handle.emit_to(WHEEL_LABEL, FILES_EVENT, files);
-        });
-    }
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (paths, chosen) = match lookup {
+            Lookup::Paths(paths) => (paths, true),
+            Lookup::Selection(source) => match selection::selected_files(source) {
+                Ok(paths) => (paths, false),
+                Err(SelectionError::PermissionDenied) => {
+                    permissions::selection_denied(&handle);
+                    (Vec::new(), false)
+                }
+                Err(SelectionError::Failed(err)) => {
+                    eprintln!("rutile : sélection illisible : {err}");
+                    (Vec::new(), false)
+                }
+            },
+            Lookup::Nothing => (Vec::new(), false),
+        };
+        // Rien de sélectionné : une image copiée depuis peu fait office de fichier
+        let files = if paths.is_empty() && !chosen {
+            match clipboard::recent_image(&handle) {
+                Some(path) => vec![convert::clipboard_info(path)],
+                None => return,
+            }
+        } else {
+            convert::inspect(paths)
+        };
+        let _ = handle.emit_to(WHEEL_LABEL, FILES_EVENT, Files { id, files });
+    });
 }
 
 /// Ouvre la roue pour un fichier secoué : sous le curseur, sans focus, sauf si elle est déjà là.

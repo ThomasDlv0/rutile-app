@@ -7,6 +7,7 @@ use converter::{ConvertError, InputFormat, OutputFormat, Quality, Variant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
+use super::clipboard;
 use super::notify::{self, Action, Message};
 use super::settings;
 use super::wheel::WHEEL_LABEL;
@@ -23,6 +24,8 @@ pub struct FileInfo {
     format: Option<InputFormat>,
     /// `None` si ce n'est pas une vidéo reconnue.
     video: Option<VideoInput>,
+    /// L'image du presse-papiers, et non un fichier choisi.
+    clipboard: bool,
 }
 
 /// Lit le format réel de chaque fichier, pour griser le format d'origine sur la roue.
@@ -34,8 +37,20 @@ pub fn inspect(paths: Vec<PathBuf>) -> Vec<FileInfo> {
             format: converter::detect_format(&path).ok(),
             video: video::detect_video(&path),
             path,
+            clipboard: false,
         })
         .collect()
+}
+
+/// L'image du presse-papiers, présentée sous ce nom au centre de la roue.
+pub fn clipboard_info(path: PathBuf) -> FileInfo {
+    FileInfo {
+        name: i18n::t("clipboard.name"),
+        format: converter::detect_format(&path).ok(),
+        video: None,
+        path,
+        clipboard: true,
+    }
 }
 
 #[tauri::command]
@@ -75,6 +90,7 @@ pub async fn convert_files<R: Runtime>(
     })
     .await
     .map_err(|err| err.to_string())?;
+    let report = report.settled(&app);
     notify::announce(&app, report.message(), !report.converted.is_empty());
     Ok(Outcome::from(&report))
 }
@@ -164,6 +180,8 @@ pub struct Report {
     /// Fichiers déjà dans le format demandé, quand plusieurs fichiers sont déposés.
     skipped: usize,
     failed: Vec<(String, String)>,
+    /// Les fichiers produits viennent de l'image du presse-papiers, et y sont retournés.
+    clipboard: bool,
 }
 
 impl Report {
@@ -174,7 +192,17 @@ impl Report {
             converted: Vec::new(),
             skipped: 0,
             failed: Vec::new(),
+            clipboard: false,
         }
+    }
+
+    /// Ce qui vient de l'image du presse-papiers rejoint Images › Rutile et le presse-papiers.
+    fn settled<R: Runtime>(mut self, app: &AppHandle<R>) -> Report {
+        let (paths, approximate): (Vec<_>, Vec<_>) = self.converted.into_iter().unzip();
+        let (paths, moved) = clipboard::settle(app, paths);
+        self.converted = paths.into_iter().zip(approximate).collect();
+        self.clipboard = moved;
+        self
     }
 
     fn images(
@@ -251,6 +279,9 @@ impl Report {
         }
         if self.converted.iter().any(|(_, approximate)| *approximate) {
             lines.push(i18n::t("convert.approximate"));
+        }
+        if self.clipboard {
+            lines.push(i18n::t("clipboard.copied"));
         }
         if self.skipped > 0 {
             lines.push(i18n::tn(

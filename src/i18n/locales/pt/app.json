@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "Imagens",
   "wheel.pick.pdfs": "Escolher os PDFs",
   "wheel.pick.videos": "Escolher os vídeos a converter",
-  "wheel.pick.videosFilter": "Vídeos"
+  "wheel.pick.videosFilter": "Vídeos",
+  "clipboard.name": "Área de transferência",
+  "clipboard.fileName": "Área de transferência {date} às {time}",
+  "clipboard.copied": "Copiado para a área de transferência e salvo em Imagens › Rutile."
 }

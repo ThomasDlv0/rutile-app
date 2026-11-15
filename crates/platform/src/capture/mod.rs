@@ -65,6 +65,25 @@ pub fn copy_text(text: &str) -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
+/// Image copiée (une capture, une image d'un site), en pixels RGBA. `None` s'il n'y en a pas,
+/// ou si ce sont des fichiers copiés dans le Finder : leur icône n'est pas une image à convertir.
+pub fn clipboard_image() -> Option<image::RgbaImage> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    if clipboard
+        .get()
+        .file_list()
+        .is_ok_and(|files| !files.is_empty())
+    {
+        return None;
+    }
+    let data = clipboard.get_image().ok()?;
+    image::RgbaImage::from_raw(
+        u32::try_from(data.width).ok()?,
+        u32::try_from(data.height).ok()?,
+        data.bytes.into_owned(),
+    )
+}
+
 /// Met une image PNG dans le presse-papiers.
 pub fn copy_image(path: &Path) -> Result<(), String> {
     let image = image::open(path).map_err(|err| err.to_string())?.to_rgba8();

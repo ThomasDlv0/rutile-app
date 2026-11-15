@@ -217,5 +217,8 @@
   "wheel.pick.imagesFilter": "Imágenes",
   "wheel.pick.pdfs": "Elegir los PDF",
   "wheel.pick.videos": "Elegir los vídeos que convertir",
-  "wheel.pick.videosFilter": "Vídeos"
+  "wheel.pick.videosFilter": "Vídeos",
+  "clipboard.name": "Portapapeles",
+  "clipboard.fileName": "Portapapeles {date} a las {time}",
+  "clipboard.copied": "Copiado en el portapapeles y guardado en Imágenes › Rutile."
 }
