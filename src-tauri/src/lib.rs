@@ -55,6 +55,7 @@ pub fn run() {
             app::wheel::hide_toast,
             app::wheel::primary_button_pressed,
             app::wheel::pick_files,
+            app::wheel::drag_out,
             app::actions::run_action,
             app::glass::wheel_closing,
             app::convert::inspect_files,

@@ -13,6 +13,7 @@ import {
   appBadges,
   convertFiles,
   convertVideos,
+  dragOut,
   hideToastWindow,
   hideWheel,
   inspectFiles,
@@ -94,6 +95,8 @@ const DROP_WAIT_MS = 3000;
 /** Durées identiques aux animations de styles.css. */
 const CLOSE_ANIMATION_MS = 120;
 const RESULT_VISIBLE_MS = 450;
+/** Un fichier produit reste au centre un peu plus longtemps : on peut le glisser ailleurs. */
+const RESULT_DRAG_MS = 1800;
 /** Durée d'une annonce à l'écran, puis de sa disparition, comme dans styles.css. */
 const TOAST_VISIBLE_MS = 2600;
 const TOAST_LEAVE_MS = 180;
@@ -570,24 +573,41 @@ export function WheelApp() {
       const format = OUTPUT_FORMATS[variantFormat ?? index].id;
       const variant = variantFormat === null ? null : (FORMAT_VARIANTS[format][index] ?? null);
       let state: Work["state"] = "failed";
+      let outputs: string[] = [];
       try {
         const outcome =
           targetMode === "video"
             ? await convertVideos(paths, VIDEO_FORMATS[index].id)
             : await convertFiles(paths, format, variant);
         if (outcome.converted > 0) state = "done";
+        outputs = outcome.outputs ?? [];
       } catch (error) {
         console.error("rutile : conversion interrompue", error);
       }
       if (openId.current !== id) return;
-      // Bref retour visuel ; le détail est dans la notification
-      setWork({ index, state });
-      await sleep(RESULT_VISIBLE_MS);
+      // Bref retour visuel ; le détail est dans la notification. Le fichier produit peut
+      // être glissé depuis le centre tant qu'il y est
+      const draggable = state === "done" && outputs.length > 0 && isTauri();
+      setWork({ index, state, outputs: draggable ? outputs : undefined });
+      await sleep(draggable ? RESULT_DRAG_MS : RESULT_VISIBLE_MS);
+      // Un glisser commencé garde la roue, d'où il part, jusqu'au dépôt
+      await draggingOut.current;
       busyRef.current = false;
       close();
     },
     [close],
   );
+
+  /** Glisser du fichier produit, du centre de la roue vers une autre app. */
+  const draggingOut = useRef<Promise<unknown> | null>(null);
+  const dragOutputs = useCallback((paths: string[]) => {
+    if (draggingOut.current || paths.length === 0) return;
+    draggingOut.current = dragOut(paths)
+      .catch((error) => console.error("rutile : glisser impossible", error))
+      .finally(() => {
+        draggingOut.current = null;
+      });
+  }, []);
 
   /** Action rapide depuis la part `index` (ouvrir une app, partager) : son issue s'affiche
    * brièvement au centre, puis la roue se ferme. */
@@ -1024,6 +1044,7 @@ export function WheelApp() {
       scale={fit}
       keyboard
       onToggleMode={() => (back ? goBack() : next && chooseMode(next))}
+      onDragOutputs={dragOutputs}
     />
   );
   const notice = toast && (

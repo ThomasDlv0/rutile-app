@@ -153,5 +153,6 @@
   "wheel.variant.fullHd.label": "1920",
   "wheel.variant.fullHd.action": "{format} 1920 px",
   "wheel.variant.half.label": "½",
-  "wheel.variant.half.action": "{format} вдвое меньше"
+  "wheel.variant.half.action": "{format} вдвое меньше",
+  "wheel.hub.dragResult": "Перетащите куда угодно"
 }

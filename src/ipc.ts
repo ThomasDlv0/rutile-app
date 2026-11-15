@@ -60,6 +60,8 @@ export interface FileInfo {
 export interface Outcome {
   converted: number;
   failed: number;
+  /** Fichiers produits, qu'on peut glisser hors de la roue. */
+  outputs: string[];
 }
 
 export const wheelReady = () => invoke("wheel_ready");
@@ -81,6 +83,8 @@ export const convertFiles = (
   format: OutputFormat,
   variant: Variant | null = null,
 ) => invoke<Outcome>("convert_files", { paths, format, variant });
+/** Glisse des fichiers hors de la roue ; se termine au dépôt, vrai s'ils ont été déposés. */
+export const dragOut = (paths: string[]) => invoke<boolean>("drag_out", { paths });
 /** Conversion par FFmpeg ; l'avancement arrive par `wheel://progress`. */
 export const convertVideos = (paths: string[], format: VideoFormat) =>
   invoke<Outcome>("convert_videos", { paths, format });

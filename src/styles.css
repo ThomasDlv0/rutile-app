@@ -573,6 +573,12 @@ body,
   }
 }
 
+/* Fichier produit : il se glisse depuis le centre vers une autre app */
+.hub-drag {
+  pointer-events: auto;
+  cursor: grab;
+}
+
 .hub-result {
   display: flex;
   flex-direction: column;

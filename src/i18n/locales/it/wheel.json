@@ -151,5 +151,6 @@
   "wheel.variant.fullHd.label": "1920",
   "wheel.variant.fullHd.action": "{format} a 1920 px",
   "wheel.variant.half.label": "½",
-  "wheel.variant.half.action": "{format} a metà dimensione"
+  "wheel.variant.half.action": "{format} a metà dimensione",
+  "wheel.hub.dragResult": "Trascinalo dove vuoi"
 }

@@ -150,5 +150,6 @@
   "wheel.variant.fullHd.label": "1920",
   "wheel.variant.fullHd.action": "{format}，1920 像素",
   "wheel.variant.half.label": "½",
-  "wheel.variant.half.action": "{format}，一半尺寸"
+  "wheel.variant.half.action": "{format}，一半尺寸",
+  "wheel.hub.dragResult": "拖到任意位置"
 }

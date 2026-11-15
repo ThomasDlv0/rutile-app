@@ -151,5 +151,6 @@
   "wheel.variant.fullHd.label": "1920",
   "wheel.variant.fullHd.action": "{format} en 1920 px",
   "wheel.variant.half.label": "½",
-  "wheel.variant.half.action": "{format} à moitié de la taille"
+  "wheel.variant.half.action": "{format} à moitié de la taille",
+  "wheel.hub.dragResult": "Glissez-le où vous voulez"
 }

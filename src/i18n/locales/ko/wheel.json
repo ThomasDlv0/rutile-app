@@ -151,5 +151,6 @@
   "wheel.variant.fullHd.label": "1920",
   "wheel.variant.fullHd.action": "{format} 1920px",
   "wheel.variant.half.label": "½",
-  "wheel.variant.half.action": "{format} 절반 크기"
+  "wheel.variant.half.action": "{format} 절반 크기",
+  "wheel.hub.dragResult": "원하는 곳으로 끌어다 놓기"
 }

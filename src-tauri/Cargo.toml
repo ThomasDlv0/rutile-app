@@ -18,6 +18,8 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Glisser un fichier converti hors de la roue, vers une autre app
+drag = "2.1.1"
 # Image du presse-papiers écrite en PNG avant sa conversion
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 # Logo des sites web : le même client HTTP et le même chiffrement que le module de mises à jour

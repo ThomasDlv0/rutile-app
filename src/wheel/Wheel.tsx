@@ -37,6 +37,8 @@ export interface Work {
   progress?: number;
   /** Textes pendant et après l'action, « Conversion… » et « Converti » par défaut. */
   labels?: { working: string; done: string };
+  /** Fichiers produits : le centre se laisse glisser vers une autre app. */
+  outputs?: string[];
 }
 
 interface WheelProps {
@@ -75,6 +77,8 @@ interface WheelProps {
   onOutsideClick: () => void;
   /** Clic au centre : passe à la roue suivante. */
   onToggleMode: () => void;
+  /** Glisser commencé sur le centre, quand il montre un fichier produit. */
+  onDragOutputs?: (paths: string[]) => void;
 }
 
 /** Nom court d'une roue ; `title` est celui d'une roue personnalisée. */
@@ -208,6 +212,9 @@ function HubContent({
         <span className="hub-label" data-tone="action">
           {done ? (work.labels?.done ?? t("wheel.labels.convert.done")) : t("wheel.hub.failed")}
         </span>
+        {done && work.outputs && work.outputs.length > 0 && (
+          <span className="hub-hint">{t("wheel.hub.dragResult")}</span>
+        )}
       </span>
     );
   }
@@ -259,6 +266,7 @@ export function Wheel({
   onSelect,
   onOutsideClick,
   onToggleMode,
+  onDragOutputs,
 }: WheelProps) {
   // Les textes se relisent à chaque changement de langue
   useLanguage();
@@ -435,7 +443,19 @@ export function Wheel({
             <circle cx="52" cy="52" r="50" />
           </svg>
         )}
-        {busy || (!next && !back) ? (
+        {work?.state === "done" && work.outputs?.length && onDragOutputs ? (
+          // Le fichier produit part d'ici vers une autre app, comme depuis le Finder
+          <div
+            className="hub hub-drag"
+            aria-live="polite"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onDragOutputs(work.outputs ?? []);
+            }}
+          >
+            <HubContent hub={hub} work={work} mode={mode} title={title} />
+          </div>
+        ) : busy || (!next && !back) ? (
           <div className="hub" title={hub?.title} aria-live="polite">
             <HubContent hub={hub} work={work} mode={mode} title={title} />
           </div>

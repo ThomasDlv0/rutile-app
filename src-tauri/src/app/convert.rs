@@ -65,6 +65,8 @@ pub async fn inspect_files(paths: Vec<PathBuf>) -> Vec<FileInfo> {
 pub struct Outcome {
     converted: usize,
     failed: usize,
+    /// Fichiers produits, qu'on peut glisser hors de la roue.
+    outputs: Vec<PathBuf>,
 }
 
 impl From<&Report> for Outcome {
@@ -72,6 +74,11 @@ impl From<&Report> for Outcome {
         Outcome {
             converted: report.converted.len(),
             failed: report.failed.len(),
+            outputs: report
+                .converted
+                .iter()
+                .map(|(path, _)| path.clone())
+                .collect(),
         }
     }
 }

@@ -521,3 +521,47 @@ mod tests {
         assert!((center - 800.0).abs() > HUB_RADIUS);
     }
 }
+
+/// Côté de la vignette qui suit le curseur pendant le glisser d'un fichier converti.
+const DRAG_THUMBNAIL: u32 = 96;
+/// Un glisser qui ne se termine pas libère la roue au bout de ce délai.
+const DRAG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Glisse les fichiers produits hors de la roue, vers une autre app (un message, un envoi).
+/// Se termine quand le fichier est lâché ; vrai s'il a été déposé quelque part.
+#[tauri::command]
+pub async fn drag_out<R: Runtime>(
+    app: AppHandle<R>,
+    window: WebviewWindow<R>,
+    paths: Vec<PathBuf>,
+) -> Result<bool, String> {
+    let first = paths.first().cloned().ok_or("aucun fichier")?;
+    let icon = tauri::async_runtime::spawn_blocking(move || {
+        converter::thumbnail_png(&first, DRAG_THUMBNAIL)
+            .unwrap_or_else(|| include_bytes!("../../icons/128x128.png").to_vec())
+    })
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let (sender, receiver) = std::sync::mpsc::channel::<Result<bool, String>>();
+    let started = sender.clone();
+    app.run_on_main_thread(move || {
+        let result = drag::start_drag(
+            &window,
+            drag::DragItem::Files(paths),
+            drag::Image::Raw(icon),
+            move |result, _| {
+                let _ = sender.send(Ok(matches!(result, drag::DragResult::Dropped)));
+            },
+            drag::Options::default(),
+        );
+        if let Err(err) = result {
+            let _ = started.send(Err(err.to_string()));
+        }
+    })
+    .map_err(|err| err.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || receiver.recv_timeout(DRAG_TIMEOUT))
+        .await
+        .map_err(|err| err.to_string())?
+        .unwrap_or(Ok(false))
+}

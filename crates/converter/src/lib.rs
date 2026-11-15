@@ -206,6 +206,22 @@ pub fn to_png(input: &Path) -> Result<Vec<u8>, ConvertError> {
     })
 }
 
+/// Vignette PNG d'une image, `side` pixels au plus de grand côté : l'image d'un fichier qu'on
+/// glisse hors de la roue.
+pub fn thumbnail_png(input: &Path, side: u32) -> Option<Vec<u8>> {
+    shielded(|| {
+        let bytes = std::fs::read(input).map_err(|source| ConvertError::Read {
+            path: input.to_path_buf(),
+            source,
+        })?;
+        let format = InputFormat::detect(&bytes, input).ok_or(ConvertError::UnsupportedFormat)?;
+        let image = decode::decode(&bytes, format)?;
+        let small = image.resize(side, side, FilterType::Triangle);
+        encode::encode(&small, OutputFormat::Png, &Quality::default())
+    })
+    .ok()
+}
+
 /// Icône carrée en PNG à partir d'une image (PNG, SVG…), pour la roue des apps.
 pub fn icon_png(data: &[u8], size: u32) -> Option<Vec<u8>> {
     shielded(|| {
