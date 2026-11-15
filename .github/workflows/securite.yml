@@ -1,0 +1,60 @@
+# Veille de sécurité : failles connues des dépendances Rust (base RustSec) et npm, et sortie d'une
+# nouvelle version de FFmpeg, embarqué à la main. Chaque lundi, et dès que les dépendances
+# changent. Un échec ici ne bloque ni la CI ni une release : il dit quoi mettre à jour.
+name: Sécurité
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - Cargo.lock
+      - package-lock.json
+      - scripts/fetch-ffmpeg.sh
+      - .github/workflows/securite.yml
+  pull_request:
+  schedule:
+    # Le lundi à 6 h (UTC)
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Dépendances Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Échoue sur une faille connue ; une crate abandonnée ou douteuse reste un avertissement
+      - run: cargo audit
+
+  npm:
+    name: Dépendances npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Seulement ce qui part dans l'app : les outils de développement ne sont pas livrés
+      - run: npm audit --omit=dev --audit-level=moderate
+
+  ffmpeg:
+    name: Version de FFmpeg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned="$(sed -n 's/^VERSION="\(.*\)"/\1/p' scripts/fetch-ffmpeg.sh)"
+          # Les builds Windows de Gyan suivent les versions publiées de FFmpeg
+          latest="$(gh api repos/GyanD/codexffmpeg/releases --jq '.[].tag_name' \
+            | grep -E '^[0-9]+(\.[0-9]+)+$' | sort -V | tail -1)"
+          echo "FFmpeg embarqué : $pinned · dernière version : $latest"
+          newest="$(printf '%s\n%s\n' "$pinned" "$latest" | sort -V | tail -1)"
+          if [ "$newest" != "$pinned" ]; then
+            echo "::error::FFmpeg $latest est sorti : mettre à jour VERSION, les adresses et les empreintes dans scripts/fetch-ffmpeg.sh"
+            exit 1
+          fi

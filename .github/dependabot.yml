@@ -1,0 +1,30 @@
+# Propose chaque mois les mises à jour des dépendances, regroupées : une demande de fusion par
+# écosystème pour les versions mineures, une par paquet pour une version majeure. Les failles
+# connues, elles, sont signalées chaque semaine par le workflow Sécurité.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      rust:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
