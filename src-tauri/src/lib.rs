@@ -56,6 +56,7 @@ pub fn run() {
             app::wheel::primary_button_pressed,
             app::wheel::pick_files,
             app::wheel::drag_out,
+            app::welcome::close_welcome,
             app::actions::run_action,
             app::glass::wheel_closing,
             app::convert::inspect_files,
@@ -92,9 +93,10 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let (settings, set_aside) = app::settings::load(app.handle());
+            let loaded = app::settings::load(app.handle());
+            let settings = loaded.settings;
             app::notify::setup(app.handle())?;
-            if let Some(backup) = set_aside {
+            if let Some(backup) = loaded.set_aside {
                 app::notify::show(app.handle(), app::settings::set_aside_message(backup));
             }
             app::wheel::setup(app.handle())?;
@@ -103,6 +105,10 @@ pub fn run() {
             app::updates::setup(app.handle());
             app::shortcut::register(app.handle(), &settings.shortcut);
             app::permissions::check_at_startup(app.handle());
+            if loaded.first_launch {
+                app::settings::persist(app.handle());
+                app::welcome::open(app.handle());
+            }
             if let Err(err) = app::shake::apply(app.handle(), settings.shake()) {
                 app::notify::show(
                     app.handle(),

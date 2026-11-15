@@ -201,5 +201,6 @@
   "clipboard.fileName": "剪贴板 {date} {time}",
   "clipboard.copied": "已复制到剪贴板，并存放在“图片 › Rutile”中。",
   "actions.compressPdf.done.other": "已压缩 {count} 个 PDF",
-  "actions.compressPdf.failed": "无法压缩"
+  "actions.compressPdf.failed": "无法压缩",
+  "welcome.windowTitle": "欢迎使用 Rutile"
 }

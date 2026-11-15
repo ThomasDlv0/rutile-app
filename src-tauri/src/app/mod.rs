@@ -15,4 +15,5 @@ pub mod shortcut;
 pub mod sites;
 pub mod tray;
 pub mod updates;
+pub mod welcome;
 pub mod wheel;

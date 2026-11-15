@@ -6,14 +6,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setLanguage, useLanguage } from "./i18n";
 import { SettingsApp } from "./settings/SettingsApp";
 import { UpdateApp } from "./update/UpdateApp";
+import { WelcomeApp } from "./welcome/WelcomeApp";
 import { WheelApp } from "./wheel/WheelApp";
 import "./styles.css";
 
-// Une même page pour les trois fenêtres ; dans un navigateur, `?view=settings` montre les
-// réglages, `?view=update` la fenêtre de mise à jour, et `?lang=en` change de langue
+// Une même page pour toutes les fenêtres ; dans un navigateur, `?view=settings` montre les
+// réglages, `?view=update` la fenêtre de mise à jour, `?view=welcome` l'accueil, et `?lang=en`
+// change de langue
 const query = new URLSearchParams(window.location.search);
 const view = isTauri() ? getCurrentWindow().label : query.get("view");
 if (view === "settings" || view === "update") document.documentElement.classList.add(view);
+// L'accueil reprend les couleurs de la fenêtre de mise à jour
+if (view === "welcome") document.documentElement.classList.add("update", "welcome");
 
 /** Langue changée dans les réglages (`LANGUAGE_EVENT` de settings.rs). */
 const LANGUAGE_EVENT = "app://language";
@@ -25,6 +29,7 @@ function Root() {
     // calculées une fois
     return <SettingsApp key={language} />;
   }
+  if (view === "welcome") return <WelcomeApp />;
   return view === "update" ? <UpdateApp /> : <WheelApp />;
 }
 

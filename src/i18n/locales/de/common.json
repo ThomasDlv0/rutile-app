@@ -1,1 +1,13 @@
-{}
+{
+  "welcome.title": "Willkommen bei Rutile",
+  "welcome.subtitle": "Ein Rad unter dem Mauszeiger zum Konvertieren, Öffnen und Teilen deiner Dateien.",
+  "welcome.shortcut": "öffnet das Rad unter dem Mauszeiger, mit den ausgewählten Dateien.",
+  "welcome.shake": "Schüttle eine Datei beim Ziehen: Das Rad öffnet sich, lass sie auf einem Format los.",
+  "welcome.center": "Klicke in die Mitte, um das Rad zu wechseln; verweile auf einem Teil für seine Optionen.",
+  "welcome.tray.macos": "Die Einstellungen findest du im Rutile-Symbol in der Menüleiste.",
+  "welcome.tray.windows": "Die Einstellungen findest du im Rutile-Symbol neben der Uhr (unter dem Pfeil ^, falls es dort fehlt).",
+  "welcome.tray.linux": "Die Einstellungen findest du im Rutile-Symbol in der Systemleiste.",
+  "welcome.permissions": "macOS fragt beim ersten Mal nach einigen Berechtigungen: der Finder für die Auswahl, die Bildschirmaufnahme für Aufnahmen.",
+  "welcome.later": "Später",
+  "welcome.try": "Rad ausprobieren"
+}

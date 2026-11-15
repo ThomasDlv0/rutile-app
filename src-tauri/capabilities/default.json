@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions de la roue et de la fenêtre de réglages",
-  "windows": ["wheel", "settings"],
+  "description": "Permissions de la roue, de la fenêtre de réglages et de l'accueil",
+  "windows": ["wheel", "settings", "welcome"],
   "permissions": ["core:default"]
 }

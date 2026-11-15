@@ -223,5 +223,6 @@
   "clipboard.copied": "클립보드에 복사하고 사진 › Rutile에 저장했어요.",
   "actions.compressPdf.done.one": "PDF가 압축됨",
   "actions.compressPdf.done.other": "PDF {count}개가 압축됨",
-  "actions.compressPdf.failed": "압축할 수 없음"
+  "actions.compressPdf.failed": "압축할 수 없음",
+  "welcome.windowTitle": "Rutile에 오신 것을 환영해요"
 }

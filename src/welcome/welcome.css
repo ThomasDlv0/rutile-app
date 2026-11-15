@@ -1,0 +1,58 @@
+/* Fenêtre d'accueil : l'allure de la fenêtre de mise à jour (couleurs, logo, boutons), sous la
+   barre de titre du système */
+.welcome-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-top: 8px;
+}
+
+/* Les boutons restent en bas, quelle que soit la longueur des textes de la langue */
+.welcome-page .update-actions {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 18px 0 0;
+  padding: 4px 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--card);
+  list-style: none;
+}
+
+.welcome-steps li {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  line-height: 1.35;
+}
+
+.welcome-steps li + li {
+  border-top: 1px solid var(--row-divider);
+}
+
+.welcome-key {
+  justify-self: center;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--control);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.welcome-glyph {
+  justify-self: center;
+  fill: none;
+  stroke: var(--hint);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

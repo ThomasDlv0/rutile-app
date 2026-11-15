@@ -223,5 +223,6 @@
   "clipboard.copied": "クリップボードにコピーし、ピクチャ › Rutile に保存しました。",
   "actions.compressPdf.done.one": "PDFを圧縮しました",
   "actions.compressPdf.done.other": "{count}個のPDFを圧縮しました",
-  "actions.compressPdf.failed": "圧縮できません"
+  "actions.compressPdf.failed": "圧縮できません",
+  "welcome.windowTitle": "Rutileへようこそ"
 }

@@ -223,5 +223,6 @@
   "clipboard.copied": "Copié dans le presse-papiers et rangé dans Images › Rutile.",
   "actions.compressPdf.done.one": "PDF allégé",
   "actions.compressPdf.done.other": "{count} PDF allégés",
-  "actions.compressPdf.failed": "Compression impossible"
+  "actions.compressPdf.failed": "Compression impossible",
+  "welcome.windowTitle": "Bienvenue dans Rutile"
 }

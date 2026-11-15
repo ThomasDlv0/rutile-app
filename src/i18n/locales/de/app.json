@@ -223,5 +223,6 @@
   "clipboard.copied": "In die Zwischenablage kopiert und unter Bilder › Rutile gesichert.",
   "actions.compressPdf.done.one": "PDF komprimiert",
   "actions.compressPdf.done.other": "{count} PDFs komprimiert",
-  "actions.compressPdf.failed": "Komprimierung nicht möglich"
+  "actions.compressPdf.failed": "Komprimierung nicht möglich",
+  "welcome.windowTitle": "Willkommen bei Rutile"
 }

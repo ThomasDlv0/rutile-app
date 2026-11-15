@@ -691,12 +691,21 @@ fn keep_aside(path: &Path, reading: &Reading) -> Option<PathBuf> {
     kept.ok().map(|()| backup)
 }
 
+/// Réglages lus au lancement.
+pub struct Loaded {
+    pub settings: Settings,
+    /// Copie d'un fichier illisible mise de côté, à annoncer.
+    pub set_aside: Option<PathBuf>,
+    /// Aucun fichier de réglages : Rutile n'a encore jamais été lancé ici.
+    pub first_launch: bool,
+}
+
 /// Lit les réglages enregistrés et les garde en mémoire ; un fichier absent ou abîmé
-/// redonne les valeurs par défaut. Renvoie aussi, pour l'annoncer, la copie d'un fichier
-/// illisible mise de côté.
-pub fn load<R: Runtime>(app: &AppHandle<R>) -> (Settings, Option<PathBuf>) {
+/// redonne les valeurs par défaut.
+pub fn load<R: Runtime>(app: &AppHandle<R>) -> Loaded {
     let path = file(app);
     let reading = path.as_deref().map_or(Reading::Missing, read);
+    let first_launch = path.is_some() && reading == Reading::Missing;
     let backup = path
         .as_deref()
         .and_then(|path| keep_aside(path, &reading))
@@ -711,7 +720,19 @@ pub fn load<R: Runtime>(app: &AppHandle<R>) -> (Settings, Option<PathBuf>) {
     let settings = settings.sanitized();
     i18n::set(i18n::resolve(settings.language.as_deref()));
     app.manage(SettingsState(Mutex::new(settings.clone())));
-    (settings, backup)
+    Loaded {
+        settings,
+        set_aside: backup,
+        first_launch,
+    }
+}
+
+/// Écrit les réglages en cours, même inchangés : après l'accueil, le lancement suivant n'est
+/// plus le premier.
+pub fn persist<R: Runtime>(app: &AppHandle<R>) {
+    if let Err(err) = save(app, &current(app)) {
+        eprintln!("rutile : réglages non enregistrés : {err}");
+    }
 }
 
 /// Annonce que des réglages illisibles ont été mis de côté sous le nom de `backup`.

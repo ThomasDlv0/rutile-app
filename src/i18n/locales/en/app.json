@@ -223,5 +223,6 @@
   "clipboard.copied": "Copied to the clipboard and saved in Pictures › Rutile.",
   "actions.compressPdf.done.one": "PDF compressed",
   "actions.compressPdf.done.other": "{count} PDFs compressed",
-  "actions.compressPdf.failed": "Couldn’t compress"
+  "actions.compressPdf.failed": "Couldn’t compress",
+  "welcome.windowTitle": "Welcome to Rutile"
 }

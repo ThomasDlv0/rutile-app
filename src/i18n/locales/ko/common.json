@@ -1,1 +1,13 @@
-{}
+{
+  "welcome.title": "Rutile에 오신 것을 환영해요",
+  "welcome.subtitle": "커서 아래 휠로 파일을 변환하고, 열고, 공유하세요.",
+  "welcome.shortcut": "선택한 파일을 대상으로 커서 아래에 휠을 열어요.",
+  "welcome.shake": "파일을 끄는 동안 흔들면 휠이 열려요. 원하는 포맷 위에 놓으세요.",
+  "welcome.center": "가운데를 클릭하면 휠이 바뀌어요. 항목 위에 머무르면 옵션이 보여요.",
+  "welcome.tray.macos": "설정은 메뉴 막대의 Rutile 아이콘에 있어요.",
+  "welcome.tray.windows": "설정은 시계 옆 Rutile 아이콘에 있어요(보이지 않으면 ^ 화살표 안에 있어요).",
+  "welcome.tray.linux": "설정은 시스템 트레이의 Rutile 아이콘에 있어요.",
+  "welcome.permissions": "처음 사용할 때 macOS가 몇 가지 권한을 요청해요. 선택 항목을 읽기 위한 Finder, 캡처를 위한 화면 기록이에요.",
+  "welcome.later": "나중에",
+  "welcome.try": "휠 사용해 보기"
+}

@@ -1,1 +1,13 @@
-{}
+{
+  "welcome.title": "Te damos la bienvenida a Rutile",
+  "welcome.subtitle": "Una rueda bajo el cursor para convertir, abrir y compartir tus archivos.",
+  "welcome.shortcut": "abre la rueda bajo el cursor, con los archivos seleccionados.",
+  "welcome.shake": "Agita un archivo mientras lo arrastras: la rueda se abre, suéltalo sobre un formato.",
+  "welcome.center": "Haz clic en el centro para cambiar de rueda; mantén el cursor sobre una parte para ver sus opciones.",
+  "welcome.tray.macos": "Los ajustes están en el icono de Rutile, en la barra de menús.",
+  "welcome.tray.windows": "Los ajustes están en el icono de Rutile, junto al reloj (bajo la flecha ^ si no aparece).",
+  "welcome.tray.linux": "Los ajustes están en el icono de Rutile, en la bandeja del sistema.",
+  "welcome.permissions": "macOS pedirá algunos permisos la primera vez: el Finder para leer la selección y la grabación de pantalla para las capturas.",
+  "welcome.later": "Más tarde",
+  "welcome.try": "Probar la rueda"
+}

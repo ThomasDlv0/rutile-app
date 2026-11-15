@@ -83,6 +83,8 @@ export const convertFiles = (
   format: OutputFormat,
   variant: Variant | null = null,
 ) => invoke<Outcome>("convert_files", { paths, format, variant });
+/** Ferme l'accueil ; `tryWheel` ouvre ensuite la roue, pour l'essayer. */
+export const closeWelcome = (tryWheel: boolean) => invoke("close_welcome", { tryWheel });
 /** Glisse des fichiers hors de la roue ; se termine au dépôt, vrai s'ils ont été déposés. */
 export const dragOut = (paths: string[]) => invoke<boolean>("drag_out", { paths });
 /** Conversion par FFmpeg ; l'avancement arrive par `wheel://progress`. */

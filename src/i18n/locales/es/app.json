@@ -223,5 +223,6 @@
   "clipboard.copied": "Copiado en el portapapeles y guardado en Imágenes › Rutile.",
   "actions.compressPdf.done.one": "PDF comprimido",
   "actions.compressPdf.done.other": "{count} PDF comprimidos",
-  "actions.compressPdf.failed": "No se puede comprimir"
+  "actions.compressPdf.failed": "No se puede comprimir",
+  "welcome.windowTitle": "Te damos la bienvenida a Rutile"
 }

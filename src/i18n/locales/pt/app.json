@@ -223,5 +223,6 @@
   "clipboard.copied": "Copiado para a área de transferência e salvo em Imagens › Rutile.",
   "actions.compressPdf.done.one": "PDF comprimido",
   "actions.compressPdf.done.other": "{count} PDFs comprimidos",
-  "actions.compressPdf.failed": "Não foi possível comprimir"
+  "actions.compressPdf.failed": "Não foi possível comprimir",
+  "welcome.windowTitle": "Boas-vindas ao Rutile"
 }

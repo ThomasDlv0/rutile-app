@@ -1,1 +1,13 @@
-{}
+{
+  "welcome.title": "欢迎使用 Rutile",
+  "welcome.subtitle": "光标下的轮盘，用来转换、打开和分享文件。",
+  "welcome.shortcut": "在光标下打开轮盘，作用于所选文件。",
+  "welcome.shake": "拖动文件时晃动它：轮盘随即打开，把文件放到某个格式上。",
+  "welcome.center": "点按中心切换轮盘；在某个分区上停留可查看选项。",
+  "welcome.tray.macos": "设置位于菜单栏中的 Rutile 图标。",
+  "welcome.tray.windows": "设置位于时钟旁的 Rutile 图标（若不在，请点按 ^ 箭头）。",
+  "welcome.tray.linux": "设置位于系统托盘中的 Rutile 图标。",
+  "welcome.permissions": "首次使用时，macOS 会请求几项权限：访达用于读取所选项，屏幕录制用于截屏。",
+  "welcome.later": "以后",
+  "welcome.try": "试试轮盘"
+}

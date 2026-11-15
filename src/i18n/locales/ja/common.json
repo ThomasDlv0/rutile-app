@@ -1,1 +1,13 @@
-{}
+{
+  "welcome.title": "Rutileへようこそ",
+  "welcome.subtitle": "カーソルの下に現れるホイールで、ファイルを変換・オープン・共有できます。",
+  "welcome.shortcut": "選択したファイルを対象に、カーソルの下にホイールを開きます。",
+  "welcome.shake": "ファイルをドラッグしながら振ると、ホイールが開きます。フォーマットの上でドロップしてください。",
+  "welcome.center": "中央をクリックするとホイールが切り替わります。項目の上で止まるとオプションが表示されます。",
+  "welcome.tray.macos": "設定はメニューバーのRutileアイコンにあります。",
+  "welcome.tray.windows": "設定は時計の近くのRutileアイコンにあります（見当たらない場合は ^ 矢印の中）。",
+  "welcome.tray.linux": "設定はシステムトレイのRutileアイコンにあります。",
+  "welcome.permissions": "初回使用時に、macOSがいくつかの許可を求めます。選択項目を読むためのFinder、キャプチャのための画面収録です。",
+  "welcome.later": "あとで",
+  "welcome.try": "ホイールを試す"
+}

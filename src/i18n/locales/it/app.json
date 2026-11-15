@@ -223,5 +223,6 @@
   "clipboard.copied": "Copiato negli appunti e salvato in Immagini › Rutile.",
   "actions.compressPdf.done.one": "PDF compresso",
   "actions.compressPdf.done.other": "{count} PDF compressi",
-  "actions.compressPdf.failed": "Compressione non riuscita"
+  "actions.compressPdf.failed": "Compressione non riuscita",
+  "welcome.windowTitle": "Benvenuto in Rutile"
 }
