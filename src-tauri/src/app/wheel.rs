@@ -546,17 +546,25 @@ pub async fn drag_out<R: Runtime>(
     let (sender, receiver) = std::sync::mpsc::channel::<Result<bool, String>>();
     let started = sender.clone();
     app.run_on_main_thread(move || {
-        let result = drag::start_drag(
-            &window,
-            drag::DragItem::Files(paths),
-            drag::Image::Raw(icon),
-            move |result, _| {
-                let _ = sender.send(Ok(matches!(result, drag::DragResult::Dropped)));
-            },
-            drag::Options::default(),
-        );
+        let item = drag::DragItem::Files(paths);
+        let image = drag::Image::Raw(icon);
+        let dropped = move |result, _| {
+            let _ = sender.send(Ok(matches!(result, drag::DragResult::Dropped)));
+        };
+        let options = drag::Options::default();
+        // Sous Linux, le glisser part de la fenêtre GTK ; ailleurs, de la fenêtre elle-même
+        #[cfg(target_os = "linux")]
+        let result = window
+            .gtk_window()
+            .map_err(|err| err.to_string())
+            .and_then(|gtk| {
+                drag::start_drag(&gtk, item, image, dropped, options).map_err(|err| err.to_string())
+            });
+        #[cfg(not(target_os = "linux"))]
+        let result =
+            drag::start_drag(&window, item, image, dropped, options).map_err(|err| err.to_string());
         if let Err(err) = result {
-            let _ = started.send(Err(err.to_string()));
+            let _ = started.send(Err(err));
         }
     })
     .map_err(|err| err.to_string())?;
