@@ -203,7 +203,8 @@ fn extract_zip_unshielded(path: &Path) -> Result<PathBuf, ConvertError> {
     let mut entries = Vec::new();
     for index in 0..archive.len() {
         let entry = archive.by_index_raw(index).map_err(bad)?;
-        // Un nom en `../` ou absolu sortirait du dossier, un lien pourrait y mener : écartés
+        // Un nom en `../` sortirait du dossier, un lien pourrait y mener : écartés. Un nom absolu
+        // y est ramené (`/a.txt` devient `a.txt`), comme le fait unzip
         let Some(name) = entry.enclosed_name() else {
             continue;
         };

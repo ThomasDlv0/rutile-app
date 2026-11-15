@@ -311,7 +311,9 @@ fn un_nom_piege_ne_sort_pas_du_dossier() {
     let output = files::extract_zip(&archive).unwrap();
     assert!(!dir.path().join("evade.txt").exists());
     assert_eq!(fs::read_to_string(output.join("ok.txt")).unwrap(), "oui");
-    assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+    // Le nom absolu est ramené dans le dossier ; celui en `../` est écarté
+    assert_eq!(fs::read_to_string(output.join("abs.txt")).unwrap(), "non");
+    assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
 }
 
 #[test]
