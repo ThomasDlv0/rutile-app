@@ -1,0 +1,13 @@
+# Configuration de `cargo audit` (workflow Sécurité).
+[advisories]
+# zip 4.6 : ZipArchive::extract suit des liens et garde les bits SUID (corrigé dans zip 9, que
+# le convertisseur utilise). La 4.6 ne reste que par tauri-plugin-updater, dont toutes les
+# versions 2.x demandent zip ^4, et seulement sous Windows, pour une mise à jour livrée en .zip
+# après vérification de sa signature : Rutile publie des installateurs (.exe, .msi), jamais de
+# .zip. À retirer dès que tauri-plugin-updater 3 sera publié en version stable.
+ignore = [
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+]
