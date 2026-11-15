@@ -152,5 +152,7 @@
   "wheel.variant.fullHd.action": "{format}（1920 px）",
   "wheel.variant.half.label": "½",
   "wheel.variant.half.action": "{format}（半分のサイズ）",
-  "wheel.hub.dragResult": "好きな場所へドラッグ"
+  "wheel.hub.dragResult": "好きな場所へドラッグ",
+  "wheel.actions.pdf.compress.label": "軽量化",
+  "wheel.actions.pdf.compress.action": "PDFを圧縮"
 }

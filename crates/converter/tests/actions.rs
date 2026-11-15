@@ -402,3 +402,53 @@ fn une_image_se_relit_en_png() {
     assert_eq!((decoded.width(), decoded.height()), (8, 6));
     assert!(converter::to_png(&dir.path().join("absent.png")).is_err());
 }
+
+#[test]
+fn un_pdf_de_photos_se_compresse() {
+    let dir = tempdir().unwrap();
+    // Grande photo au contenu varié, en JPEG de bonne qualité : ce que contient un PDF scanné
+    let photo = dir.path().join("scan.jpg");
+    let pixels = image::RgbImage::from_fn(2600, 1700, |x, y| {
+        let noise = (x.wrapping_mul(7919) ^ y.wrapping_mul(104_729)).wrapping_mul(2_654_435_761);
+        image::Rgb([(x / 11) as u8, (y / 7) as u8, (noise >> 24) as u8])
+    });
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 95)
+        .encode_image(&pixels)
+        .unwrap();
+    fs::write(&photo, &jpeg).unwrap();
+    let pdf = files::images_to_pdf(&[photo]).unwrap();
+
+    let compressed = files::compress_pdf(&pdf).unwrap();
+    let size = |path: &std::path::Path| fs::metadata(path).unwrap().len();
+    assert!(
+        size(&compressed) < size(&pdf) / 2,
+        "{} ≥ {}",
+        size(&compressed),
+        size(&pdf)
+    );
+
+    let document = lopdf::Document::load(&compressed).unwrap();
+    assert_eq!(document.get_pages().len(), 1);
+    let widths: Vec<i64> = document
+        .objects
+        .values()
+        .filter_map(|object| object.as_stream().ok())
+        .filter(|stream| {
+            stream
+                .dict
+                .get(b"Subtype")
+                .and_then(lopdf::Object::as_name)
+                .ok()
+                == Some(b"Image")
+        })
+        .map(|stream| stream.dict.get(b"Width").unwrap().as_i64().unwrap())
+        .collect();
+    assert_eq!(widths, [1800]);
+
+    // Déjà compressé : rien de plus à gagner
+    assert!(matches!(
+        files::compress_pdf(&compressed),
+        Err(converter::ConvertError::NotSmaller)
+    ));
+}

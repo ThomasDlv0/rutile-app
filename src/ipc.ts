@@ -99,6 +99,7 @@ export type ActionRequest =
   | { kind: "imagesToPdf" }
   | { kind: "mergePdfs" }
   | { kind: "pdfText" }
+  | { kind: "compressPdf" }
   | { kind: "readText" }
   | { kind: "copyImage" }
   | { kind: "copyPaths" }

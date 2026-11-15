@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Vídeos",
   "clipboard.name": "Portapapeles",
   "clipboard.fileName": "Portapapeles {date} a las {time}",
-  "clipboard.copied": "Copiado en el portapapeles y guardado en Imágenes › Rutile."
+  "clipboard.copied": "Copiado en el portapapeles y guardado en Imágenes › Rutile.",
+  "actions.compressPdf.done.one": "PDF comprimido",
+  "actions.compressPdf.done.other": "{count} PDF comprimidos",
+  "actions.compressPdf.failed": "No se puede comprimir"
 }

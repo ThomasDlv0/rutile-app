@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "ビデオ",
   "clipboard.name": "クリップボード",
   "clipboard.fileName": "クリップボード {date} {time}",
-  "clipboard.copied": "クリップボードにコピーし、ピクチャ › Rutile に保存しました。"
+  "clipboard.copied": "クリップボードにコピーし、ピクチャ › Rutile に保存しました。",
+  "actions.compressPdf.done.one": "PDFを圧縮しました",
+  "actions.compressPdf.done.other": "{count}個のPDFを圧縮しました",
+  "actions.compressPdf.failed": "圧縮できません"
 }

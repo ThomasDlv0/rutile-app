@@ -152,5 +152,7 @@
   "wheel.variant.fullHd.action": "{format} a 1920 px",
   "wheel.variant.half.label": "½",
   "wheel.variant.half.action": "{format} a la mitad del tamaño",
-  "wheel.hub.dragResult": "Arrástralo adonde quieras"
+  "wheel.hub.dragResult": "Arrástralo adonde quieras",
+  "wheel.actions.pdf.compress.label": "Aligerar",
+  "wheel.actions.pdf.compress.action": "Comprimir el PDF"
 }

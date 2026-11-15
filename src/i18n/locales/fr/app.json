@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Vidéos",
   "clipboard.name": "Presse-papiers",
   "clipboard.fileName": "Presse-papiers {date} à {time}",
-  "clipboard.copied": "Copié dans le presse-papiers et rangé dans Images › Rutile."
+  "clipboard.copied": "Copié dans le presse-papiers et rangé dans Images › Rutile.",
+  "actions.compressPdf.done.one": "PDF allégé",
+  "actions.compressPdf.done.other": "{count} PDF allégés",
+  "actions.compressPdf.failed": "Compression impossible"
 }

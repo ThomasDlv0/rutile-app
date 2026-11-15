@@ -151,5 +151,7 @@
   "wheel.variant.fullHd.action": "{format}，1920 像素",
   "wheel.variant.half.label": "½",
   "wheel.variant.half.action": "{format}，一半尺寸",
-  "wheel.hub.dragResult": "拖到任意位置"
+  "wheel.hub.dragResult": "拖到任意位置",
+  "wheel.actions.pdf.compress.label": "瘦身",
+  "wheel.actions.pdf.compress.action": "压缩 PDF"
 }

@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Video",
   "clipboard.name": "Appunti",
   "clipboard.fileName": "Appunti {date} alle {time}",
-  "clipboard.copied": "Copiato negli appunti e salvato in Immagini › Rutile."
+  "clipboard.copied": "Copiato negli appunti e salvato in Immagini › Rutile.",
+  "actions.compressPdf.done.one": "PDF compresso",
+  "actions.compressPdf.done.other": "{count} PDF compressi",
+  "actions.compressPdf.failed": "Compressione non riuscita"
 }

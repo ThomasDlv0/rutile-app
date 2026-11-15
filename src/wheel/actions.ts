@@ -91,6 +91,7 @@ type PartName =
   | "files.rename"
   | "files.path"
   | "pdf.text"
+  | "pdf.compress"
   | "image.text"
   | "image.copy"
   | "image.half"
@@ -248,6 +249,11 @@ const PATHS = entry(
   "files.path",
 );
 
+const PDF_COMPRESS = entry(
+  { id: "pdf-compress", glyph: "compress", needs: "pdfs", run: { kind: "compressPdf" }, ...FILES_FAMILY },
+  "pdf.compress",
+);
+
 const PDF_TEXT = entry(
   { id: "pdf-text", glyph: "text", needs: "pdfs", run: { kind: "pdfText" }, ...TEXT_FAMILY },
   "pdf.text",
@@ -270,7 +276,7 @@ const IMAGE_COPY = entry(
   "image.copy",
 );
 
-const FILES: readonly ActionNode[] = [ZIP, EXTRACT, IMAGES_PDF, MERGE, RENAME_NODE];
+const FILES: readonly ActionNode[] = [ZIP, EXTRACT, IMAGES_PDF, MERGE, PDF_COMPRESS, RENAME_NODE];
 
 const imagePart = (
   id: string,
@@ -454,7 +460,7 @@ export const FILE_ACTIONS: Record<FileKind, readonly ActionNode[]> = {
     extend(PATHS, { offByDefault: true }),
   ],
   videos: [...VIDEO, ZIP, RENAME_NODE, extend(PATHS, { offByDefault: true })],
-  pdfs: [MERGE, PDF_TEXT, ZIP, RENAME_NODE, PATHS],
+  pdfs: [MERGE, PDF_COMPRESS, PDF_TEXT, ZIP, RENAME_NODE, PATHS],
   archives: [EXTRACT, RENAME_NODE, PATHS],
   others: [ZIP, RENAME_NODE, PATHS],
 };

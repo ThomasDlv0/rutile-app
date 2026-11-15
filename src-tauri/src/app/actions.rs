@@ -54,6 +54,8 @@ pub enum ActionRequest {
     MergePdfs,
     /// Copie le texte de PDF.
     PdfText,
+    /// PDF plus légers : photos réduites et réécrites.
+    CompressPdf,
     /// Copie le texte d'images, lu comme sur une capture.
     ReadText,
     /// Met une image dans le presse-papiers.
@@ -157,6 +159,7 @@ async fn perform<R: Runtime>(
         }
         ActionRequest::Extract => extract(paths).await,
         ActionRequest::PdfText => pdf_text(paths).await,
+        ActionRequest::CompressPdf => compress_pdfs(paths).await,
         ActionRequest::ReadText => read_images_text(paths).await,
         ActionRequest::CopyImage => copy_image_file(paths).await,
         ActionRequest::CopyPaths => copy_paths(&paths),
@@ -408,6 +411,31 @@ async fn retouch_images<R: Runtime>(
     .await
     .unwrap_or_default();
     summary(title, failed_title, results.0, results.1)
+}
+
+async fn compress_pdfs(paths: Vec<PathBuf>) -> Done {
+    let results = blocking(move || {
+        let mut done = Vec::new();
+        let mut failed = Vec::new();
+        for path in &paths {
+            match files::compress_pdf(path) {
+                Ok(output) => done.push(output),
+                Err(err) => failed.push(i18n::tf(
+                    "files.failureLine",
+                    &[("name", &file_name(path)), ("reason", &err)],
+                )),
+            }
+        }
+        (done, failed)
+    })
+    .await
+    .unwrap_or_default();
+    summary(
+        |count| i18n::tn("actions.compressPdf.done", count, &[]),
+        i18n::t("actions.compressPdf.failed"),
+        results.0,
+        results.1,
+    )
 }
 
 async fn rework_videos<R: Runtime>(

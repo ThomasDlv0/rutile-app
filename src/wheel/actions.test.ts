@@ -396,6 +396,10 @@ describe("roue d'un fichier", () => {
     expect(ids(fileTree(config, [pdf, file("annexe.pdf")]))[0]).toBe("files-merge");
   });
 
+  it("propose d'alléger un PDF seul en premier", () => {
+    expect(ids(fileTree(config, [pdf]))[0]).toBe("pdf-compress");
+  });
+
   it("ne copie qu'une image à la fois", () => {
     expect(ids(fileTree(config, [image]))).toContain("image-copy");
     expect(ids(fileTree(config, [image, file("b.png", "png")]))).not.toContain("image-copy");

@@ -262,5 +262,10 @@
   "wheel.pick.videosFilter": "Видео",
   "clipboard.name": "Буфер обмена",
   "clipboard.fileName": "Буфер обмена {date} в {time}",
-  "clipboard.copied": "Скопировано в буфер обмена и сохранено в «Изображения › Rutile»."
+  "clipboard.copied": "Скопировано в буфер обмена и сохранено в «Изображения › Rutile».",
+  "actions.compressPdf.done.one": "PDF сжат",
+  "actions.compressPdf.done.few": "Сжато PDF: {count}",
+  "actions.compressPdf.done.many": "Сжато PDF: {count}",
+  "actions.compressPdf.done.other": "Сжато PDF: {count}",
+  "actions.compressPdf.failed": "Не удалось сжать"
 }

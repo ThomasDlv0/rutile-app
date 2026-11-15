@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Vídeos",
   "clipboard.name": "Área de transferência",
   "clipboard.fileName": "Área de transferência {date} às {time}",
-  "clipboard.copied": "Copiado para a área de transferência e salvo em Imagens › Rutile."
+  "clipboard.copied": "Copiado para a área de transferência e salvo em Imagens › Rutile.",
+  "actions.compressPdf.done.one": "PDF comprimido",
+  "actions.compressPdf.done.other": "{count} PDFs comprimidos",
+  "actions.compressPdf.failed": "Não foi possível comprimir"
 }

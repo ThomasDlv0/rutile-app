@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "비디오",
   "clipboard.name": "클립보드",
   "clipboard.fileName": "클립보드 {date} {time}",
-  "clipboard.copied": "클립보드에 복사하고 사진 › Rutile에 저장했어요."
+  "clipboard.copied": "클립보드에 복사하고 사진 › Rutile에 저장했어요.",
+  "actions.compressPdf.done.one": "PDF가 압축됨",
+  "actions.compressPdf.done.other": "PDF {count}개가 압축됨",
+  "actions.compressPdf.failed": "압축할 수 없음"
 }

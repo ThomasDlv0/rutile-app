@@ -154,5 +154,7 @@
   "wheel.variant.fullHd.action": "{format} 1920 px",
   "wheel.variant.half.label": "½",
   "wheel.variant.half.action": "{format} вдвое меньше",
-  "wheel.hub.dragResult": "Перетащите куда угодно"
+  "wheel.hub.dragResult": "Перетащите куда угодно",
+  "wheel.actions.pdf.compress.label": "Сжать",
+  "wheel.actions.pdf.compress.action": "Сжать PDF"
 }

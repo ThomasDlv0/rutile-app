@@ -8,6 +8,8 @@ use std::io::{self, BufReader, BufWriter, Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local};
+use image::codecs::jpeg::JpegEncoder;
+use image::imageops::FilterType;
 use image::{ColorType, ImageDecoder, ImageReader, metadata::Orientation};
 use lopdf::{Document, Object, ObjectId, Stream, dictionary};
 use serde::{Deserialize, Serialize};
@@ -500,6 +502,135 @@ fn tidy_text(text: &str) -> String {
         }
     }
     tidy.trim().to_string()
+}
+
+/// Plus grand côté d'une photo dans un PDF compressé : assez net pour une page imprimée.
+const PDF_PHOTO_SIDE: u32 = 1800;
+/// Qualité JPEG des photos d'un PDF compressé.
+const PDF_PHOTO_QUALITY: u8 = 70;
+
+/// PDF plus léger, à côté de l'original : ses photos (JPEG) réduites et réécrites, le reste
+/// compressé sans perte. Refusé s'il n'en sort rien de plus petit.
+pub fn compress_pdf(path: &Path) -> Result<PathBuf, ConvertError> {
+    shielded(|| compress_pdf_unshielded(path))
+}
+
+fn compress_pdf_unshielded(path: &Path) -> Result<PathBuf, ConvertError> {
+    let bytes = read(path)?;
+    let mut document =
+        Document::load_mem(&bytes).map_err(|err| ConvertError::Pdf(err.to_string()))?;
+    if document.is_encrypted() {
+        return Err(ConvertError::ProtectedPdf);
+    }
+    let photos: Vec<(ObjectId, bool)> = document
+        .objects
+        .iter()
+        .filter_map(|(id, object)| {
+            let Object::Stream(stream) = object else {
+                return None;
+            };
+            photo_is_gray(&document, stream).map(|gray| (*id, gray))
+        })
+        .collect();
+    for (id, gray) in photos {
+        let Some(Object::Stream(stream)) = document.objects.get_mut(&id) else {
+            continue;
+        };
+        // Un masque garde la taille de l'image qu'il découpe : celle-ci n'est que recompressée
+        let masked = stream.dict.has(b"SMask") || stream.dict.has(b"Mask");
+        if let Some((content, width, height)) = recompress_photo(&stream.content, gray, !masked)
+            && content.len() < stream.content.len()
+        {
+            stream.dict.set("Width", i64::from(width));
+            stream.dict.set("Height", i64::from(height));
+            stream.dict.remove(b"DecodeParms");
+            stream.set_content(content);
+        }
+    }
+    document.prune_objects();
+    document.delete_zero_length_streams();
+    document.compress();
+    let mut out = Vec::new();
+    document
+        .save_to(&mut out)
+        .map_err(|err| ConvertError::Pdf(err.to_string()))?;
+    if out.len() >= bytes.len() {
+        return Err(ConvertError::NotSmaller);
+    }
+    let target = output::sibling(
+        path,
+        &output::suffixed(path, &i18n::t("files.suffix.compressed")),
+    );
+    output::write_unique(&target, "pdf", &out)
+}
+
+/// Vrai pour une photo en gris, faux en couleur ; `None` si l'objet n'est pas un JPEG que l'on
+/// sait réécrire sans changer ses couleurs (CMJN, couleurs indexées ou inversées…).
+fn photo_is_gray(document: &Document, stream: &Stream) -> Option<bool> {
+    let dict = &stream.dict;
+    if dict.get(b"Subtype").and_then(Object::as_name).ok()? != b"Image" {
+        return None;
+    }
+    if stream.filters().ok()? != [b"DCTDecode".as_slice()]
+        || dict
+            .get(b"BitsPerComponent")
+            .and_then(Object::as_i64)
+            .ok()?
+            != 8
+        || dict.has(b"Decode")
+        || dict.has(b"ImageMask")
+    {
+        return None;
+    }
+    let resolve = |object: &Object| match object {
+        Object::Reference(id) => document.get_object(*id).ok().cloned(),
+        other => Some(other.clone()),
+    };
+    match resolve(dict.get(b"ColorSpace").ok()?)? {
+        Object::Name(name) if name == b"DeviceRGB" => Some(false),
+        Object::Name(name) if name == b"DeviceGray" => Some(true),
+        Object::Array(items)
+            if items.first().and_then(|kind| kind.as_name().ok()) == Some(b"ICCBased") =>
+        {
+            let profile = resolve(items.get(1)?)?;
+            match profile
+                .as_stream()
+                .ok()?
+                .dict
+                .get(b"N")
+                .and_then(Object::as_i64)
+                .ok()?
+            {
+                1 => Some(true),
+                3 => Some(false),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// La photo réduite (si `shrink`) et réécrite en JPEG, avec sa nouvelle taille.
+fn recompress_photo(jpeg: &[u8], gray: bool, shrink: bool) -> Option<(Vec<u8>, u32, u32)> {
+    let image = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg).ok()?;
+    let expected = if gray { ColorType::L8 } else { ColorType::Rgb8 };
+    if image.color() != expected {
+        return None;
+    }
+    let image = if shrink && image.width().max(image.height()) > PDF_PHOTO_SIDE {
+        image.resize(PDF_PHOTO_SIDE, PDF_PHOTO_SIDE, FilterType::Lanczos3)
+    } else {
+        image
+    };
+    let mut out = Vec::new();
+    let encoder = JpegEncoder::new_with_quality(&mut out, PDF_PHOTO_QUALITY);
+    let written = if gray {
+        image.to_luma8().write_with_encoder(encoder)
+    } else {
+        image.to_rgb8().write_with_encoder(encoder)
+    };
+    written.ok()?;
+    Some((out, image.width(), image.height()))
 }
 
 /// Fusionne des PDF dans l'ordre de leurs noms, à côté du premier.

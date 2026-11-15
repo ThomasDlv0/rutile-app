@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Videos",
   "clipboard.name": "Clipboard",
   "clipboard.fileName": "Clipboard {date} at {time}",
-  "clipboard.copied": "Copied to the clipboard and saved in Pictures › Rutile."
+  "clipboard.copied": "Copied to the clipboard and saved in Pictures › Rutile.",
+  "actions.compressPdf.done.one": "PDF compressed",
+  "actions.compressPdf.done.other": "{count} PDFs compressed",
+  "actions.compressPdf.failed": "Couldn’t compress"
 }

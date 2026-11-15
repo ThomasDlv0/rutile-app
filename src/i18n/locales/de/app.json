@@ -220,5 +220,8 @@
   "wheel.pick.videosFilter": "Videos",
   "clipboard.name": "Zwischenablage",
   "clipboard.fileName": "Zwischenablage {date} um {time}",
-  "clipboard.copied": "In die Zwischenablage kopiert und unter Bilder › Rutile gesichert."
+  "clipboard.copied": "In die Zwischenablage kopiert und unter Bilder › Rutile gesichert.",
+  "actions.compressPdf.done.one": "PDF komprimiert",
+  "actions.compressPdf.done.other": "{count} PDFs komprimiert",
+  "actions.compressPdf.failed": "Komprimierung nicht möglich"
 }
