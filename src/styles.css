@@ -326,6 +326,52 @@ body,
   pointer-events: none;
 }
 
+/* Nom d'une part à icône, écrit le long du cercle entre le centre et son bouton */
+.part-name {
+  fill: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: fill 120ms ease-out;
+}
+
+.part-name[data-active="true"] {
+  fill: var(--text-strong);
+}
+
+.part-name[data-unavailable="true"] {
+  opacity: 0.4;
+}
+
+/* Un point par roue du clic au centre, celui de la roue affichée allumé */
+.mode-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + 52px);
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.mode-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.35;
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms var(--spring);
+}
+
+.mode-dots span[data-current="true"] {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.3);
+}
+
 /* Rester sur une part : l'anneau se remplit pendant le délai réglé (--dwell-ms), puis sa
    sous-roue s'ouvre. Il attend un instant, pour ne pas clignoter au simple passage */
 .part-dwell {

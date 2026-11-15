@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type WheelEvent } from "react";
 import { ActionsIcon } from "../ActionsIcon";
 import { AppsIcon } from "../AppsIcon";
 import { FilmIcon } from "../FilmIcon";
@@ -79,7 +79,20 @@ interface WheelProps {
   onToggleMode: () => void;
   /** Glisser commencé sur le centre, quand il montre un fichier produit. */
   onDragOutputs?: (paths: string[]) => void;
+  /** Place de la roue affichée parmi celles du clic au centre : un point par roue. */
+  modeDots?: { count: number; current: number };
+  /** Molette ou glissé à deux doigts : roue suivante (1) ou précédente (-1). */
+  onStep?: (step: 1 | -1) => void;
 }
+
+/** Rayon où s'écrit le nom d'une part à icône, le long du cercle, entre le centre et les
+ * boutons. */
+const NAME_ORBIT = 80;
+/** Largeur moyenne d'un caractère du nom, pour le resserrer s'il dépasse de son arc. */
+const NAME_CHAR_WIDTH = 5.4;
+/** Défilement à cumuler avant de changer de roue, puis pause avant le changement suivant. */
+const SCROLL_STEP = 40;
+const SCROLL_PAUSE_MS = 280;
 
 /** Nom court d'une roue ; `title` est celui d'une roue personnalisée. */
 function modeName(mode: Mode, title?: string): string {
@@ -267,6 +280,8 @@ export function Wheel({
   onOutsideClick,
   onToggleMode,
   onDragOutputs,
+  modeDots,
+  onStep,
 }: WheelProps) {
   // Les textes se relisent à chaque changement de langue
   useLanguage();
@@ -300,6 +315,21 @@ export function Wheel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [keyboard, busy, count, disabled, items, highlighted, onSelect]);
 
+  // La molette ou deux doigts sur le pavé tactile passent d'une roue à l'autre
+  const scroll = useRef({ total: 0, pausedUntil: 0 });
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!onStep) return;
+    const now = event.timeStamp;
+    if (now < scroll.current.pausedUntil) return;
+    scroll.current.total += Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    if (Math.abs(scroll.current.total) < SCROLL_STEP) return;
+    onStep(scroll.current.total > 0 ? 1 : -1);
+    scroll.current = { total: 0, pausedUntil: now + SCROLL_PAUSE_MS };
+  };
+  // Au-delà de huit parts, les arcs deviennent trop courts pour un nom
+  const showNames = count <= 8;
+  const namesId = useId();
+
   // Un clic n'importe où dans une part vaut un clic sur son bouton
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as Element).closest("button")) return;
@@ -331,6 +361,7 @@ export function Wheel({
       onPointerMove={busy ? undefined : (event) => onPointer(localPoint(event, scale))}
       onPointerLeave={busy ? undefined : () => onPointer(null)}
       onClick={busy ? undefined : handleClick}
+      onWheel={busy ? undefined : handleWheel}
     >
       <div className="wheel" data-phase={phase}>
         <svg
@@ -375,6 +406,44 @@ export function Wheel({
             const [x2, y2] = polar(SEPARATOR_END, angle);
             return <line key={angle} className="separator" x1={x1} y1={y1} x2={x2} y2={y2} />;
           })}
+          {showNames &&
+            items.map((item, index) => {
+              // Une part à icône dit son nom ; un format ou une app se reconnaît seul
+              if (!item.glyph) return null;
+              const center = sectorCenterAngle(index, count);
+              const half = 180 / count - 4;
+              // En bas, l'arc va dans l'autre sens : le nom reste à l'endroit
+              const top = Math.cos((center * Math.PI) / 180) >= -0.01;
+              const radius = top ? NAME_ORBIT - 3 : NAME_ORBIT + 7;
+              const [x1, y1] = polar(radius, top ? center - half : center + half);
+              const [x2, y2] = polar(radius, top ? center + half : center - half);
+              const arc = (Math.PI * radius * 2 * half) / 180;
+              const crowded = item.label.length * NAME_CHAR_WIDTH > arc;
+              const id = `${namesId}-${index}`;
+              return (
+                <g key={`${mode}-name-${item.id}`}>
+                  <path
+                    id={id}
+                    d={`M ${x1} ${y1} A ${radius} ${radius} 0 0 ${top ? 1 : 0} ${x2} ${y2}`}
+                    fill="none"
+                  />
+                  <text
+                    className="part-name"
+                    data-active={highlighted === index}
+                    data-unavailable={disabled.has(item.id)}
+                  >
+                    <textPath
+                      href={`#${id}`}
+                      startOffset="50%"
+                      textAnchor="middle"
+                      {...(crowded && { textLength: arc, lengthAdjust: "spacingAndGlyphs" })}
+                    >
+                      {item.label}
+                    </textPath>
+                  </text>
+                </g>
+              );
+            })}
         </svg>
 
         {items.map((format, index) => {
@@ -432,6 +501,14 @@ export function Wheel({
             </button>
           );
         })}
+
+        {modeDots && modeDots.count > 1 && !busy && (
+          <div className="mode-dots" aria-hidden="true">
+            {Array.from({ length: modeDots.count }, (_, index) => (
+              <span key={index} data-current={index === modeDots.current} />
+            ))}
+          </div>
+        )}
 
         {dwelling && (
           <svg

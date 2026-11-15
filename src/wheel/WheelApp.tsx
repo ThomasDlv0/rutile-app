@@ -1012,6 +1012,16 @@ export function WheelApp() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chooseMode, close, goBack]);
 
+  /** Molette sur la roue : la roue suivante ou précédente, comme ↑ ↓. */
+  const stepMode = useCallback(
+    (step: 1 | -1) => {
+      if (busyRef.current || phaseRef.current !== "open" || inChildren.current) return;
+      const target = nextMode(modesRef.current, modeRef.current, step);
+      if (target) chooseMode(target);
+    },
+    [chooseMode],
+  );
+
   const updatePointer = useCallback((point: Point | null, keyboard = false) => {
     keyboardPointer.current = keyboard;
     setPointer(point);
@@ -1045,6 +1055,8 @@ export function WheelApp() {
       keyboard
       onToggleMode={() => (back ? goBack() : next && chooseMode(next))}
       onDragOutputs={dragOutputs}
+      modeDots={back ? undefined : { count: modes.length, current: modes.indexOf(mode) }}
+      onStep={stepMode}
     />
   );
   const notice = toast && (
