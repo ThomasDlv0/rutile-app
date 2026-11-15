@@ -11,7 +11,7 @@ use image::metadata::Orientation;
 use image::{DynamicImage, GenericImageView, ImageDecoder, ImageReader};
 use serde::{Deserialize, Serialize};
 
-use crate::{ConvertError, InputFormat, OutputFormat, Quality, decode, encode, output};
+use crate::{ConvertError, InputFormat, OutputFormat, Quality, decode, encode, output, shielded};
 
 /// Plus grand côté de l'image après « Grand format réduit ».
 const FULL_HD_SIDE: u32 = 1920;
@@ -53,6 +53,14 @@ fn output_format(source: InputFormat) -> Result<OutputFormat, ConvertError> {
 
 /// Applique `retouch` à `input` et renvoie le chemin du nouveau fichier.
 pub fn retouch(input: &Path, retouch: Retouch, quality: &Quality) -> Result<PathBuf, ConvertError> {
+    shielded(|| retouch_unshielded(input, retouch, quality))
+}
+
+fn retouch_unshielded(
+    input: &Path,
+    retouch: Retouch,
+    quality: &Quality,
+) -> Result<PathBuf, ConvertError> {
     let bytes = fs::read(input).map_err(|source| ConvertError::Read {
         path: input.to_path_buf(),
         source,

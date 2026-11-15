@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 pub use encode::ICO_SIZES;
 pub use error::ConvertError;
+use error::shielded;
 pub use format::{InputFormat, OutputFormat};
 pub use site_icon::site_tile;
 
@@ -70,6 +71,14 @@ pub fn convert(
     target: OutputFormat,
     quality: &Quality,
 ) -> Result<Conversion, ConvertError> {
+    shielded(|| convert_unshielded(input, target, quality))
+}
+
+fn convert_unshielded(
+    input: &Path,
+    target: OutputFormat,
+    quality: &Quality,
+) -> Result<Conversion, ConvertError> {
     let bytes = std::fs::read(input).map_err(|source| ConvertError::Read {
         path: input.to_path_buf(),
         source,
@@ -93,22 +102,27 @@ pub fn convert(
 /// Une image de n'importe quel format pris en charge, en PNG : pour en lire le texte ou la
 /// mettre dans le presse-papiers.
 pub fn to_png(input: &Path) -> Result<Vec<u8>, ConvertError> {
-    let bytes = std::fs::read(input).map_err(|source| ConvertError::Read {
-        path: input.to_path_buf(),
-        source,
-    })?;
-    let source = InputFormat::detect(&bytes, input).ok_or(ConvertError::UnsupportedFormat)?;
-    let image = decode::decode(&bytes, source)?;
-    encode::encode(&image, OutputFormat::Png, &Quality::default())
+    shielded(|| {
+        let bytes = std::fs::read(input).map_err(|source| ConvertError::Read {
+            path: input.to_path_buf(),
+            source,
+        })?;
+        let source = InputFormat::detect(&bytes, input).ok_or(ConvertError::UnsupportedFormat)?;
+        let image = decode::decode(&bytes, source)?;
+        encode::encode(&image, OutputFormat::Png, &Quality::default())
+    })
 }
 
 /// Icône carrée en PNG à partir d'une image (PNG, SVG…), pour la roue des apps.
 pub fn icon_png(data: &[u8], size: u32) -> Option<Vec<u8>> {
-    let name = Path::new("icone");
-    let format = InputFormat::detect(data, name)?;
-    let image = decode::decode(data, format).ok()?;
-    let icon = image.resize(size, size, image::imageops::FilterType::Lanczos3);
-    encode::encode(&icon, OutputFormat::Png, &Quality::default()).ok()
+    shielded(|| {
+        let name = Path::new("icone");
+        let format = InputFormat::detect(data, name).ok_or(ConvertError::UnsupportedFormat)?;
+        let image = decode::decode(data, format)?;
+        let icon = image.resize(size, size, image::imageops::FilterType::Lanczos3);
+        encode::encode(&icon, OutputFormat::Png, &Quality::default())
+    })
+    .ok()
 }
 
 #[cfg(test)]

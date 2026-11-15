@@ -90,8 +90,11 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let settings = app::settings::load(app.handle());
+            let (settings, set_aside) = app::settings::load(app.handle());
             app::notify::setup(app.handle())?;
+            if let Some(backup) = set_aside {
+                app::notify::show(app.handle(), app::settings::set_aside_message(backup));
+            }
             app::wheel::setup(app.handle())?;
             app::glass::apply(app.handle(), settings.wheel_glass);
             app::tray::setup(app.handle(), &settings.shortcut)?;

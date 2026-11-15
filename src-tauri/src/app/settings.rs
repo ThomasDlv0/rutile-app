@@ -2,7 +2,8 @@
 //! et appliqués dès qu'ils changent.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use converter::Quality;
@@ -12,11 +13,14 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuild
 use tauri_plugin_autostart::ManagerExt as _;
 
 use super::apps::{self, AppSlot, AppView, CustomWheelView, MIN_SLOTS};
+use super::notify::{Action, Message};
 use super::shake::{self, ShakeSettings};
 use super::share::{self, ShareTarget, ShareView};
 use super::{shortcut, tray};
 
 pub const SETTINGS_LABEL: &str = "settings";
+/// Copie d'un `settings.json` qui n'a pas pu être relu en entier, à côté de lui.
+const BACKUP_NAME: &str = "settings.json.bak";
 /// Formats de sortie des roues de conversion, auxquels on peut donner une couleur.
 const COLORED_FORMATS: [&str; 21] = [
     "png",
@@ -627,16 +631,30 @@ fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
     Some(dir.join("settings.json"))
 }
 
+/// Ce que donne la lecture de `settings.json`.
+#[derive(Debug, PartialEq)]
+enum Reading {
+    /// Pas encore de fichier : premier lancement.
+    Missing,
+    /// Tout a été relu.
+    Complete(Settings),
+    /// Des réglages illisibles ont repris leur valeur par défaut.
+    Partial(Settings),
+    /// Rien n'a pu être relu.
+    Unreadable,
+}
+
 /// Lit des réglages en gardant tout ce qui se lit : un réglage inconnu de cette version
 /// (écrit par une plus récente, ou à la main) reprend sa valeur par défaut, sans emporter
 /// les autres.
-fn parse(text: &str) -> Option<Settings> {
-    if let Ok(settings) = serde_json::from_str::<Settings>(text) {
-        return Some(settings);
-    }
-    let serde_json::Value::Object(saved) = serde_json::from_str(text).ok()? else {
-        return None;
+fn parse(text: &str) -> Reading {
+    // Seul un objet en est : serde lirait un tableau comme des réglages par défaut
+    let Ok(serde_json::Value::Object(saved)) = serde_json::from_str(text) else {
+        return Reading::Unreadable;
     };
+    if let Ok(settings) = serde_json::from_value::<Settings>(saved.clone().into()) {
+        return Reading::Complete(settings);
+    }
     let mut kept = serde_json::Map::new();
     for (key, value) in saved {
         let alone = serde_json::Map::from_iter([(key.clone(), value.clone())]);
@@ -644,23 +662,65 @@ fn parse(text: &str) -> Option<Settings> {
             kept.insert(key, value);
         }
     }
-    serde_json::from_value(kept.into()).ok()
+    match serde_json::from_value(kept.into()) {
+        Ok(settings) => Reading::Partial(settings),
+        Err(_) => Reading::Unreadable,
+    }
+}
+
+fn read(path: &Path) -> Reading {
+    match std::fs::read_to_string(path) {
+        Ok(text) => parse(&text),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Reading::Missing,
+        Err(_) => Reading::Unreadable,
+    }
+}
+
+/// Garde un fichier de réglages qui n'a pas été relu en entier, avant que la prochaine
+/// sauvegarde ne l'écrase : illisible, il est déplacé (sinon chaque lancement le relirait et
+/// l'annoncerait) ; relu en partie, il est copié. Renvoie le chemin de la copie.
+fn keep_aside(path: &Path, reading: &Reading) -> Option<PathBuf> {
+    let backup = path.with_file_name(BACKUP_NAME);
+    let kept = match reading {
+        Reading::Unreadable => {
+            std::fs::rename(path, &backup).or_else(|_| std::fs::copy(path, &backup).map(drop))
+        }
+        Reading::Partial(_) => std::fs::copy(path, &backup).map(drop),
+        Reading::Missing | Reading::Complete(_) => return None,
+    };
+    kept.ok().map(|()| backup)
 }
 
 /// Lit les réglages enregistrés et les garde en mémoire ; un fichier absent ou abîmé
-/// redonne les valeurs par défaut.
-pub fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
-    let mut settings = file(app)
-        .and_then(|path| std::fs::read_to_string(path).ok())
-        .and_then(|text| parse(&text))
-        .unwrap_or_default();
+/// redonne les valeurs par défaut. Renvoie aussi, pour l'annoncer, la copie d'un fichier
+/// illisible mise de côté.
+pub fn load<R: Runtime>(app: &AppHandle<R>) -> (Settings, Option<PathBuf>) {
+    let path = file(app);
+    let reading = path.as_deref().map_or(Reading::Missing, read);
+    let backup = path
+        .as_deref()
+        .and_then(|path| keep_aside(path, &reading))
+        .filter(|_| matches!(reading, Reading::Unreadable));
+    let mut settings = match reading {
+        Reading::Complete(settings) | Reading::Partial(settings) => settings,
+        Reading::Missing | Reading::Unreadable => Settings::default(),
+    };
     if settings.share.is_empty() {
         settings.share = share::suggestions(app);
     }
     let settings = settings.sanitized();
     i18n::set(i18n::resolve(settings.language.as_deref()));
     app.manage(SettingsState(Mutex::new(settings.clone())));
-    settings
+    (settings, backup)
+}
+
+/// Annonce que des réglages illisibles ont été mis de côté sous le nom de `backup`.
+pub fn set_aside_message(backup: PathBuf) -> Message {
+    Message {
+        title: i18n::t("settings.setAside.title"),
+        body: i18n::tf("settings.setAside.body", &[("name", &BACKUP_NAME)]),
+        action: Some(Action::Reveal(vec![backup])),
+    }
 }
 
 pub fn current<R: Runtime>(app: &AppHandle<R>) -> Settings {
@@ -1152,22 +1212,60 @@ mod tests {
 
     #[test]
     fn un_reglage_illisible_n_emporte_pas_les_autres() {
-        let settings = parse(
+        let Reading::Partial(settings) = parse(
             r#"{ "jpegQuality": 75, "modes": [{ "id": "hologramme", "enabled": true }],
                  "apps": "pas une liste", "shortcut": "Alt+Space",
                  "customWheels": [{ "name": "Demain", "parts": [
                      { "name": "Vu", "kind": "url", "value": "https://exemple.fr" },
                      { "name": "Pas encore", "kind": "telepathie", "value": "x" }
                  ] }] }"#,
-        )
-        .unwrap()
-        .sanitized();
+        ) else {
+            panic!("les réglages devaient être relus en partie");
+        };
+        let settings = settings.sanitized();
         assert_eq!(settings.jpeg_quality, 75);
         assert_eq!(settings.shortcut, "Alt+Space");
         assert_eq!(settings.modes.len(), WheelMode::ALL.len());
         assert_eq!(settings.apps.len(), MIN_SLOTS);
         assert_eq!(settings.custom_wheels[0].parts().len(), 1);
-        assert!(parse("pas du JSON").is_none());
+        assert_eq!(parse("pas du JSON"), Reading::Unreadable);
+        assert_eq!(parse("[]"), Reading::Unreadable);
+    }
+
+    #[test]
+    fn un_fichier_abime_est_mis_de_cote_avant_d_etre_ecrase() {
+        let dir = std::env::temp_dir().join(format!("rutile-reglages-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let backup = dir.join(BACKUP_NAME);
+
+        // Illisible : déplacé, pour que le lancement suivant reparte d'un fichier absent
+        std::fs::write(&path, "{ \"jpegQuality\": 75,").unwrap();
+        let reading = read(&path);
+        assert_eq!(reading, Reading::Unreadable);
+        assert_eq!(keep_aside(&path, &reading), Some(backup.clone()));
+        assert_eq!(read(&path), Reading::Missing);
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "{ \"jpegQuality\": 75,"
+        );
+
+        // Relu en partie : copié, le fichier reste en place
+        let partial = r#"{ "jpegQuality": 75, "apps": "pas une liste" }"#;
+        std::fs::write(&path, partial).unwrap();
+        let reading = read(&path);
+        assert!(matches!(&reading, Reading::Partial(settings) if settings.jpeg_quality == 75));
+        assert_eq!(keep_aside(&path, &reading), Some(backup.clone()));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), partial);
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), partial);
+
+        // Relu en entier ou absent : rien à garder
+        std::fs::write(&path, r#"{ "jpegQuality": 75 }"#).unwrap();
+        assert_eq!(keep_aside(&path, &read(&path)), None);
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(keep_aside(&path, &read(&path)), None);
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

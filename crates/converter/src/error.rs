@@ -1,4 +1,5 @@
 use std::io;
+use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
 
 use crate::OutputFormat;
@@ -62,6 +63,20 @@ pub enum ConvertError {
 
     #[error("{}", i18n::t("errors.emptyArchive"))]
     EmptyArchive,
+
+    /// Une bibliothèque de lecture a paniqué sur ce fichier (voir [`shielded`]).
+    #[error("{}", i18n::t("errors.damaged"))]
+    Damaged,
+}
+
+/// Un fichier malformé peut faire paniquer une bibliothèque de lecture (images, PDF, ZIP) :
+/// la panique devient l'erreur de ce seul fichier, au lieu d'interrompre tout un lot.
+/// Chaque fonction publique qui lit un fichier passe par ici.
+pub(crate) fn shielded<T>(
+    work: impl FnOnce() -> Result<T, ConvertError>,
+) -> Result<T, ConvertError> {
+    // Le travail ne partage rien avec l'appelant : rien ne reste à moitié modifié après une panique
+    panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or(Err(ConvertError::Damaged))
 }
 
 impl ConvertError {
@@ -88,5 +103,21 @@ fn io_reason(error: &io::Error) -> String {
         io::ErrorKind::ReadOnlyFilesystem => i18n::t("errors.io.readOnly"),
         io::ErrorKind::IsADirectory => i18n::t("errors.io.directory"),
         _ => error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn une_panique_devient_l_erreur_du_fichier() {
+        let crashed: Result<(), ConvertError> = shielded(|| panic!("décodeur en déroute"));
+        assert!(matches!(crashed, Err(ConvertError::Damaged)));
+        assert!(matches!(shielded(|| Ok(7)), Ok(7)));
+        assert!(matches!(
+            shielded::<()>(|| Err(ConvertError::NoFiles)),
+            Err(ConvertError::NoFiles)
+        ));
     }
 }

@@ -15,7 +15,7 @@ use zip::write::{SimpleFileOptions, ZipWriter};
 use zip::{CompressionMethod, ZipArchive};
 
 use crate::encode::flatten_on_white;
-use crate::{ConvertError, InputFormat, decode, output};
+use crate::{ConvertError, InputFormat, decode, output, shielded};
 
 /// Résolution des pages d'un PDF fait d'images, en points par pixel.
 const PDF_POINTS_PER_PIXEL: f32 = 72.0 / 150.0;
@@ -108,7 +108,7 @@ pub fn zip_files(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
         &combined_name(paths, &i18n::t("files.name.archive"))?,
         "zip",
     )?;
-    let result = write_zip(paths, file);
+    let result = shielded(|| write_zip(paths, file));
     if result.is_err() {
         let _ = fs::remove_file(&output);
     }
@@ -185,6 +185,10 @@ struct Entry {
 /// Décompresse un ZIP à côté de lui, dans un dossier à son nom. Une archive qui ne contient
 /// qu'un dossier le redonne tel quel, comme l'Utilitaire d'archive.
 pub fn extract_zip(path: &Path) -> Result<PathBuf, ConvertError> {
+    shielded(|| extract_zip_unshielded(path))
+}
+
+fn extract_zip_unshielded(path: &Path) -> Result<PathBuf, ConvertError> {
     let read_error = |source| ConvertError::Read {
         path: path.to_path_buf(),
         source,
@@ -246,7 +250,8 @@ pub fn extract_zip(path: &Path) -> Result<PathBuf, ConvertError> {
         _ => (path.with_file_name(output::suffixed(path, "")), None),
     };
     let output = output::reserve_dir(&target)?;
-    let result = write_entries(&mut archive, &entries, strip.as_deref(), &output);
+    // Protégé ici aussi, pour que le dossier soit retiré même après une panique
+    let result = shielded(|| write_entries(&mut archive, &entries, strip.as_deref(), &output));
     if result.is_err() {
         // Le dossier vient d'être créé : il ne contient que ce que l'on y a écrit
         let _ = fs::remove_dir_all(&output);
@@ -315,10 +320,15 @@ fn write_entries<R: Read + io::Seek>(
 fn save_pdf(document: &mut Document, target: &Path) -> Result<PathBuf, ConvertError> {
     let (output, file) = output::reserve(target, "pdf")?;
     let mut writer = BufWriter::new(file);
-    if let Err(err) = document.save_to(&mut writer) {
+    let saved = shielded(|| {
+        document
+            .save_to(&mut writer)
+            .map_err(|err| ConvertError::Pdf(err.to_string()))
+    });
+    if let Err(err) = saved {
         drop(writer);
         let _ = fs::remove_file(&output);
-        return Err(ConvertError::Pdf(err.to_string()));
+        return Err(err);
     }
     Ok(output)
 }
@@ -372,6 +382,10 @@ fn pdf_image(bytes: &[u8], format: InputFormat) -> Result<(Stream, u32, u32), Co
 
 /// Assemble des images en un PDF d'une page par image, dans l'ordre de leurs noms.
 pub fn images_to_pdf(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
+    shielded(|| images_to_pdf_unshielded(paths))
+}
+
+fn images_to_pdf_unshielded(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
     let target = combined_name(paths, &i18n::t("files.name.images"))?;
     let mut document = Document::with_version("1.5");
     let pages_id = document.new_object_id();
@@ -445,6 +459,10 @@ fn page_with_inherited(document: &Document, id: ObjectId) -> Option<lopdf::Dicti
 
 /// Texte des PDF, dans l'ordre de leurs noms ; vide pour un PDF fait d'images (scanné).
 pub fn pdf_text(paths: &[PathBuf]) -> Result<String, ConvertError> {
+    shielded(|| pdf_text_unshielded(paths))
+}
+
+fn pdf_text_unshielded(paths: &[PathBuf]) -> Result<String, ConvertError> {
     let mut texts = Vec::new();
     for path in sorted(paths) {
         let document =
@@ -485,6 +503,10 @@ fn tidy_text(text: &str) -> String {
 
 /// Fusionne des PDF dans l'ordre de leurs noms, à côté du premier.
 pub fn merge_pdfs(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
+    shielded(|| merge_pdfs_unshielded(paths))
+}
+
+fn merge_pdfs_unshielded(paths: &[PathBuf]) -> Result<PathBuf, ConvertError> {
     let target = combined_name(paths, &i18n::t("files.name.mergedPdf"))?;
     let mut merged = Document::with_version("1.5");
     let mut objects = BTreeMap::new();

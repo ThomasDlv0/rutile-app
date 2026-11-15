@@ -10,7 +10,7 @@ use std::path::Path;
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, ImageReader, Rgba, RgbaImage};
 
-use crate::{InputFormat, OutputFormat, Quality, decode, encode};
+use crate::{InputFormat, OutputFormat, Quality, decode, encode, shielded};
 
 /// Au-delà, ce n'est plus une icône : l'image n'est pas décodée.
 const MAX_SOURCE_SIDE: u32 = 2048;
@@ -30,6 +30,11 @@ const LIGHT_LOGO: f32 = 0.82;
 /// Tuile carrée de `size` pixels en PNG, à partir du logo d'un site (PNG, ICO, SVG, JPEG,
 /// WebP, GIF ou BMP). `None` si les données ne sont pas une image utilisable.
 pub fn site_tile(data: &[u8], size: u32) -> Option<Vec<u8>> {
+    // Le logo vient de n'importe quel site : une image piégée ne fait échouer que ce logo
+    shielded(|| Ok(tile(data, size))).ok().flatten()
+}
+
+fn tile(data: &[u8], size: u32) -> Option<Vec<u8>> {
     let format = InputFormat::detect(data, Path::new("icone"))?;
     // L'AVIF ne se mesure pas sans tout décoder, et aucun site ne s'en sert pour son logo
     if format == InputFormat::Avif {

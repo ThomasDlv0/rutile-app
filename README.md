@@ -303,7 +303,8 @@ premier lancement, expliqué ci-dessous.
 
 Les réglages sont enregistrés dans `settings.json`, dans
 `~/Library/Application Support/fr.rutile.desktop`, `%APPDATA%\fr.rutile.desktop` ou
-`~/.config/fr.rutile.desktop`.
+`~/.config/fr.rutile.desktop`. Si ce fichier ne se relit pas en entier (modifié à la main, par
+exemple), Rutile en garde une copie à côté, `settings.json.bak`, avant de l'écraser.
 
 ## Questions fréquentes
 
