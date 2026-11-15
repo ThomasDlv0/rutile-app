@@ -81,10 +81,12 @@ pub enum InputFormat {
     Tiff,
     Ico,
     Svg,
+    /// Photo d'iPhone ; lue sur macOS seulement.
+    Heic,
 }
 
 impl InputFormat {
-    pub const ALL: [InputFormat; 9] = [
+    pub const ALL: [InputFormat; 10] = [
         InputFormat::Png,
         InputFormat::Jpeg,
         InputFormat::Webp,
@@ -94,6 +96,7 @@ impl InputFormat {
         InputFormat::Tiff,
         InputFormat::Ico,
         InputFormat::Svg,
+        InputFormat::Heic,
     ];
 
     /// Taille du début de fichier suffisante pour reconnaître tous les formats.
@@ -115,6 +118,9 @@ impl InputFormat {
             };
             return Some(detected);
         }
+        if crate::heic::is_heic(header) {
+            return Some(InputFormat::Heic);
+        }
         looks_like_svg(header, path).then_some(InputFormat::Svg)
     }
 
@@ -127,7 +133,7 @@ impl InputFormat {
             InputFormat::Avif => Some(OutputFormat::Avif),
             InputFormat::Svg => Some(OutputFormat::Svg),
             InputFormat::Ico => Some(OutputFormat::Ico),
-            InputFormat::Gif | InputFormat::Bmp | InputFormat::Tiff => None,
+            InputFormat::Gif | InputFormat::Bmp | InputFormat::Tiff | InputFormat::Heic => None,
         }
     }
 
@@ -140,7 +146,7 @@ impl InputFormat {
             InputFormat::Bmp => Some(ImageFormat::Bmp),
             InputFormat::Tiff => Some(ImageFormat::Tiff),
             InputFormat::Ico => Some(ImageFormat::Ico),
-            InputFormat::Avif | InputFormat::Svg => None,
+            InputFormat::Avif | InputFormat::Svg | InputFormat::Heic => None,
         }
     }
 }

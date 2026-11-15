@@ -112,6 +112,7 @@
   "errors.decode": "Imagem ilegível ou danificada ({reason}).",
   "errors.emptyArchive": "O arquivo está vazio.",
   "errors.encode": "Falha na codificação em {format} ({message}).",
+  "errors.heicUnsupported": "Por enquanto, fotos HEIC só podem ser lidas no macOS.",
   "errors.io.denied": "acesso negado",
   "errors.io.directory": "é uma pasta, não uma imagem",
   "errors.io.full": "disco cheio",

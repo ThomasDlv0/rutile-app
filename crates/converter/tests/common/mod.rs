@@ -40,6 +40,7 @@ pub fn extension(format: InputFormat) -> &'static str {
         InputFormat::Tiff => "tiff",
         InputFormat::Ico => "ico",
         InputFormat::Svg => "svg",
+        InputFormat::Heic => "heic",
     }
 }
 
@@ -51,9 +52,40 @@ pub fn write_fixture(dir: &Path, format: InputFormat) -> PathBuf {
         InputFormat::Svg => fs::write(&path, SVG_SOURCE).unwrap(),
         InputFormat::Jpeg => image.to_rgb8().save(&path).unwrap(),
         InputFormat::Gif => write_two_frame_gif(&path),
+        InputFormat::Heic => write_heic(&image, &path),
         _ => image.save(&path).unwrap(),
     }
     path
+}
+
+/// Vrai si ce Mac sait écrire une photo HEIC (encodeur HEVC du système, parfois absent d'une
+/// machine virtuelle de CI).
+pub fn can_write_heic() -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("essai.heic");
+    cfg!(target_os = "macos")
+        && std::panic::catch_unwind(|| write_heic(&DynamicImage::ImageRgba8(sample()), &path))
+            .is_ok()
+}
+
+/// Photo HEIC écrite par `sips`, l'outil d'images de macOS.
+fn write_heic(image: &DynamicImage, path: &Path) {
+    let png = path.with_extension("heic-source.png");
+    image.to_rgb8().save(&png).unwrap();
+    let status = std::process::Command::new("/usr/bin/sips")
+        .args(["-s", "format", "heic"])
+        .arg(&png)
+        .arg("--out")
+        .arg(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .expect("sips");
+    fs::remove_file(&png).unwrap();
+    assert!(
+        status.success() && path.exists(),
+        "sips n'a pas écrit de HEIC"
+    );
 }
 
 pub const GIF_FIRST: Rgba<u8> = Rgba([220, 20, 20, 255]);

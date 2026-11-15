@@ -93,6 +93,7 @@
   "errors.decode": "图片无法读取或已损坏（{reason}）。",
   "errors.emptyArchive": "压缩包是空的。",
   "errors.encode": "编码为 {format} 失败（{message}）。",
+  "errors.heicUnsupported": "目前只能在 macOS 上读取 HEIC 照片。",
   "errors.io.denied": "访问被拒绝",
   "errors.io.directory": "这是文件夹，不是图片",
   "errors.io.full": "磁盘已满",

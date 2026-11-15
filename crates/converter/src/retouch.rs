@@ -41,12 +41,14 @@ pub enum Retouch {
     StripMetadata,
 }
 
-/// Format du fichier produit : celui d'origine, ou PNG pour ceux qu'on ne sait pas écrire.
+/// Format du fichier produit : celui d'origine, ou PNG pour ceux qu'on ne sait pas écrire (JPEG
+/// pour une photo HEIC, qu'un PNG alourdirait).
 fn output_format(source: InputFormat) -> Result<OutputFormat, ConvertError> {
     match source.as_output() {
         Some(OutputFormat::Svg | OutputFormat::Ico) => Err(ConvertError::NotRaster),
         Some(format) => Ok(format),
         None if matches!(source, InputFormat::Svg) => Err(ConvertError::NotRaster),
+        None if matches!(source, InputFormat::Heic) => Ok(OutputFormat::Jpeg),
         None => Ok(OutputFormat::Png),
     }
 }

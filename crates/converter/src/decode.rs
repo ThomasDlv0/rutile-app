@@ -5,6 +5,7 @@ use image::{
     DynamicImage, ImageBuffer, ImageDecoder, ImageReader, Luma, Rgb, RgbImage, Rgba, RgbaImage,
     metadata::Orientation,
 };
+use moxcms::{ColorProfile, DataColorSpace, Layout, TransformOptions, Xyzd};
 use resvg::{tiny_skia, usvg};
 
 use crate::{ConvertError, InputFormat};
@@ -18,6 +19,7 @@ pub(crate) fn decode(bytes: &[u8], format: InputFormat) -> Result<DynamicImage, 
     match format {
         InputFormat::Avif => decode_avif(bytes),
         InputFormat::Svg => render_svg(bytes),
+        InputFormat::Heic => crate::heic::decode(bytes),
         raster => decode_raster(bytes, raster),
     }
 }
@@ -32,9 +34,67 @@ fn decode_raster(bytes: &[u8], format: InputFormat) -> Result<DynamicImage, Conv
         .map_err(ConvertError::decode)?;
     // L'orientation EXIF des photos est appliquée, car elle est perdue à l'écriture
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let icc = decoder.icc_profile().ok().flatten();
     let mut image = DynamicImage::from_decoder(decoder).map_err(ConvertError::decode)?;
     image.apply_orientation(orientation);
-    Ok(image)
+    Ok(match icc {
+        Some(icc) => to_srgb(image, &icc),
+        None => image,
+    })
+}
+
+/// Ramène en sRGB une image décrite par un profil de couleur (Display P3 des captures d'écran du
+/// Mac et des photos d'iPhone, Adobe RGB…). Le profil n'est pas écrit dans le résultat : sans
+/// cette conversion, ses couleurs seraient lues comme du sRGB et paraîtraient ternes. Un profil
+/// illisible, sRGB, gris ou CMJN laisse l'image telle quelle.
+pub(crate) fn to_srgb(image: DynamicImage, icc: &[u8]) -> DynamicImage {
+    let Ok(source) = ColorProfile::new_from_slice(icc) else {
+        return image;
+    };
+    let srgb = ColorProfile::new_srgb();
+    if source.color_space != DataColorSpace::Rgb || same_primaries(&source, &srgb) {
+        return image;
+    }
+    let options = TransformOptions::default();
+
+    macro_rules! convert {
+        ($buffer:expr, $variant:ident, $layout:expr, $create:ident) => {{
+            let buffer = $buffer;
+            let converted = source
+                .$create($layout, &srgb, $layout, options)
+                .ok()
+                .and_then(|transform| {
+                    let mut out = ImageBuffer::new(buffer.width(), buffer.height());
+                    transform.transform(&buffer, &mut out).ok().map(|()| out)
+                });
+            DynamicImage::$variant(converted.unwrap_or(buffer))
+        }};
+    }
+    match image {
+        DynamicImage::ImageRgb8(buffer) => {
+            convert!(buffer, ImageRgb8, Layout::Rgb, create_transform_8bit)
+        }
+        DynamicImage::ImageRgba8(buffer) => {
+            convert!(buffer, ImageRgba8, Layout::Rgba, create_transform_8bit)
+        }
+        DynamicImage::ImageRgb16(buffer) => {
+            convert!(buffer, ImageRgb16, Layout::Rgb, create_transform_16bit)
+        }
+        DynamicImage::ImageRgba16(buffer) => {
+            convert!(buffer, ImageRgba16, Layout::Rgba, create_transform_16bit)
+        }
+        other => other,
+    }
+}
+
+/// Mêmes couleurs primaires que le sRGB : l'image peut rester telle quelle.
+fn same_primaries(profile: &ColorProfile, srgb: &ColorProfile) -> bool {
+    let close = |a: &Xyzd, b: &Xyzd| {
+        (a.x - b.x).abs() < 2e-3 && (a.y - b.y).abs() < 2e-3 && (a.z - b.z).abs() < 2e-3
+    };
+    close(&profile.red_colorant, &srgb.red_colorant)
+        && close(&profile.green_colorant, &srgb.green_colorant)
+        && close(&profile.blue_colorant, &srgb.blue_colorant)
 }
 
 fn decode_avif(bytes: &[u8]) -> Result<DynamicImage, ConvertError> {
@@ -134,4 +194,49 @@ fn system_fonts() -> Arc<usvg::fontdb::Database> {
             Arc::new(database)
         })
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageEncoder, Rgb, codecs::png::PngEncoder};
+
+    use super::*;
+
+    const GREEN: Rgb<u8> = Rgb([40, 180, 60]);
+
+    fn green() -> DynamicImage {
+        DynamicImage::ImageRgb8(RgbImage::from_pixel(2, 2, GREEN))
+    }
+
+    #[test]
+    fn un_profil_display_p3_est_ramene_en_srgb() {
+        let p3 = ColorProfile::new_display_p3().encode().unwrap();
+        let pixel = *to_srgb(green(), &p3).to_rgb8().get_pixel(0, 0);
+        // Le vert de Display P3 est plus vif : en sRGB, il lui faut plus de vert et moins de rouge
+        assert!(pixel[1] > GREEN[1] && pixel[0] < GREEN[0], "{pixel:?}");
+
+        let srgb = ColorProfile::new_srgb().encode().unwrap();
+        assert_eq!(*to_srgb(green(), &srgb).to_rgb8().get_pixel(0, 0), GREEN);
+        assert_eq!(
+            *to_srgb(green(), b"pas un profil").to_rgb8().get_pixel(0, 0),
+            GREEN
+        );
+    }
+
+    #[test]
+    fn un_png_en_display_p3_est_lu_en_srgb() {
+        let mut bytes = Vec::new();
+        let mut encoder = PngEncoder::new(&mut bytes);
+        encoder
+            .set_icc_profile(ColorProfile::new_display_p3().encode().unwrap())
+            .unwrap();
+        encoder
+            .write_image(green().as_bytes(), 2, 2, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        let pixel = *decode(&bytes, InputFormat::Png)
+            .unwrap()
+            .to_rgb8()
+            .get_pixel(0, 0);
+        assert_ne!(pixel, GREEN);
+    }
 }

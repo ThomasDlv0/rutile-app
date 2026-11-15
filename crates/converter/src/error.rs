@@ -64,6 +64,10 @@ pub enum ConvertError {
     #[error("{}", i18n::t("errors.emptyArchive"))]
     EmptyArchive,
 
+    #[error("{}", i18n::t("errors.heicUnsupported"))]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    HeicUnsupported,
+
     /// Une bibliothèque de lecture a paniqué sur ce fichier (voir [`shielded`]).
     #[error("{}", i18n::t("errors.damaged"))]
     Damaged,

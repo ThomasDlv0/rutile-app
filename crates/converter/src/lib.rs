@@ -7,6 +7,7 @@ mod encode;
 mod error;
 pub mod files;
 mod format;
+mod heic;
 mod output;
 pub mod retouch;
 pub mod self_test;

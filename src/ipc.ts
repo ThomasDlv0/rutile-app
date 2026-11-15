@@ -38,7 +38,7 @@ export type WheelDrag =
   | { type: "leave" };
 
 /** Format réel d'un fichier, lu dans son contenu par Rust. */
-export type InputFormat = OutputFormat | "gif" | "bmp" | "tiff";
+export type InputFormat = OutputFormat | "gif" | "bmp" | "tiff" | "heic";
 
 /** Conteneur d'une vidéo ; `other` est lisible par FFmpeg sans équivalent sur la roue. */
 export type VideoInput = "mp4" | "mov" | "webm" | "mkv" | "avi" | "other";

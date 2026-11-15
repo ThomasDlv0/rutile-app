@@ -112,6 +112,7 @@
   "errors.decode": "画像を読み取れないか、破損しています（{reason}）。",
   "errors.emptyArchive": "アーカイブが空です。",
   "errors.encode": "{format}へのエンコードに失敗しました（{message}）。",
+  "errors.heicUnsupported": "HEIC 写真は現在 macOS でのみ読み込めます。",
   "errors.io.denied": "アクセスが拒否されました",
   "errors.io.directory": "画像ではなくフォルダです",
   "errors.io.full": "ディスクがいっぱいです",

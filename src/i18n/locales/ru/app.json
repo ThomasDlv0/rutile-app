@@ -150,6 +150,7 @@
   "errors.decode": "Изображение нечитаемо или повреждено ({reason}).",
   "errors.emptyArchive": "Архив пуст.",
   "errors.encode": "Не удалось закодировать в {format} ({message}).",
+  "errors.heicUnsupported": "Фото HEIC пока можно открыть только в macOS.",
   "errors.io.denied": "доступ запрещён",
   "errors.io.directory": "это папка, а не изображение",
   "errors.io.full": "диск заполнен",

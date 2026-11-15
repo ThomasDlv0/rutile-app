@@ -1,4 +1,4 @@
-//! Chaque format d'entrée vers chaque format de sortie (48 paires).
+//! Chaque format d'entrée vers chaque format de sortie (54 paires).
 
 mod common;
 
@@ -79,12 +79,23 @@ pairs! {
     depuis_svg => Svg,
 }
 
+/// Photo HEIC écrite par `sips`, lue par ImageIO : macOS seulement.
+#[cfg(target_os = "macos")]
 #[test]
-fn quarante_huit_paires_couvertes() {
+fn depuis_heic() {
+    if !common::can_write_heic() {
+        eprintln!("ignoré : ce Mac ne sait pas écrire de HEIC");
+        return;
+    }
+    check_all_outputs(InputFormat::Heic);
+}
+
+#[test]
+fn cinquante_quatre_paires_couvertes() {
     let pairs = InputFormat::ALL
         .iter()
         .flat_map(|input| OutputFormat::ALL.map(|output| (*input, output)))
         .filter(|(input, output)| input.as_output() != Some(*output))
         .count();
-    assert_eq!(pairs, 48);
+    assert_eq!(pairs, 54);
 }

@@ -186,7 +186,7 @@ Les réglages tiennent en huit onglets :
 
 | | Entrée | Sortie |
 |---|---|---|
-| **Images** | PNG, JPEG, WebP, AVIF, GIF (première image), BMP, TIFF, ICO, SVG | PNG, JPEG, WebP, AVIF, SVG, ICO |
+| **Images** | PNG, JPEG, WebP, AVIF, GIF (première image), BMP, TIFF, ICO, SVG, HEIC (photos d'iPhone, sur macOS) | PNG, JPEG, WebP, AVIF, SVG, ICO |
 | **Vidéos** | tout ce que lit FFmpeg (MP4, MOV, WebM, MKV, AVI, WMV, FLV, MPEG-TS…), GIF animé | MP4, WebM, MOV, MKV, GIF animé, MP3 (son seul) |
 
 <details>
@@ -197,8 +197,9 @@ Les réglages tiennent en huit onglets :
 - **Seule la sortie SVG est vectorisée** : l'image est retracée en formes de couleur unie,
   idéal pour un logo, approximatif pour une photo. Les autres formats restent en pixels.
 - JPEG : la transparence devient un fond blanc. ICO : tailles 16, 32, 48 et 256 px.
-- Qualité par défaut : JPEG 90, WebP 85, AVIF 70 (réglable). Les métadonnées (EXIF, profil
-  ICC) ne sont pas conservées ; seule l'orientation EXIF est appliquée.
+- Qualité par défaut : JPEG 90, WebP 85, AVIF 70 (réglable). Les métadonnées (EXIF) ne sont
+  pas conservées ; l'orientation est appliquée, et les couleurs d'une image en Display P3 (captures
+  d'écran du Mac, photos d'iPhone) ou Adobe RGB sont converties en sRGB pour ne pas ternir.
 - Vidéo : MP4 et MOV en H.264 + AAC, WebM en VP9 + Opus, MKV sans réencodage (instantané),
   GIF à 12 images/s et 640 px de large au plus, MP3 refusé pour une vidéo muette.
 

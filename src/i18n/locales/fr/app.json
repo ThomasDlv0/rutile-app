@@ -112,6 +112,7 @@
   "errors.decode": "Image illisible ou endommagée ({reason}).",
   "errors.emptyArchive": "L'archive est vide.",
   "errors.encode": "Échec de l'encodage en {format} ({message}).",
+  "errors.heicUnsupported": "Les photos HEIC ne se lisent pour l'instant que sur macOS.",
   "errors.io.denied": "accès refusé",
   "errors.io.directory": "c'est un dossier, pas une image",
   "errors.io.full": "disque plein",
