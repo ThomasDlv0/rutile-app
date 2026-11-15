@@ -55,6 +55,7 @@ import {
 } from "./actions";
 import {
   ALL_MODES,
+  FORMAT_VARIANTS,
   type Mode,
   OUTPUT_FORMATS,
   VIDEO_FORMATS,
@@ -63,9 +64,12 @@ import {
   colorize,
   customIndex,
   formatsFor,
+  hasVariants,
+  imageItems,
   isCustomMode,
   isTreeMode,
   shareItems,
+  variantItems,
 } from "./formats";
 import { WINDOW_SIZE, isInsideHub } from "./geometry";
 import { t, useLanguage } from "../i18n";
@@ -216,7 +220,7 @@ function itemsFor(
   if (mode === "share") return shareItems(config.share);
   // Les parts de la roue Actions et des roues personnalisées viennent de leur arbre
   if (mode === "actions" || isCustomMode(mode)) return [];
-  return colorize(formatsFor(mode), config.colors);
+  return mode === "image" ? imageItems(config.colors) : colorize(formatsFor(mode), config.colors);
 }
 
 /** Roue où mène un fichier glissé maintenu au centre : le partage depuis une autre roue, et
@@ -295,6 +299,12 @@ export function WheelApp() {
   const modes = useMemo(() => wheelModes(config, shown), [config, shown]);
   // Sous-roues ouvertes dans la roue Actions ou une roue personnalisée : un index par niveau
   const [actionPath, setActionPath] = useState<number[]>([]);
+  // Variantes d'un format de la roue des images (qualité, taille), ouvertes en restant dessus :
+  // l'index du format
+  const [variantsOf, setVariantsOf] = useState<number | null>(null);
+  const variantsRef = useRef<number | null>(null);
+  variantsRef.current = variantsOf;
+  useEffect(() => setVariantsOf(null), [mode]);
   // Avec des fichiers, la roue Actions ne propose que ce qui leur convient
   const actionsTree = useMemo(
     () =>
@@ -314,17 +324,23 @@ export function WheelApp() {
   useEffect(() => setActionPath([]), [treeKind]);
   const inTree = isTreeMode(mode);
   const videoMissing = mode === "video" && video?.available === false;
-  const items = inTree ? actionsAt(tree, actionPath) : itemsFor(mode, config, badges);
+  const baseItems = inTree ? actionsAt(tree, actionPath) : itemsFor(mode, config, badges);
+  const variantParent =
+    mode === "image" && variantsOf !== null ? (baseItems[variantsOf] ?? null) : null;
+  const items = variantParent ? variantItems(variantParent) : baseItems;
   const parent = inTree ? actionParent(tree, actionPath) : null;
-  const next = parent ? null : nextMode(modes, mode);
+  // Dans une sous-roue, le centre ramène à la roue d'avant au lieu de passer à la suivante
+  const back = parent !== null || variantParent !== null;
+  const next = back ? null : nextMode(modes, mode);
   const customName = (wheel: Mode | null) =>
     wheel ? config.custom[customIndex(wheel, config.custom)]?.name : undefined;
   const disabled = useMemo(() => {
     if (inTree) return disabledActions(items as readonly ActionNode[], shown);
+    if (variantsOf !== null && mode === "image") return new Set<string>();
     return videoMissing
       ? new Set<string>(formatsFor("video").map((format) => format.id))
       : disabledFormats(shown, mode);
-  }, [shown, mode, videoMissing, inTree, items]);
+  }, [shown, mode, videoMissing, inTree, items, variantsOf]);
   const highlighted = work ? work.index : pointer && usableSector(...pointer, disabled, items);
   // Rester sur une part ouvre sa sous-roue. Après ouverture, il faut bouger un peu pour
   // recommencer : sinon une sous-roue en ouvrirait une autre, sous le pointeur resté immobile
@@ -339,12 +355,13 @@ export function WheelApp() {
   }
   const keyboardPointer = useRef(false);
   const dwellPart =
-    inTree &&
     work === null &&
     highlighted !== null &&
     dwellFrom.current === null &&
     !keyboardPointer.current &&
-    opensOnDwell(items[highlighted] as ActionNode)
+    (inTree
+      ? opensOnDwell(items[highlighted] as ActionNode)
+      : mode === "image" && variantParent === null && hasVariants(items[highlighted].id))
       ? highlighted
       : null;
   // Fichier glissé maintenu au centre : bascule entre conversion et partage. Après une bascule,
@@ -371,11 +388,14 @@ export function WheelApp() {
       items,
       next,
       dwellTarget,
-      parent !== null,
+      back,
       customName(next),
     ) ??
     missingHint ??
     (parent ? { label: parent.label, tone: "muted", hint: t("wheel.hub.backToCenter") } : null) ??
+    (variantParent
+      ? { label: variantParent.label, tone: "muted", hint: t("wheel.hub.backToCenter") }
+      : null) ??
     (openMode === "drop" ? dropHint(mode) : null);
 
   // Les écouteurs Tauri sont branchés une fois : ils lisent l'état courant par ces références
@@ -435,16 +455,25 @@ export function WheelApp() {
     setActionPath((path) => [...path, index]);
   }, []);
 
+  /** Ouvre les variantes du format `index` de la roue des images. */
+  const openVariants = useCallback((index: number) => {
+    chosenRef.current = true;
+    dwellFrom.current = pointerRef.current;
+    setVariantsOf(index);
+  }, []);
+
   const goBack = useCallback(() => {
     dwellFrom.current = pointerRef.current;
-    setActionPath((path) => path.slice(0, -1));
+    if (variantsRef.current !== null) setVariantsOf(null);
+    else setActionPath((path) => path.slice(0, -1));
   }, []);
 
   useEffect(() => {
     if (dwellPart === null) return;
-    const timer = window.setTimeout(() => openChildren(dwellPart), config.dwellMs);
+    const open = inTree ? openChildren : openVariants;
+    const timer = window.setTimeout(() => open(dwellPart), config.dwellMs);
     return () => window.clearTimeout(timer);
-  }, [dwellPart, config.dwellMs, openChildren]);
+  }, [dwellPart, config.dwellMs, openChildren, openVariants, inTree]);
 
   useEffect(() => {
     if (!inHub) setDwellArmed(true);
@@ -536,12 +565,16 @@ export function WheelApp() {
       busyRef.current = true;
       setWork({ index, state: "working", progress: targetMode === "video" ? 0 : undefined });
       const paths = targets.map((file) => file.path);
+      // Dans les variantes d'un format, `index` désigne la variante
+      const variantFormat = targetMode === "image" ? variantsRef.current : null;
+      const format = OUTPUT_FORMATS[variantFormat ?? index].id;
+      const variant = variantFormat === null ? null : (FORMAT_VARIANTS[format][index] ?? null);
       let state: Work["state"] = "failed";
       try {
         const outcome =
           targetMode === "video"
             ? await convertVideos(paths, VIDEO_FORMATS[index].id)
-            : await convertFiles(paths, OUTPUT_FORMATS[index].id);
+            : await convertFiles(paths, format, variant);
         if (outcome.converted > 0) state = "done";
       } catch (error) {
         console.error("rutile : conversion interrompue", error);
@@ -699,8 +732,13 @@ export function WheelApp() {
         else await shareTo(index, paths);
         return;
       }
-      const dropItems = formatsFor(dropMode);
-      const index = usableSector(x, y, disabledFormats(dropped, dropMode), dropItems);
+      // Lâché sur une variante, si celles d'un format sont ouvertes
+      const variantFormat = dropMode === "image" ? variantsRef.current : null;
+      const dropItems =
+        variantFormat === null ? formatsFor(dropMode) : variantItems(OUTPUT_FORMATS[variantFormat]);
+      const dropDisabled =
+        variantFormat === null ? disabledFormats(dropped, dropMode) : new Set<string>();
+      const index = usableSector(x, y, dropDisabled, dropItems);
       // Lâché au centre, sur un format grisé ou hors du disque : rien à faire
       if (index === null) close();
       else await convert(dropped, index, dropMode);
@@ -835,6 +873,7 @@ export function WheelApp() {
           setFiles([]);
           setPointer(null);
           setActionPath([]);
+          setVariantsOf(null);
           dwellFrom.current = null;
           setWork(null);
           setOpenCount((count) => count + 1);
@@ -931,7 +970,7 @@ export function WheelApp() {
   // Échap ferme, ou revient en arrière dans une sous-roue ; ↑ ↓ passent à la roue précédente
   // ou suivante, comme un clic au centre
   const inChildren = useRef(false);
-  inChildren.current = parent !== null;
+  inChildren.current = back;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" || event.key === "Backspace") {
@@ -976,14 +1015,14 @@ export function WheelApp() {
       dwelling={dwelling}
       dwellMs={config.dwellMs}
       dwellPart={dwellPart}
-      back={parent !== null}
+      back={back}
       accent={config.highlight}
       border={config.border}
       borderColor={config.borderColor ?? config.highlight}
       glass={config.glass}
       scale={fit}
       keyboard
-      onToggleMode={() => (parent ? goBack() : next && chooseMode(next))}
+      onToggleMode={() => (back ? goBack() : next && chooseMode(next))}
     />
   );
   const notice = toast && (

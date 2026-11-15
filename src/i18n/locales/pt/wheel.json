@@ -142,5 +142,14 @@
   "wheel.actions.windows.center.action": "Centralizar a janela",
   "wheel.actions.image.fullHd.action": "Reduzir para 1920 pixels",
   "wheel.actions.color.copy": "Copiar a cor em {format}",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "Segure para ver as opções",
+  "wheel.variant.best.label": "Máx",
+  "wheel.variant.best.action": "{format} com qualidade máxima",
+  "wheel.variant.light.label": "Leve",
+  "wheel.variant.light.action": "{format} mais leve",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format} em 1920 px",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format} com metade do tamanho"
 }

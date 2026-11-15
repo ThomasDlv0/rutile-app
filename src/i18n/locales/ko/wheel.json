@@ -142,5 +142,14 @@
   "wheel.actions.windows.center.action": "윈도우를 가운데에 배치",
   "wheel.actions.image.fullHd.action": "1920픽셀로 축소",
   "wheel.actions.color.copy": "색상을 {format}(으)로 복사",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "머물러서 옵션 보기",
+  "wheel.variant.best.label": "최고",
+  "wheel.variant.best.action": "{format} 최고 화질",
+  "wheel.variant.light.label": "가볍게",
+  "wheel.variant.light.action": "더 가벼운 {format}",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format} 1920px",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format} 절반 크기"
 }

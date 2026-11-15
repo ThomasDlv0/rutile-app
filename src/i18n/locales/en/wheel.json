@@ -142,5 +142,14 @@
   "wheel.actions.windows.center.action": "Center the window",
   "wheel.actions.image.fullHd.action": "Reduce to 1920 pixels",
   "wheel.actions.color.copy": "Copy the color as {format}",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "Hold for options",
+  "wheel.variant.best.label": "Max",
+  "wheel.variant.best.action": "{format} at maximum quality",
+  "wheel.variant.light.label": "Light",
+  "wheel.variant.light.action": "Lighter {format}",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format} at 1920 px",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format} at half size"
 }

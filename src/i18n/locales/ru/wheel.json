@@ -144,5 +144,14 @@
   "wheel.actions.windows.center.action": "Поместить окно по центру",
   "wheel.actions.image.fullHd.action": "Уменьшить до 1920 пикселей",
   "wheel.actions.color.copy": "Скопировать цвет в формате {format}",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "Задержитесь для настроек",
+  "wheel.variant.best.label": "Макс",
+  "wheel.variant.best.action": "{format} в максимальном качестве",
+  "wheel.variant.light.label": "Лёгкий",
+  "wheel.variant.light.action": "{format} полегче",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format} 1920 px",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format} вдвое меньше"
 }

@@ -29,8 +29,8 @@ const HUB_RADIUS: f64 = 48.0;
 
 /// Extensions proposées par le sélecteur de fichiers.
 const IMAGE_EXTENSIONS: [&str; 14] = [
-    "png", "jpg", "jpeg", "webp", "avif", "gif", "bmp", "tif", "tiff", "ico", "svg", "svgz", "heic",
-    "heif",
+    "png", "jpg", "jpeg", "webp", "avif", "gif", "bmp", "tif", "tiff", "ico", "svg", "svgz",
+    "heic", "heif",
 ];
 const VIDEO_EXTENSIONS: [&str; 16] = [
     "mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "ts", "mts", "m2ts",

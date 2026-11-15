@@ -15,12 +15,9 @@ use crate::{ConvertError, InputFormat, OutputFormat, Quality, decode, encode, ou
 
 /// Plus grand côté de l'image après « Grand format réduit ».
 const FULL_HD_SIDE: u32 = 1920;
-/// Qualités employées par « Compresser », à moins qu'un réglage ne soit déjà plus bas.
-const COMPRESSED: Quality = Quality {
-    jpeg: 70,
-    webp: 70,
-    avif: 50,
-};
+/// Qualités employées par « Compresser », à moins qu'un réglage ne soit déjà plus bas : les
+/// mêmes que la variante « plus léger » d'une conversion.
+const COMPRESSED: Quality = crate::LIGHT;
 /// Qualité d'un JPEG réécrit pour remettre à l'endroit une photo : presque sans perte visible.
 const UPRIGHT_JPEG: Quality = Quality {
     jpeg: 95,

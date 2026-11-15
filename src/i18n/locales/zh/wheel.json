@@ -141,5 +141,14 @@
   "wheel.actions.windows.center.action": "将窗口居中",
   "wheel.actions.image.fullHd.action": "缩小到 1920 像素",
   "wheel.actions.color.copy": "以 {format} 拷贝颜色",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "停留以查看选项",
+  "wheel.variant.best.label": "最高",
+  "wheel.variant.best.action": "{format}，最高画质",
+  "wheel.variant.light.label": "轻量",
+  "wheel.variant.light.action": "更小的 {format}",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format}，1920 像素",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format}，一半尺寸"
 }

@@ -1,8 +1,8 @@
-import type { AppView, ShareView } from "../ipc";
+import type { AppView, ShareView, Variant } from "../ipc";
 import type { GlyphName } from "./ActionGlyph";
 import { readableInk } from "./color";
 import { MAX_SECTORS, SECTOR_COUNT } from "./geometry";
-import { t } from "../i18n";
+import { type MessageKey, t } from "../i18n";
 
 // Couleurs par défaut des formats, comme des icônes de fichiers ; elles se changent dans
 // les réglages
@@ -90,6 +90,47 @@ export interface WheelItem {
 
 export function formatsFor(mode: "image" | "video"): readonly WheelItem[] {
   return mode === "image" ? OUTPUT_FORMATS : VIDEO_FORMATS;
+}
+
+/** Variantes proposées en restant sur un format : la qualité ne change rien à un PNG, et un SVG
+ * ou un ICO n'en a pas. */
+export const FORMAT_VARIANTS: Readonly<Record<OutputFormat, readonly Variant[]>> = {
+  png: ["fullHd", "half"],
+  jpeg: ["best", "light", "fullHd", "half"],
+  webp: ["best", "light", "fullHd", "half"],
+  avif: ["best", "light", "fullHd", "half"],
+  svg: [],
+  ico: [],
+};
+
+const VARIANT_TEXTS: Record<Variant, { label: MessageKey; action: MessageKey }> = {
+  best: { label: "wheel.variant.best.label", action: "wheel.variant.best.action" },
+  light: { label: "wheel.variant.light.label", action: "wheel.variant.light.action" },
+  fullHd: { label: "wheel.variant.fullHd.label", action: "wheel.variant.fullHd.action" },
+  half: { label: "wheel.variant.half.label", action: "wheel.variant.half.action" },
+};
+
+/** Vrai si le format `id` propose des variantes. */
+export const hasVariants = (id: string): boolean =>
+  (FORMAT_VARIANTS[id as OutputFormat]?.length ?? 0) > 0;
+
+/** Formats de la roue des images, avec l'indication du maintien sur ceux qui ont des variantes. */
+export function imageItems(colors: Readonly<Record<string, string>>): WheelItem[] {
+  return colorize(OUTPUT_FORMATS, colors).map((item) =>
+    hasVariants(item.id) ? { ...item, hint: t("wheel.variant.hint") } : item,
+  );
+}
+
+/** Parts de la sous-roue d'un format, dans sa couleur. */
+export function variantItems(format: WheelItem): WheelItem[] {
+  const variants = FORMAT_VARIANTS[format.id as OutputFormat] ?? [];
+  return variants.map((variant) => ({
+    id: `${format.id}:${variant}`,
+    label: t(VARIANT_TEXTS[variant].label),
+    action: t(VARIANT_TEXTS[variant].action, { format: format.label }),
+    color: format.color,
+    ink: format.ink,
+  }));
 }
 
 /** Formats avec les couleurs choisies dans les réglages, et un texte lisible dessus. */

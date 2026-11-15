@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use converter::video::{self, VideoError, VideoFormat, VideoInput};
-use converter::{ConvertError, InputFormat, OutputFormat, Quality};
+use converter::{ConvertError, InputFormat, OutputFormat, Quality, Variant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -67,12 +67,14 @@ pub async fn convert_files<R: Runtime>(
     app: AppHandle<R>,
     paths: Vec<PathBuf>,
     format: OutputFormat,
+    variant: Option<Variant>,
 ) -> Result<Outcome, String> {
     let quality = settings::current(&app).quality();
-    let report =
-        tauri::async_runtime::spawn_blocking(move || Report::images(&paths, format, &quality))
-            .await
-            .map_err(|err| err.to_string())?;
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        Report::images(&paths, format, &quality, variant)
+    })
+    .await
+    .map_err(|err| err.to_string())?;
     notify::announce(&app, report.message(), !report.converted.is_empty());
     Ok(Outcome::from(&report))
 }
@@ -175,10 +177,15 @@ impl Report {
         }
     }
 
-    fn images(paths: &[PathBuf], format: OutputFormat, quality: &Quality) -> Report {
+    fn images(
+        paths: &[PathBuf],
+        format: OutputFormat,
+        quality: &Quality,
+        variant: Option<Variant>,
+    ) -> Report {
         let mut report = Report::new(Kind::Image, format.label());
         for path in paths {
-            match converter::convert(path, format, quality) {
+            match converter::convert_variant(path, format, quality, variant) {
                 Ok(conversion) => report
                     .converted
                     .push((conversion.output, conversion.approximate)),

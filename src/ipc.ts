@@ -37,6 +37,9 @@ export type WheelDrag =
   | { type: "drop"; paths: string[]; x: number; y: number }
   | { type: "leave" };
 
+/** Variante d'une conversion, choisie en restant sur un format de la roue. */
+export type Variant = "best" | "light" | "fullHd" | "half";
+
 /** Format réel d'un fichier, lu dans son contenu par Rust. */
 export type InputFormat = OutputFormat | "gif" | "bmp" | "tiff" | "heic";
 
@@ -71,8 +74,11 @@ export const inspectFiles = (paths: string[]) => invoke<FileInfo[]>("inspect_fil
 export const pickFiles = (kind: "images" | "videos" | "pdfs" | "archives" | "files" | "any") =>
   invoke<FileInfo[]>("pick_files", { kind });
 /** Se termine quand la conversion est finie ; Rust envoie la notification. */
-export const convertFiles = (paths: string[], format: OutputFormat) =>
-  invoke<Outcome>("convert_files", { paths, format });
+export const convertFiles = (
+  paths: string[],
+  format: OutputFormat,
+  variant: Variant | null = null,
+) => invoke<Outcome>("convert_files", { paths, format, variant });
 /** Conversion par FFmpeg ; l'avancement arrive par `wheel://progress`. */
 export const convertVideos = (paths: string[], format: VideoFormat) =>
   invoke<Outcome>("convert_videos", { paths, format });

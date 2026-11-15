@@ -142,5 +142,14 @@
   "wheel.actions.windows.center.action": "ウインドウを中央に配置",
   "wheel.actions.image.fullHd.action": "1920ピクセルに縮小",
   "wheel.actions.color.copy": "色を{format}でコピー",
-  "wheel.actions.image.fullHd.label": "1920"
+  "wheel.actions.image.fullHd.label": "1920",
+  "wheel.variant.hint": "そのままでオプション",
+  "wheel.variant.best.label": "最高",
+  "wheel.variant.best.action": "{format}（最高画質）",
+  "wheel.variant.light.label": "軽量",
+  "wheel.variant.light.action": "{format}（軽量）",
+  "wheel.variant.fullHd.label": "1920",
+  "wheel.variant.fullHd.action": "{format}（1920 px）",
+  "wheel.variant.half.label": "½",
+  "wheel.variant.half.action": "{format}（半分のサイズ）"
 }

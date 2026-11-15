@@ -18,6 +18,10 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use image::GenericImageView;
+use image::imageops::FilterType;
+use serde::{Deserialize, Serialize};
+
 pub use encode::ICO_SIZES;
 pub use error::ConvertError;
 use error::shielded;
@@ -38,6 +42,74 @@ impl Default for Quality {
             jpeg: 90,
             webp: 85,
             avif: 70,
+        }
+    }
+}
+
+/// Plus grand côté d'une image convertie « en 1920 px ».
+const FULL_HD_SIDE: u32 = 1920;
+/// Qualité de la variante « qualité max ».
+const BEST: Quality = Quality {
+    jpeg: 95,
+    webp: 95,
+    avif: 85,
+};
+/// Plafond de la variante « plus léger », à moins qu'un réglage ne soit déjà plus bas.
+pub(crate) const LIGHT: Quality = Quality {
+    jpeg: 70,
+    webp: 70,
+    avif: 50,
+};
+
+/// Variante d'une conversion, proposée en restant sur un format de la roue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Variant {
+    /// Qualité la plus haute du format.
+    Best,
+    /// Fichier plus léger, au prix d'un peu de qualité.
+    Light,
+    /// 1920 pixels au plus de grand côté.
+    FullHd,
+    /// Moitié de la largeur et de la hauteur.
+    Half,
+}
+
+impl Variant {
+    fn quality(self, quality: &Quality) -> Quality {
+        match self {
+            Variant::Best => BEST,
+            Variant::Light => Quality {
+                jpeg: quality.jpeg.min(LIGHT.jpeg),
+                webp: quality.webp.min(LIGHT.webp),
+                avif: quality.avif.min(LIGHT.avif),
+            },
+            Variant::FullHd | Variant::Half => *quality,
+        }
+    }
+
+    fn resize(self, image: image::DynamicImage) -> image::DynamicImage {
+        let (width, height) = image.dimensions();
+        match self {
+            Variant::FullHd if width.max(height) > FULL_HD_SIDE => {
+                image.resize(FULL_HD_SIDE, FULL_HD_SIDE, FilterType::Lanczos3)
+            }
+            Variant::Half => image.resize_exact(
+                (width / 2).max(1),
+                (height / 2).max(1),
+                FilterType::Lanczos3,
+            ),
+            _ => image,
+        }
+    }
+
+    /// Ajouté au nom du fichier produit, pour le distinguer d'une conversion ordinaire.
+    fn suffix(self) -> String {
+        match self {
+            Variant::Best => String::new(),
+            Variant::Light => i18n::t("files.suffix.compressed"),
+            Variant::FullHd => "-1920".into(),
+            Variant::Half => i18n::t("files.suffix.shrunk"),
         }
     }
 }
@@ -72,26 +144,46 @@ pub fn convert(
     target: OutputFormat,
     quality: &Quality,
 ) -> Result<Conversion, ConvertError> {
-    shielded(|| convert_unshielded(input, target, quality))
+    convert_variant(input, target, quality, None)
+}
+
+/// Comme [`convert`], avec une variante (qualité, taille) choisie sur la roue.
+pub fn convert_variant(
+    input: &Path,
+    target: OutputFormat,
+    quality: &Quality,
+    variant: Option<Variant>,
+) -> Result<Conversion, ConvertError> {
+    shielded(|| convert_unshielded(input, target, quality, variant))
 }
 
 fn convert_unshielded(
     input: &Path,
     target: OutputFormat,
     quality: &Quality,
+    variant: Option<Variant>,
 ) -> Result<Conversion, ConvertError> {
     let bytes = std::fs::read(input).map_err(|source| ConvertError::Read {
         path: input.to_path_buf(),
         source,
     })?;
     let source = InputFormat::detect(&bytes, input).ok_or(ConvertError::UnsupportedFormat)?;
-    if source.as_output() == Some(target) {
+    // Une variante (1920 px, plus léger…) a un sens même dans le format d'origine
+    if source.as_output() == Some(target) && variant.is_none() {
         return Err(ConvertError::SameFormat(target));
     }
 
     let image = decode::decode(&bytes, source)?;
-    let encoded = encode::encode(&image, target, quality)?;
-    let output = output::write_unique(input, target.extension(), &encoded)?;
+    let (image, quality, named) = match variant {
+        Some(variant) => {
+            let suffix = variant.suffix();
+            let named = output::sibling(input, &output::suffixed(input, &suffix));
+            (variant.resize(image), variant.quality(quality), named)
+        }
+        None => (image, *quality, input.to_path_buf()),
+    };
+    let encoded = encode::encode(&image, target, &quality)?;
+    let output = output::write_unique(&named, target.extension(), &encoded)?;
 
     Ok(Conversion {
         output,
