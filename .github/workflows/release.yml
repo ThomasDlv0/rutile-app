@@ -46,7 +46,9 @@ jobs:
             os: macos-latest
             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
             ffmpeg: universal-apple-darwin
-            args: --target universal-apple-darwin --bundles app,dmg
+            args: >-
+              --target universal-apple-darwin --bundles app,dmg
+              --config src-tauri/tauri.signing.conf.json
             bundles: |
               target/universal-apple-darwin/release/bundle/dmg/*.dmg
               target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
@@ -106,6 +108,14 @@ jobs:
         shell: bash
         run: bash scripts/fetch-ffmpeg.sh ${{ matrix.ffmpeg }}
 
+      # Certificat propre à Rutile : macOS garde ses autorisations d'une version à l'autre
+      - name: Certificat de signature (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+        run: bash scripts/macos-signing-keychain.sh
+
       # Les fichiers de mise à jour sont signés avec la clé privée des secrets du dépôt ; l'app
       # n'installe que ceux dont la signature correspond à la clé publique de tauri.conf.json
       - uses: tauri-apps/tauri-action@v1
@@ -128,6 +138,9 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
+      # Pour scripts/check-macos-signature.sh
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           name: bundles-macos
@@ -143,8 +156,12 @@ jobs:
           bin="$RUNNER_TEMP/Rutile.app/Contents/MacOS"
           lipo -info "$bin/rutile"
           lipo -info "$bin/rutile-ffmpeg"
-          codesign -dv "$RUNNER_TEMP/Rutile.app" 2>&1 | grep -E "Identifier|Signature"
           "$bin/rutile" --self-test
+
+      # Signée par le certificat de Rutile, et non « ad hoc » : sinon chaque mise à jour ferait
+      # perdre les autorisations de macOS
+      - name: Signature
+        run: bash scripts/check-macos-signature.sh "$RUNNER_TEMP/Rutile.app"
 
       - name: Auto-test en Intel (Rosetta)
         run: |

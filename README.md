@@ -327,8 +327,9 @@ de ce qu'il y a derrière. Il se désactive dans Réglages → Couleurs.
 - **Couleur** : la loupe du système, sans autorisation.
 - **Fenêtres** : Accessibilité.
 
-Rutile n'étant pas signé par Apple, macOS peut oublier ces autorisations après une mise à
-jour : retirez Rutile de la liste avec « − », puis autorisez-le de nouveau.
+Rutile est signé par son propre certificat, « Rutile Self-Signed » : macOS garde ces
+autorisations d'une mise à jour à l'autre. Seul le passage à la première version signée ainsi
+les fait oublier une fois : retirez Rutile de la liste avec « − », puis autorisez-le de nouveau.
 
 </details>
 
@@ -504,9 +505,10 @@ sous Windows et 161 Mo sur macOS, qui contient les versions Apple Silicon et Int
   sur une vraie machine Linux.
 - **Windows** : le suivi de la souris ne voit pas les fenêtres d'une app lancée en
   administrateur ; les icônes des apps ne sont pas encore extraites.
-- **Paquets non signés** : macOS (Gatekeeper) et Windows (SmartScreen) préviennent au premier
-  lancement. Les signer demanderait un compte développeur Apple et un certificat de signature
-  de code Windows.
+- **Paquets non signés par Apple ni Microsoft** : macOS (Gatekeeper) et Windows (SmartScreen)
+  préviennent au premier lancement. Sur macOS, Rutile est signé par son propre certificat, ce
+  qui suffit à garder les autorisations d'une version à l'autre, pas à rassurer Gatekeeper : il
+  faudrait un compte développeur Apple, et un certificat de signature de code sous Windows.
 
 </details>
 

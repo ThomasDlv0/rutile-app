@@ -1,0 +1,47 @@
+# TEMPORAIRE, à retirer avant la fusion dans main : signe Rutile sur macOS exactement comme la
+# release (trousseau, certificat, configuration), puis vérifie la signature et l'auto-test,
+# sans tag ni publication.
+name: Essai de signature
+
+on:
+  push:
+    branches: [robustesse]
+    paths:
+      - .github/workflows/essai-signature.yml
+      - scripts/macos-signing-keychain.sh
+      - scripts/check-macos-signature.sh
+      - src-tauri/tauri.signing.conf.json
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: Signature (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: bash scripts/fetch-ffmpeg.sh
+
+      - name: Certificat de signature
+        env:
+          MACOS_SIGNING_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_SIGNING_PASSWORD: ${{ secrets.MACOS_SIGNING_PASSWORD }}
+        run: bash scripts/macos-signing-keychain.sh
+
+      - name: App signée
+        run: >-
+          npx tauri build --debug --bundles app
+          --config src-tauri/tauri.release.conf.json
+          --config src-tauri/tauri.signing.conf.json
+
+      - name: Signature
+        run: bash scripts/check-macos-signature.sh target/debug/bundle/macos/Rutile.app
+
+      - name: Auto-test de l'app signée
+        run: target/debug/bundle/macos/Rutile.app/Contents/MacOS/rutile --self-test
