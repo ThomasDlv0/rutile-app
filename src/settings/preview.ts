@@ -89,7 +89,7 @@ export const PREVIEW: SettingsView = {
   dockAccess: false,
   nativeGlass: true,
   platform: "macos",
-  version: "1.5.1",
+  version: "1.5.2",
   apps: [
     { path: "/Applications/Finder.app", name: "Finder", kind: "app", icon: null },
     { path: "https://youtube.com/", name: "YouTube", kind: "url", icon: null },
