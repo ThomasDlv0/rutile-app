@@ -326,6 +326,8 @@ export function Wheel({
     onStep(scroll.current.total > 0 ? 1 : -1);
     scroll.current = { total: 0, pausedUntil: now + SCROLL_PAUSE_MS };
   };
+  // Un point par roue, en bas du cercle central, tant qu'aucune action n'y est affichée
+  const showDots = modeDots !== undefined && modeDots.count > 1 && !busy;
   // Au-delà de huit parts, les arcs deviennent trop courts pour un nom
   const showNames = count <= 8;
   const namesId = useId();
@@ -363,7 +365,7 @@ export function Wheel({
       onClick={busy ? undefined : handleClick}
       onWheel={busy ? undefined : handleWheel}
     >
-      <div className="wheel" data-phase={phase}>
+      <div className="wheel" data-phase={phase} data-dots={showDots}>
         <svg
           className="wheel-disk"
           width={WINDOW_SIZE}
@@ -502,7 +504,7 @@ export function Wheel({
           );
         })}
 
-        {modeDots && modeDots.count > 1 && !busy && (
+        {showDots && modeDots && (
           <div className="mode-dots" aria-hidden="true">
             {Array.from({ length: modeDots.count }, (_, index) => (
               <span key={index} data-current={index === modeDots.current} />
