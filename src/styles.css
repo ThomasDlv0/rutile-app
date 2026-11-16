@@ -343,25 +343,21 @@ body,
   opacity: 0.4;
 }
 
-/* Un point par roue du clic au centre, celui de la roue affichée allumé, en bas du cercle
-   central : le texte du centre remonte un peu pour leur laisser la place */
+/* Un point par roue du clic au centre, répartis sur le bord intérieur du cercle central comme
+   sur un cadran, celui de la roue affichée allumé. Le texte du centre garde ses distances */
 .mode-dots {
   position: absolute;
   z-index: 1;
-  left: 0;
-  right: 0;
-  top: calc(50% + 31px);
-  display: flex;
-  justify-content: center;
-  gap: 5px;
+  inset: 0;
   pointer-events: none;
 }
 
 .wheel[data-dots="true"] .hub {
-  padding-bottom: 12px;
+  padding: 0 11px;
 }
 
 .mode-dots span {
+  position: absolute;
   width: 5px;
   height: 5px;
   border-radius: 50%;

@@ -85,6 +85,10 @@ interface WheelProps {
   onStep?: (step: 1 | -1) => void;
 }
 
+/** Rayon des points des roues, répartis sur le bord intérieur du cercle central, et leur
+ * diamètre. */
+const DOT_ORBIT = HUB_RADIUS - 5;
+const DOT_SIZE = 5;
 /** Rayon où s'écrit le nom d'une part à icône, le long du cercle, entre le centre et les
  * boutons. */
 const NAME_ORBIT = 80;
@@ -326,7 +330,8 @@ export function Wheel({
     onStep(scroll.current.total > 0 ? 1 : -1);
     scroll.current = { total: 0, pausedUntil: now + SCROLL_PAUSE_MS };
   };
-  // Un point par roue, en bas du cercle central, tant qu'aucune action n'y est affichée
+  // Un point par roue, tout autour du cercle central comme sur un cadran, tant qu'aucune
+  // action n'y est affichée
   const showDots = modeDots !== undefined && modeDots.count > 1 && !busy;
   // Au-delà de huit parts, les arcs deviennent trop courts pour un nom
   const showNames = count <= 8;
@@ -506,9 +511,12 @@ export function Wheel({
 
         {showDots && modeDots && (
           <div className="mode-dots" aria-hidden="true">
-            {Array.from({ length: modeDots.count }, (_, index) => (
-              <span key={index} data-current={index === modeDots.current} />
-            ))}
+            {Array.from({ length: modeDots.count }, (_, index) => {
+              // Le premier en haut, les suivants dans le sens horaire, comme les parts
+              const [x, y] = polar(DOT_ORBIT, (index * 360) / modeDots.count);
+              const style = { left: x - DOT_SIZE / 2, top: y - DOT_SIZE / 2 } as CSSProperties;
+              return <span key={index} data-current={index === modeDots.current} style={style} />;
+            })}
           </div>
         )}
 
