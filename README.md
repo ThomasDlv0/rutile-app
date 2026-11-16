@@ -29,10 +29,6 @@
   <a href="https://github.com/ThomasDlv0/rutile-app/releases/latest"><img alt="Télécharger pour Linux" src="https://img.shields.io/badge/Linux-AppImage-f0b429?style=for-the-badge&logo=linux&logoColor=black"></a>
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/conversion.gif" width="880" alt="Dans le Finder, la roue s’ouvre sur paysage.jpg ; le curseur survole PNG, JPEG (déjà le format de la photo) puis WebP, un clic, et paysage.webp apparaît à côté de l’original">
-</p>
-
 Rutile tourne en arrière-plan et ouvre, sous le curseur, une roue dont chaque part est une
 action : passer une image en WebP, une vidéo en MP4, ouvrir une app, envoyer un fichier par
 AirDrop. Pour qui jongle avec des fichiers toute la journée et n'a plus envie d'ouvrir un
@@ -41,6 +37,44 @@ logiciel ou un site juste pour passer un PNG en JPEG.
 Gratuit, sans compte, sans publicité et sans suivi. Les conversions se font **sur votre
 machine** : aucun fichier n'est envoyé sur internet pour être converti. FFmpeg est inclus,
 il n'y a rien d'autre à installer.
+
+## En pratique
+
+Trois cas de tous les jours, filmés sur macOS avec de vraies photos. Sur macOS 26 et plus, la
+roue est en **Liquid Glass**, le verre du système : elle laisse voir, et réfracte, ce qu'il y a
+dessous.
+
+### Passer une photo en WebP
+
+<p align="center">
+  <img src="docs/screenshots/conversion.gif" width="880" alt="Dans le Finder, paysage.jpg est sélectionné ; la roue en Liquid Glass s’ouvre par-dessus le fond d’écran ; le curseur survole PNG, JPEG (grisé : c’est déjà le format de la photo) puis WebP, un clic, « Converti », et paysage.webp apparaît à côté de l’original">
+</p>
+
+La photo sélectionnée, <kbd>⌘</kbd> <kbd>⇧</kbd> <kbd>Espace</kbd> : la roue s'ouvre sous le
+curseur. JPEG est grisé, c'est déjà le format de la photo. Un clic sur WebP, et `paysage.webp`
+apparaît à côté de l'original, qui reste intact. Le fichier converti reste un instant au centre
+de la roue : glissez-le vers un message, un mail ou un envoi sur un site.
+
+### L'alléger avant de l'envoyer
+
+<p align="center">
+  <img src="docs/screenshots/variantes.gif" width="880" alt="Le curseur reste sur WebP : un anneau se remplit autour de la part, puis la roue propose Max, Léger, 1920 et ½ ; un clic sur Léger, et paysage-compressee.webp apparaît">
+</p>
+
+Restez une seconde sur WebP : l'anneau se remplit, puis la roue propose la qualité max, un
+fichier plus léger, 1920 px ou la moitié de la taille. « Léger » donne
+`paysage-compressee.webp`, prêt à partir par mail.
+
+### Une vidéo : la convertir, l'ouvrir, la partager
+
+<p align="center">
+  <img src="docs/screenshots/roues.gif" width="880" alt="Avec chat.mp4, la roue s’ouvre sur les vidéos (MP4 grisé) et propose d’extraire le son en MP3 ; des clics au centre passent aux apps, avec la pastille de Messages, au partage, puis aux actions de la vidéo, nommées le long du cercle ; un point allumé fait le tour du centre">
+</p>
+
+Avec une vidéo, la roue s'ouvre sur les formats vidéo. Un clic au centre, ou la molette, passe
+aux apps (avec leurs pastilles, comme dans le Dock), au partage, puis aux actions de la vidéo :
+alléger, tenir dans 10 ou 25 Mo, GIF, MP3, couper le son. Le point allumé qui fait le tour du
+centre dit sur quelle roue vous êtes.
 
 ## Fonctionnalités
 
@@ -64,10 +98,6 @@ image d'un site) : la roue la prend comme fichier. Le résultat est rangé dans 
 mis dans le presse-papiers, prêt à être collé dans un message ou un envoi.
 
 ### Cinq roues, un clic au centre
-
-<p align="center">
-  <img src="docs/screenshots/roues.gif" width="880" alt="Un clic au centre fait passer de la roue des images à celle des vidéos, puis au partage et aux apps">
-</p>
 
 **Images**, **vidéos**, **apps**, **partage**, **actions** et **vos propres roues** : un clic
 au centre passe à la roue suivante. Chacune s'active ou se désactive, dans l'ordre de votre
@@ -102,8 +132,12 @@ du curseur dit ce qui s'est passé, même si les notifications sont coupées.
 
 ### La roue Actions d'un fichier
 
+<p align="center">
+  <img src="docs/screenshots/roue-actions.jpg" width="340" alt="Roue Actions de chat.mp4 en Liquid Glass : alléger, 10 Mo, 25 Mo, GIF, MP3, muet, ZIP et renommer, chaque nom écrit le long du cercle">
+</p>
+
 Avec un fichier secoué, glissé ou sélectionné, la roue Actions ne montre que ce qui a un sens
-pour lui, directement sur la roue :
+pour lui, directement sur la roue, chaque part avec son nom :
 
 | Fichiers | Actions proposées |
 |---|---|
@@ -135,7 +169,7 @@ Chaque roue prend sa place parmi les autres, au clic sur le centre. Limitée à 
 ### Vidéos : changer de format, faire un GIF, garder le son
 
 <p align="center">
-  <img src="docs/screenshots/roue-videos.jpg" width="540" alt="Roue des vidéos : MP4, WebM, MOV, MKV, GIF et MP3, la part GIF survolée">
+  <img src="docs/screenshots/roue-videos.jpg" width="340" alt="Roue des vidéos en Liquid Glass sur chat.mp4 : MP4 grisé, WebM, MOV, MKV, GIF, et MP3 survolé, « Extraire le son en MP3 » au centre">
 </p>
 
 MP4, WebM, MOV, MKV, **GIF animé** et **MP3** (le son seul), grâce au FFmpeg embarqué. Une
@@ -144,7 +178,7 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 ### Partager en un geste
 
 <p align="center">
-  <img src="docs/screenshots/roue-partage.jpg" width="540" alt="Roue de partage à sept parts : AirDrop, Messages, Signal, iCloud Drive, Mail, Blip et Partager…, survolé">
+  <img src="docs/screenshots/roue-partage.jpg" width="340" alt="Roue de partage en Liquid Glass à huit parts : AirDrop, Messages, Signal, iCloud Drive, Mail, Blip, Partager… et Discord">
 </p>
 
 - **« Partager… »** ouvre le menu de partage de macOS, celui du bouton Partager du Finder :
@@ -158,7 +192,7 @@ notification annonce la fin de la conversion et propose d'afficher le fichier.
 ### Vos apps sous la main
 
 <p align="center">
-  <img src="docs/screenshots/roue-apps.jpg" width="540" alt="Roue des apps avec des pastilles de notifications sur Messages et PhpStorm, la part Messages survolée">
+  <img src="docs/screenshots/roue-apps.jpg" width="340" alt="Roue des apps en Liquid Glass : Messages avec sa pastille de notifications, Claude, Brave, iTerm, PhpStorm, Parallels, Notes et YouTube">
 </p>
 
 Jusqu'à dix apps, une par part, avec leurs **pastilles de notifications** comme dans le Dock
